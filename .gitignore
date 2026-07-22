@@ -1,0 +1,43 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+.next/
+next-env.d.ts
+
+# turborepo
+.turbo/
+
+# environment — never commit real values (NFR-005, FR-004)
+.env
+.env.*
+!.env.example
+*.local
+
+# prisma generated artefacts
+packages/db/src/generated/
+packages/db/prisma/generated/
+node_modules/.prisma/
+
+# test / coverage output
+coverage/
+.vitest/
+*.log
+
+# editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# minions delivery process — session bearer token is a secret; keep memory/ (non-secret)
+.minions/session.json
+.minions/*.token
+.register-key
+.portal-dir

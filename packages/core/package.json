@@ -1,0 +1,38 @@
+{
+  "name": "@sunil/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Domain types, Zod schemas, message-envelope contracts, error taxonomy and the permission catalogue. Bottom of the dependency DAG.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens.d.ts",
+      "default": "./dist/tokens.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.spec.json",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('tsconfig.tsbuildinfo',{force:true})\""
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  }
+}

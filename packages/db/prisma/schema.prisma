@@ -1,0 +1,490 @@
+// SUNIL — Phase 1 data model.
+//
+// Implements PHASE1_ARCHITECTURE §5.1–§5.7 exactly. Conventions that apply everywhere:
+//   * UUIDv7 primary keys (`@default(uuid(7))`), time-ordered so append-heavy tables index well.
+//   * `createdAt` + `updatedAt` on every MUTABLE entity; append-only models carry `createdAt`
+//     only — deliberately, not by omission.
+//   * `@@map` to snake_case plural table names; `@map` to snake_case columns.
+//   * All foreign keys are `onDelete: Restrict` — Phase 1 never cascades a delete through
+//     identity or audit data.
+//   * `externalId` convention (§5.1): any model ingesting EXTERNAL data carries
+//     `source` + `externalId` + `@@unique([source, externalId])`. No Phase 1 model imports
+//     external data, so no Phase 1 model carries it. Phase 3–4 uses this shape, not a new one.
+//
+// WARNING (ADR-004): the initial migration carries hand-written SQL that Prisma cannot
+// express — `CREATE EXTENSION vector`, the `one_owner_only` partial unique index and the
+// `audit_logs` append-only trigger. Do NOT regenerate or squash that migration without
+// preserving them.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum SessionState {
+  PENDING_MFA
+  ACTIVE
+  REVOKED
+}
+
+enum MfaStatus {
+  PENDING
+  ACTIVE
+}
+
+enum ProviderVerification {
+  UNCONFIGURED
+  MOCK_VERIFIED
+  // Phase 1 code never writes this value; it exists for Phase 2's live smoke test (FR-065).
+  LIVE_VERIFIED
+}
+
+enum ActorType {
+  HUMAN
+  AGENT
+  SYSTEM
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+enum AgentStatus {
+  IDLE
+  RUNNING
+  STALE
+  FAILED
+  DISABLED
+}
+
+enum EnvelopeType {
+  TASK_ASSIGNED
+  TASK_STARTED
+  TASK_PROGRESS
+  INFORMATION_REQUIRED
+  APPROVAL_REQUIRED
+  TASK_BLOCKED
+  TASK_COMPLETED
+  TASK_FAILED
+  AGENT_HEARTBEAT
+}
+
+enum JobOutcome {
+  RUNNING
+  COMPLETED
+  FAILED
+  TIMED_OUT
+  STALLED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.2 Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid(7))
+  email        String     @unique
+  /// argon2id PHC string — includes salt and parameters. No plaintext password exists (FR-011).
+  passwordHash String     @map("password_hash")
+  displayName  String     @map("display_name")
+  status       UserStatus @default(ACTIVE)
+  timezone     String     @default("Australia/Hobart")
+  /// Denormalised flag. Source of truth is `MfaCredential.status`.
+  mfaEnabled   Boolean    @default(false) @map("mfa_enabled")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  userRoles        UserRole[]        @relation("UserRoleHolder")
+  rolesAssigned    UserRole[]        @relation("UserRoleAssigner")
+  sessions         Session[]
+  invitationsSent  Invitation[]      @relation("InvitationInviter")
+  mfaCredential    MfaCredential?
+  mfaRecoveryCodes MfaRecoveryCode[]
+  settingsUpdated  SystemSetting[]   @relation("SystemSettingUpdater")
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id
+  slug        String   @unique
+  name        String
+  description String
+  /// System roles cannot be deleted or renamed through the API.
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+  invitations     Invitation[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid(7))
+  /// The `resource:action` string from the `@sunil/core` catalogue (ADR-001).
+  key         String   @unique
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+/// The `one_owner_only` partial unique index lives on this table (raw SQL in the initial
+/// migration) so a second owner assignment fails at the DATABASE even if application checks
+/// are bypassed — ADR-001 enforcement layer (c).
+model UserRole {
+  userId       String   @map("user_id")
+  roleId       String   @map("role_id")
+  /// Null for the bootstrap assignment; there is no user to attribute it to.
+  assignedById String?  @map("assigned_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user       User  @relation("UserRoleHolder", fields: [userId], references: [id], onDelete: Restrict)
+  role       Role  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy User? @relation("UserRoleAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([assignedById])
+  @@map("user_roles")
+}
+
+model Session {
+  id                String       @id @default(uuid(7))
+  /// SHA-256 hex of the opaque cookie token. The raw token is NEVER stored (§6.1).
+  tokenHash         String       @unique @map("token_hash")
+  userId            String       @map("user_id")
+  state             SessionState
+  /// 32 random bytes, base64url — the per-session CSRF secret (ADR-009).
+  csrfSecret        String       @map("csrf_secret")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  lastSeenAt        DateTime     @default(now()) @map("last_seen_at")
+  idleExpiresAt     DateTime     @map("idle_expires_at")
+  /// createdAt + SUNIL_SESSION_ABSOLUTE_HOURS. Never extended.
+  absoluteExpiresAt DateTime     @map("absolute_expires_at")
+  revokedAt         DateTime?    @map("revoked_at")
+  revokedReason     String?      @map("revoked_reason")
+  ip                String?
+  userAgent         String?      @map("user_agent")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([idleExpiresAt])
+  @@index([state])
+  @@map("sessions")
+}
+
+model Invitation {
+  id           String    @id @default(uuid(7))
+  email        String
+  /// SHA-256 of the single-use link token.
+  tokenHash    String    @unique @map("token_hash")
+  /// Never the owner role — service invariant plus the seed excludes it (ADR-001).
+  roleId       String    @map("role_id")
+  invitedById  String    @map("invited_by_id")
+  expiresAt    DateTime  @map("expires_at")
+  consumedAt   DateTime? @map("consumed_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  role      Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy User @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([email])
+  @@index([roleId])
+  @@index([invitedById])
+  @@map("invitations")
+}
+
+model MfaCredential {
+  id            String    @id @default(uuid(7))
+  userId        String    @unique @map("user_id")
+  /// Reference into the SecretStore (`mfa:totp:<userId>`). The TOTP secret itself is
+  /// envelope-encrypted in `secrets` and is never a column here (FR-027).
+  secretName    String    @map("secret_name")
+  status        MfaStatus
+  /// Last accepted TOTP timestep — replay prevention (§6.4).
+  lastUsedStep  BigInt?   @map("last_used_step")
+  activatedAt   DateTime? @map("activated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("mfa_credentials")
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(uuid(7))
+  userId    String    @map("user_id")
+  /// SHA-256; the input is high-entropy random so a slow hash is unnecessary.
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.3 Settings
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SystemSetting {
+  id          String   @id @default(uuid(7))
+  /// Dot-namespaced, e.g. `llm.modelRates`.
+  key         String   @unique
+  value       Json
+  /// `string` | `number` | `boolean` | `json` — drives portal rendering.
+  valueType   String   @map("value_type")
+  description String
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  updatedBy User? @relation("SystemSettingUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([updatedById])
+  @@map("system_settings")
+}
+
+model LlmProvider {
+  id                 String               @id @default(uuid(7))
+  slug               String               @unique
+  name               String
+  /// Required for `ollama`; an optional override for the hosted providers.
+  baseUrl            String?              @map("base_url")
+  enabled            Boolean              @default(false)
+  defaultModel       String?              @map("default_model")
+  /// Reference into the SecretStore — NEVER a credential value (FR-012).
+  credentialName     String?              @map("credential_name")
+  verificationStatus ProviderVerification @default(UNCONFIGURED) @map("verification_status")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  agents Agent[]
+
+  @@map("llm_providers")
+}
+
+/// Deviation D-4: the architecture implies a SecretStore but never names its storage.
+/// Envelope-encryption scheme in §8.2 / ADR-006. No column here holds plaintext.
+model Secret {
+  id               String    @id @default(uuid(7))
+  /// The reference key used by `credentialName` / `secretName`.
+  name             String    @unique
+  description      String    @default("")
+  /// AES-256-GCM over the plaintext, AAD = `${id}:${version}`.
+  ciphertext       Bytes
+  iv               Bytes
+  authTag          Bytes     @map("auth_tag")
+  /// DEK encrypted under the KEK (AES-256-GCM), AAD = `${id}`.
+  wrappedDek       Bytes     @map("wrapped_dek")
+  dekIv            Bytes     @map("dek_iv")
+  dekAuthTag       Bytes     @map("dek_auth_tag")
+  version          Int       @default(1)
+  /// Which KEK wrapped the DEK (`SUNIL_MASTER_KEY_VERSION` at write time).
+  masterKeyVersion Int       @default(1) @map("master_key_version")
+  /// Display mask only — the single value-derived datum any API returns (§8.3, FR-042).
+  fingerprint      String
+  rotatedAt        DateTime? @map("rotated_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("secrets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.4 Audit — APPEND-ONLY (Prisma client extension + database trigger, §9.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String       @id @default(uuid(7))
+  actorType     ActorType    @map("actor_type")
+  /// User id or agent id; null for SYSTEM.
+  actorId       String?      @map("actor_id")
+  /// Denormalised display label — survives deletion of the actor row.
+  actorLabel    String       @map("actor_label")
+  action        String
+  targetType    String?      @map("target_type")
+  targetId      String?      @map("target_id")
+  /// Redacted per §9.5 BEFORE persist.
+  before        Json?
+  after         Json?
+  outcome       AuditOutcome
+  /// Category only: unauthenticated | forbidden | csrf | rate_limited | locked_out | validation.
+  denialReason  String?      @map("denial_reason")
+  correlationId String       @map("correlation_id")
+  ip            String?
+  userAgent     String?      @map("user_agent")
+  /// Server-generated. The service accepts no caller-supplied timestamp (FR-050).
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([correlationId])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.5 Usage — append-only
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UsageRecord {
+  id               String   @id @default(uuid(7))
+  provider         String
+  model            String
+  /// Caller-supplied label, e.g. `agent-run`, `smoke-test`.
+  feature          String
+  agentId          String?  @map("agent_id")
+  tokensIn         Int      @map("tokens_in")
+  tokensOut        Int      @map("tokens_out")
+  estimatedCostUsd Decimal  @default(0) @map("estimated_cost_usd") @db.Decimal(12, 6)
+  latencyMs        Int      @map("latency_ms")
+  /// Typed taxonomy (§10.3); null on success.
+  errorClass       String?  @map("error_class")
+  /// Redacted before persist. No prompt or completion text is EVER stored here (FR-064).
+  errorMessage     String?  @map("error_message")
+  retryCount       Int      @default(0) @map("retry_count")
+  correlationId    String?  @map("correlation_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  agent Agent? @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([provider, model])
+  @@index([agentId])
+  @@map("usage_records")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.6 Agents
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Agent {
+  id                       String      @id @default(uuid(7))
+  slug                     String      @unique
+  name                     String
+  role                     String
+  systemInstructions       String      @map("system_instructions") @db.Text
+  /// MUST be empty in Phase 1 (FR-070); a non-empty list fails Zod validation on load.
+  toolAllowlist            Json        @default("[]") @map("tool_allowlist")
+  providerId               String?     @map("provider_id")
+  modelId                  String?     @map("model_id")
+  maxDurationSeconds       Int         @map("max_duration_seconds")
+  tokenBudget              Int?        @map("token_budget")
+  costBudgetUsd            Decimal?    @map("cost_budget_usd") @db.Decimal(12, 6)
+  heartbeatIntervalSeconds Int         @default(30) @map("heartbeat_interval_seconds")
+  staleThresholdSeconds    Int         @default(90) @map("stale_threshold_seconds")
+  status                   AgentStatus @default(IDLE)
+  currentTaskId            String?     @map("current_task_id")
+  /// The out-of-process staleness sweep reads this (§11.3).
+  lastHeartbeatAt          DateTime?   @map("last_heartbeat_at")
+  enabled                  Boolean     @default(true)
+  createdAt                DateTime    @default(now()) @map("created_at")
+  updatedAt                DateTime    @updatedAt @map("updated_at")
+
+  provider     LlmProvider?   @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  messages     AgentMessage[]
+  usageRecords UsageRecord[]
+
+  @@index([status])
+  @@index([providerId])
+  @@index([lastHeartbeatAt])
+  @@map("agents")
+}
+
+/// The envelope/activity log — append-only. Activity is persisted in Postgres, never in
+/// memory (FR-072).
+model AgentMessage {
+  id               String       @id @default(uuid(7))
+  type             EnvelopeType
+  agentId          String       @map("agent_id")
+  taskId           String       @map("task_id")
+  parentTaskId     String?      @map("parent_task_id")
+  /// Zod-validated per type BEFORE persist (§11.2).
+  payload          Json
+  tokensUsed       Int?         @map("tokens_used")
+  estimatedCostUsd Decimal?     @map("estimated_cost_usd") @db.Decimal(12, 6)
+  /// Global monotonic emission order (FR-072 ordering).
+  sequence         BigInt       @unique @default(autoincrement())
+  correlationId    String       @map("correlation_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  @@index([agentId, taskId, sequence])
+  @@index([type])
+  @@index([createdAt])
+  @@map("agent_messages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.7 Jobs — append-only history, in Postgres so it survives a Redis wipe (FR-083)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model JobExecution {
+  id          String     @id @default(uuid(7))
+  jobName     String     @map("job_name")
+  /// `system` | `agents` (deviation D-3).
+  queue       String
+  bullJobId   String     @map("bull_job_id")
+  /// The Job Scheduler id when repeatable (ADR-010) — makes ET-4 directly queryable.
+  schedulerId String?    @map("scheduler_id")
+  attempt     Int
+  startedAt   DateTime   @map("started_at")
+  finishedAt  DateTime?  @map("finished_at")
+  durationMs  Int?       @map("duration_ms")
+  outcome     JobOutcome
+  /// Redacted before persist.
+  error       String?    @db.Text
+  /// Small results only; large payloads are an anti-pattern here.
+  result      Json?
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  @@index([jobName, startedAt])
+  @@index([queue])
+  @@index([outcome])
+  @@index([bullJobId])
+  @@index([schedulerId])
+  @@map("job_executions")
+}

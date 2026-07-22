@@ -1,0 +1,277 @@
+# SUNIL — Phase 1 (Foundation) Docker Compose topology
+#
+# Owner: DevOps / SRE (T2). Source of truth: docs/PHASE1_ARCHITECTURE.md §15 (Deployment),
+# ADR-002 (Redis persistence mode), ADR-011 (browser<->API is same-origin via the `web`
+# service's Next rewrite proxy; no CORS anywhere — amendment A1). Do not "optimise" the redis
+# `command:` flags below — they are load-bearing (ADR-002 / §18.4 of PHASE1_ARCHITECTURE.md),
+# not tuning. Do not add CORS configuration or an allowed-origins variable to `api` — ADR-011
+# forbids it by design; a cross-origin client requires a new ADR, not a drive-by config change.
+#
+# This file defines the FULL six-service acceptance topology (§15.3 pitfall 6: "the full
+# six-service Compose build is the acceptance configuration"). For day-to-day local development
+# before apps/*/Dockerfile exist (or once they do, if you prefer running api/web/worker/scheduler
+# on the host for hot reload), see docker-compose.dev.yml, which layers on top of this file.
+#
+# STATUS (updated post-ADR-011): `postgres` and `redis` are real, buildable and verified today.
+# The `apps/*` source directories now exist (api/web/worker/scheduler have been built by other
+# waves), but none of them have a `Dockerfile` yet — that is still a later wave's deliverable.
+# Until it lands, `docker compose up` (no service names) will fail trying to build them — bring
+# up only what exists today with:
+#
+#   docker compose up -d postgres redis
+#
+# which starts exactly those two named services and does not touch api/web/worker/scheduler.
+
+services:
+  # ---------------------------------------------------------------------------------------
+  # postgres — pgvector/pgvector image, pinned per R-02.
+  #
+  # Resolved pin (verified via `docker image inspect` against the already-pulled image on
+  # this host on 2026-07-21 — see docs/LOCAL_SETUP.md "Image provenance" for the full trail):
+  #   pgvector/pgvector:pg16  ==  pgvector/pgvector:0.8.5-pg16
+  #   digest: sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
+  #
+  # The image reference below pins BOTH the human-readable tag and the digest
+  # (`tag@sha256:...`), so `docker compose pull` can only ever resolve to this exact image —
+  # a floating `pgvector/pgvector:pg16` tag being repointed upstream cannot silently change
+  # what Phase 1 runs.
+  # ---------------------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:0.8.5-pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
+    restart: unless-stopped
+    environment:
+      # Fallback defaults below (`:-...`) let `docker compose up -d postgres redis` work
+      # today with zero extra files, per T2's instructions. They are LOCAL-DEV-ONLY,
+      # non-sensitive placeholders — postgres is never published to a host port in this base
+      # file (FR-090: only web/api publish host ports), so these values are reachable only
+      # from other containers on the compose network on this single machine. Override any of
+      # them via a real `.env` (see .env.example) for anything beyond that.
+      POSTGRES_USER: ${POSTGRES_USER:-sunil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sunil_local_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-sunil}
+    volumes:
+      # Named volume, not a bind mount — §15.3 pitfall 1 and FR-090 (data survives
+      # `docker compose down` without `-v`).
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Exact form specified in PHASE1_ARCHITECTURE.md §15.1.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - sunil-net
+    # No `ports:` here by design (FR-090 / §15.1: postgres is compose-network-only). Use
+    # docker-compose.dev.yml to publish a host port for local tools (no host psql exists —
+    # NFR-013/FR-093 — so this is for GUI clients / Prisma-from-host only, never required).
+
+  # ---------------------------------------------------------------------------------------
+  # redis — ADR-002 (Q7). Flags are the durability decision itself, not tuning:
+  #   --appendonly yes            AOF enabled
+  #   --appendfsync everysec      <=1s acknowledged-write loss on a hard crash, 0 on a clean
+  #                                stop (SIGTERM flushes and saves before exit)
+  #   --maxmemory-policy noeviction   any eviction policy can silently delete BullMQ keys —
+  #                                    exactly the failure ET-4 exists to catch. DO NOT change
+  #                                    this to fix memory pressure (§18.4 of the architecture).
+  # RDB preamble / snapshot defaults are left at the image default (on) per ADR-002.
+  # ---------------------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    # Resolved digest at pull time (2026-07-21), recorded for provenance (not R-02 — that risk
+    # is Postgres-specific — but kept consistent with the pin discipline):
+    #   sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly", "yes",
+        "--appendfsync", "everysec",
+        "--maxmemory-policy", "noeviction",
+      ]
+    volumes:
+      # Named volume, not a bind mount — §15.3 pitfall 1. This is what makes AOF survive
+      # `docker compose down` (without `-v`) and real container restarts (ET-4).
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - sunil-net
+    # No `ports:` here by design — see docker-compose.dev.yml to publish one for host tools.
+
+  # ---------------------------------------------------------------------------------------
+  # api — NestJS (Fastify adapter). NOT YET BUILDABLE: apps/api and its Dockerfile are a
+  # later wave's deliverable (monorepo scaffold + Dockerfiles). Declared now so the topology,
+  # health-gating and startup ordering are correct and reviewable ahead of that wave.
+  # ---------------------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      # `required: false` so `docker compose config` (and, once Dockerfiles land, `up`) does
+      # not hard-fail before a developer has created `.env` from `.env.example`. Real values
+      # are required for these services to actually run correctly — see docs/LOCAL_SETUP.md.
+      - path: .env
+        required: false
+    environment:
+      PORT: "3001"
+    ports:
+      # ADR-011 / amendment A1: the portal (browser) NEVER talks to this port — all browser
+      # traffic goes to `web` only, which proxies `/api/:path*` to `api` over the private
+      # compose network via SUNIL_API_INTERNAL_URL (see the `web` service below). This
+      # publish exists solely for direct NON-BROWSER access: QA exit-test suites, dev tooling,
+      # curl. No CORS headers are returned here and none should ever be added (no
+      # allowed-origins variable exists by design — a cross-origin client needs a new ADR).
+      - "${SUNIL_PORT_API:-3001}:3001"
+    healthcheck:
+      # §15.1: `GET /api/system-health`. Uses Node's built-in fetch so no extra binary
+      # (curl/wget) needs to be present in whatever base image the Dockerfile wave chooses.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3001/api/system-health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sunil-net
+
+  # ---------------------------------------------------------------------------------------
+  # worker — BullMQ processors (agents, system queues). NOT YET BUILDABLE (see api note).
+  # ---------------------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      # `required: false` so `docker compose config` (and, once Dockerfiles land, `up`) does
+      # not hard-fail before a developer has created `.env` from `.env.example`. Real values
+      # are required for these services to actually run correctly — see docs/LOCAL_SETUP.md.
+      - path: .env
+        required: false
+    healthcheck:
+      # §15.1: "process-level (`node healthcheck` pinging its own liveness file/Redis)".
+      # healthcheck.js is written by the Dockerfile wave alongside apps/worker's entrypoint.
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sunil-net
+
+  # ---------------------------------------------------------------------------------------
+  # scheduler — thin Job Scheduler upsert-then-idle producer (ADR-010). Only depends on
+  # redis (§15.1 table) since its whole job is `upsertJobScheduler` calls, not Postgres I/O.
+  # NOT YET BUILDABLE (see api note).
+  # ---------------------------------------------------------------------------------------
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      # `required: false` so `docker compose config` (and, once Dockerfiles land, `up`) does
+      # not hard-fail before a developer has created `.env` from `.env.example`. Real values
+      # are required for these services to actually run correctly — see docs/LOCAL_SETUP.md.
+      - path: .env
+        required: false
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sunil-net
+
+  # ---------------------------------------------------------------------------------------
+  # web — Next.js 15 standalone build. NOT YET BUILDABLE (see api note).
+  # ---------------------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      # `required: false` so `docker compose config` (and, once Dockerfiles land, `up`) does
+      # not hard-fail before a developer has created `.env` from `.env.example`. Real values
+      # are required for these services to actually run correctly — see docs/LOCAL_SETUP.md.
+      - path: .env
+        required: false
+    environment:
+      PORT: "3000"
+      # ADR-011 / amendment A1 — same-origin, no CORS. The browser only ever fetches relative
+      # `/api/...` paths from `web`; `web`'s Next `rewrites()` proxies them to this URL on the
+      # private compose network, and server components fetch it directly too (cookie
+      # forwarded). Server-side only — never reaches the browser bundle. This explicit value
+      # wins over whatever SUNIL_API_INTERNAL_URL is set to in `.env` (env_file is applied
+      # first, `environment:` overrides it) — `.env`'s copy is the host-run-dev default.
+      SUNIL_API_INTERNAL_URL: http://api:3001
+    ports:
+      # Per §15.1 as amended: ALL browser traffic reaches the portal through `web` only. This
+      # is the sole browser-facing port in the stack.
+      - "${SUNIL_PORT_WEB:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sunil-net
+
+  # ---------------------------------------------------------------------------------------
+  # ollama — optional local LLM runtime. Behind the `ollama` profile per §15.1: never started
+  # by a bare `docker compose up`; only with `docker compose --profile ollama up`.
+  # ---------------------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama
+    profiles:
+      - ollama
+    restart: unless-stopped
+    volumes:
+      - ollamadata:/root/.ollama
+    networks:
+      - sunil-net
+
+volumes:
+  # Named volumes only for data (§15.2). None of these are bind mounts, so none of them are
+  # subject to the Windows bind-mount slowness/symlink issues in §15.3 pitfall 1. They persist
+  # across `docker compose down` (without `-v`) — see docs/LOCAL_SETUP.md "Reset and rollback".
+  pgdata:
+  redisdata:
+  ollamadata:
+
+networks:
+  sunil-net:
+    driver: bridge

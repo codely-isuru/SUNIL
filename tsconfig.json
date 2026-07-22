@@ -1,0 +1,15 @@
+{
+  "//": "Solution root. `references` mirror the dependency DAG of PHASE1_ARCHITECTURE §3.2 exactly, so `tsc --build` order IS the DAG and an illegal edge is a build error.",
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/db" },
+    { "path": "packages/llm" },
+    { "path": "packages/ui" },
+    { "path": "packages/agents" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "apps/scheduler" }
+  ],
+  "//web": "apps/web is deliberately absent: Next.js owns its compilation, so it typechecks with --noEmit rather than participating in `tsc --build`. Its DAG edges are still enforced by pnpm strict linking and by dependency-cruiser."
+}

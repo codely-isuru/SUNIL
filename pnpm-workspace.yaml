@@ -1,0 +1,51 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# ── Install-script allowlist (supply-chain control, ADR-007 / THREAT_MODEL T-16) ──
+#
+# Lifecycle scripts are blocked by default (pnpm >= 10). PHASE1_ARCHITECTURE §3.3 specifies
+# this allowlist as `pnpm.onlyBuiltDependencies` in the root package.json; pnpm 11.8 no
+# longer reads the package.json `pnpm` field and renamed the setting to `allowBuilds`, so
+# the allowlist lives here. `onlyBuiltDependencies` is retained below for traceability to
+# the architecture document and for pnpm <= 10.
+#
+# Every `true` is a deliberate decision. Anything not listed fails install until it is
+# reviewed and added — that is the point.
+allowBuilds:
+  # Required: Prisma downloads/positions its query engine at install (ADR-004 consequence).
+  prisma: true
+  "@prisma/engines": true
+  "@prisma/client": true
+  # Required: Vitest's bundler.
+  esbuild: true
+  # DENIED — telemetry/analytics postinstall. Nothing in Phase 1 needs it.
+  "@scarf/scarf": false
+  # DENIED — optional native msgpack accelerator pulled in by BullMQ. The pure-JS path works.
+  msgpackr-extract: false
+  # DENIED — native image codec used by Next's production image optimiser. Not needed to
+  # build or typecheck; if the portal later needs it, that is a reviewable ADR-007 event.
+  sharp: false
+
+# Retained for traceability to PHASE1_ARCHITECTURE §3.3. pnpm 11 reads `allowBuilds` above.
+onlyBuiltDependencies:
+  - prisma
+  - "@prisma/engines"
+  - "@prisma/client"
+  - esbuild
+
+# Auto-recorded by pnpm 11's minimum-release-age gate: these versions are newer than the
+# default cooling-off window and were explicitly admitted at scaffold time.
+minimumReleaseAgeExclude:
+  - "@anthropic-ai/sdk@0.112.4"
+  - "@typescript-eslint/eslint-plugin@8.65.0"
+  - "@typescript-eslint/parser@8.65.0"
+  - "@typescript-eslint/project-service@8.65.0"
+  - "@typescript-eslint/scope-manager@8.65.0"
+  - "@typescript-eslint/tsconfig-utils@8.65.0"
+  - "@typescript-eslint/type-utils@8.65.0"
+  - "@typescript-eslint/types@8.65.0"
+  - "@typescript-eslint/typescript-estree@8.65.0"
+  - "@typescript-eslint/utils@8.65.0"
+  - "@typescript-eslint/visitor-keys@8.65.0"
+  - typescript-eslint@8.65.0

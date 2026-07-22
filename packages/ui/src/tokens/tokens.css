@@ -1,0 +1,422 @@
+/*
+ * SUNIL design tokens — the single source of the CSS custom properties.
+ * Implements DESIGN_TOKENS.md §2 (primitives), §3 (semantics) and §4 (component tokens).
+ *
+ * THE THREE-LAYER RULE (DESIGN_TOKENS.md, "How to read this document"):
+ *   component token → semantic token → primitive.
+ *   Components never reference primitives. Nothing outside this file holds a raw colour.
+ *
+ * GATE 2 (human-approved, binding, overrides the prototype):
+ *   - `--sunil-text-muted` is the OPAQUE #1BA3BC (4.67:1 worst case), not rgba(34,211,238,.55).
+ *   - rgba() is BANNED as a text `color` anywhere in the system. The alpha primitives below
+ *     exist for GLOW, FILL and STROKE only. `tokens/css-contract.ts` + the css-contract test
+ *     resolve every `color:` declaration in packages/ui and apps/web through this file and
+ *     fail the build if any of them lands on a value carrying alpha.
+ *   - Body prose is #E3F5FA ice; cyan is retained for values, links, headings and active nav.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ===================================================================== */
+  /* LAYER 1 — PRIMITIVES (DESIGN_TOKENS.md §2)                            */
+  /* Raw values with no meaning attached. Only the semantic layer may      */
+  /* reference these.                                                      */
+  /* ===================================================================== */
+
+  /* §2.1 Cyan ramp — the brand hue */
+  --sunil-cyan-100: #cffafe;
+  --sunil-cyan-200: #a5f3fc;
+  --sunil-cyan-300: #67e8f9;
+  --sunil-cyan-400: #22d3ee; /* the brand colour — locked by architecture §3 */
+  --sunil-cyan-500: #06b6d4;
+  --sunil-cyan-600: #0891b2;
+  --sunil-cyan-700: #0e7490;
+  --sunil-cyan-800: #155e75;
+  --sunil-cyan-900: #164e63;
+  /* Alpha primitives: glow / fill / stroke ONLY. Never a text colour. */
+  --sunil-cyan-a08: rgba(34, 211, 238, 0.08);
+  --sunil-cyan-a12: rgba(34, 211, 238, 0.12);
+  --sunil-cyan-a18: rgba(34, 211, 238, 0.18);
+  --sunil-cyan-a20: rgba(34, 211, 238, 0.2);
+  --sunil-cyan-a28: rgba(34, 211, 238, 0.28);
+  --sunil-cyan-a55: rgba(34, 211, 238, 0.55);
+
+  /* §2.2 Sky — heading tint */
+  --sunil-sky-300: #7dd3fc;
+
+  /* §2.3 Ice ramp — cyan-tinted neutrals (hierarchy by desaturation, not by dimming) */
+  --sunil-ice-50: #f2fbfd;
+  --sunil-ice-100: #e3f5fa;
+  --sunil-ice-200: #d3ecf4;
+  --sunil-ice-300: #c0e0eb;
+  --sunil-ice-400: #add3e0;
+  --sunil-ice-500: #9ac5d4;
+  --sunil-ice-600: #88b7c8;
+  --sunil-ice-700: #76a8bb;
+  --sunil-ice-800: #6499ae;
+  --sunil-ice-900: #456a7c; /* 3.46:1 — NON-TEXT ONLY (rules, chip edges) */
+
+  /* §2.4 Depth — surfaces */
+  --sunil-void-900: #030712;
+  --sunil-void-800: rgba(7, 16, 32, 0.72);
+  --sunil-void-800-solid: #060d1c;
+  --sunil-void-700: #0b172a;
+  --sunil-void-600: #122238;
+  --sunil-scrim: rgba(3, 7, 18, 0.82);
+
+  /* §2.5 Status */
+  --sunil-emerald-400: #34d399;
+  --sunil-amber-400: #fbbf24;
+  --sunil-rose-400: #f87171;
+  --sunil-rose-300: #fca5a5;
+  --sunil-slate-500: #64748b;
+  --sunil-slate-600: #475569; /* non-informational fills only — fails 3:1 as an indicator */
+
+  /* §2.6 Typography primitives */
+  --sunil-font-display: "Orbitron", "Orbitron Fallback", "Trebuchet MS", ui-sans-serif, system-ui,
+    sans-serif;
+  --sunil-font-mono: "Share Tech Mono", "Share Tech Mono Fallback", ui-monospace, "Cascadia Mono",
+    Consolas, "Courier New", monospace;
+  --sunil-weight-regular: 400;
+  --sunil-weight-semibold: 600;
+  --sunil-weight-bold: 800;
+
+  /* §2.7 Space primitives — base grid 4px; the numeric suffix IS the pixel value */
+  --sunil-space-0: 0;
+  --sunil-space-2: 2px;
+  --sunil-space-4: 4px;
+  --sunil-space-6: 6px;
+  --sunil-space-8: 8px;
+  --sunil-space-10: 10px;
+  --sunil-space-12: 12px;
+  --sunil-space-14: 14px;
+  --sunil-space-16: 16px;
+  --sunil-space-20: 20px;
+  --sunil-space-24: 24px;
+  --sunil-space-28: 28px;
+  --sunil-space-32: 32px;
+  --sunil-space-40: 40px;
+  --sunil-space-48: 48px;
+  --sunil-space-64: 64px;
+  --sunil-space-80: 80px;
+  --sunil-space-96: 96px;
+
+  /* §2.8 Radius */
+  --sunil-radius-0: 0;
+  --sunil-radius-2: 2px;
+  --sunil-radius-4: 4px;
+  --sunil-radius-6: 6px;
+  --sunil-radius-10: 10px;
+  --sunil-radius-full: 9999px;
+
+  /* §2.8 Border width */
+  --sunil-border-1: 1px;
+  --sunil-border-2: 2px;
+
+  /* §2.8 Glow — the prototype's entire shadow vocabulary is coloured glow */
+  --sunil-glow-xs: 0 0 8px;
+  --sunil-glow-sm: 0 0 12px;
+  --sunil-glow-md: 0 0 14px;
+  --sunil-glow-lg: 0 0 18px;
+  --sunil-glow-xl: 0 0 22px;
+  --sunil-glow-2xl: 0 0 30px;
+  --sunil-glow-3xl: 0 0 44px;
+
+  /* §2.8 Elevation — introduced; a shell with drawers and modals needs real occlusion */
+  --sunil-shadow-raised: 0 8px 24px -8px rgba(0, 0, 0, 0.72);
+  --sunil-shadow-overlay: 0 24px 64px -12px rgba(0, 0, 0, 0.86);
+
+  /* §2.8 z-index */
+  --sunil-z-canvas: 0;
+  --sunil-z-ambience: 1;
+  --sunil-z-content: 10;
+  --sunil-z-sticky: 100;
+  --sunil-z-header: 200;
+  --sunil-z-sidebar: 300;
+  --sunil-z-scrim: 400;
+  --sunil-z-modal: 500;
+  --sunil-z-popover: 600;
+  --sunil-z-toast: 700;
+  --sunil-z-skiplink: 800;
+
+  /* §2.8 Motion */
+  --sunil-duration-instant: 75ms;
+  --sunil-duration-fast: 120ms;
+  --sunil-duration-base: 180ms;
+  --sunil-duration-slow: 250ms;
+  --sunil-duration-slower: 400ms;
+  --sunil-duration-pulse: 1100ms;
+  --sunil-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --sunil-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --sunil-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --sunil-ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* §2.8 Breakpoints — documented only; CSS media queries cannot read var() */
+  --sunil-bp-sm: 480px;
+  --sunil-bp-md: 768px;
+  --sunil-bp-lg: 1024px;
+  --sunil-bp-xl: 1280px;
+  --sunil-bp-2xl: 1536px;
+
+  /* ===================================================================== */
+  /* LAYER 2 — SEMANTIC TOKENS (DESIGN_TOKENS.md §3)                       */
+  /* The layer a theme rebinds. Nothing here contains a literal value      */
+  /* except `--sunil-text-muted`, which is the Gate 2 correction (§6.1)    */
+  /* and has no primitive to point at.                                     */
+  /* ===================================================================== */
+
+  /* surfaces */
+  --sunil-bg: var(--sunil-void-900);
+  --sunil-surface: var(--sunil-void-800);
+  --sunil-surface-solid: var(--sunil-void-800-solid);
+  --sunil-surface-raised: var(--sunil-void-700);
+  --sunil-surface-input: var(--sunil-void-600);
+  --sunil-surface-scrim: var(--sunil-scrim);
+
+  /* text — every one of these is OPAQUE, and that is the point (§5.4.1) */
+  --sunil-text-primary: var(--sunil-ice-100); /* 17.25 on panel */
+  --sunil-text-secondary: var(--sunil-ice-500); /* 10.43 */
+  --sunil-text-muted: #1ba3bc; /* 6.47 — Gate 2 correction of rgba(34,211,238,.55) */
+  --sunil-text-accent: var(--sunil-cyan-400); /* 10.72 */
+  --sunil-text-heading: var(--sunil-sky-300); /* 11.61 */
+  --sunil-text-emphasis: var(--sunil-cyan-200); /* 15.51 */
+  --sunil-text-disabled: var(--sunil-ice-800); /* 6.19 — shell surfaces only */
+  --sunil-text-placeholder: var(--sunil-ice-800); /* 6.19 */
+  --sunil-text-on-accent: var(--sunil-void-900); /* 11.14 on cyan-400 */
+
+  /* borders */
+  --sunil-border-subtle: var(--sunil-cyan-a18); /* DECORATIVE ONLY */
+  --sunil-border-rule: var(--sunil-cyan-a12); /* DECORATIVE ONLY */
+  --sunil-border-interactive: #2e8296; /* 4.38 — every control boundary */
+  --sunil-border-focus: var(--sunil-cyan-300); /* 13.36 */
+  --sunil-border-danger: var(--sunil-rose-400); /* 7.00 */
+
+  /* status */
+  --sunil-status-ok: var(--sunil-emerald-400);
+  --sunil-status-warn: var(--sunil-amber-400);
+  --sunil-status-danger: var(--sunil-rose-400);
+  --sunil-status-danger-text: var(--sunil-rose-300);
+  --sunil-status-offline: var(--sunil-slate-500); /* corrected from #475569 (§6.2) */
+  --sunil-status-unknown: var(--sunil-ice-800);
+
+  /* accent fills */
+  --sunil-accent-fill: var(--sunil-cyan-400);
+  --sunil-accent-tint-weak: var(--sunil-cyan-a08);
+  --sunil-accent-tint: var(--sunil-cyan-a12);
+  --sunil-accent-tint-strong: var(--sunil-cyan-a20);
+  --sunil-accent-tint-max: var(--sunil-cyan-a28);
+  --sunil-accent-glow: var(--sunil-cyan-a55); /* glow colour ONLY — never a text colour */
+
+  /* §3.2 Typography semantics. A "role" is a set of related properties; CSS custom
+     properties hold one value each, so each role expands to -family/-size/-lh/-weight/
+     -ls/-case and is applied through the `.sunil-type-*` utility classes in base.css. */
+  --sunil-type-display-lg-family: var(--sunil-font-display);
+  --sunil-type-display-lg-size: 34px;
+  --sunil-type-display-lg-lh: 40px;
+  --sunil-type-display-lg-weight: var(--sunil-weight-bold);
+  --sunil-type-display-lg-ls: 0.235em;
+  --sunil-type-display-lg-case: uppercase;
+
+  --sunil-type-display-family: var(--sunil-font-display);
+  --sunil-type-display-size: 30px;
+  --sunil-type-display-lh: 36px;
+  --sunil-type-display-weight: var(--sunil-weight-semibold);
+  --sunil-type-display-ls: 0.06em;
+  --sunil-type-display-case: none;
+
+  --sunil-type-display-sm-family: var(--sunil-font-display);
+  --sunil-type-display-sm-size: 22px;
+  --sunil-type-display-sm-lh: 28px;
+  --sunil-type-display-sm-weight: var(--sunil-weight-semibold);
+  --sunil-type-display-sm-ls: 0.04em;
+  --sunil-type-display-sm-case: none;
+
+  --sunil-type-title-family: var(--sunil-font-display);
+  --sunil-type-title-size: 18px;
+  --sunil-type-title-lh: 24px;
+  --sunil-type-title-weight: var(--sunil-weight-semibold);
+  --sunil-type-title-ls: 0.08em;
+  --sunil-type-title-case: none;
+
+  --sunil-type-eyebrow-family: var(--sunil-font-display);
+  --sunil-type-eyebrow-size: 11px;
+  --sunil-type-eyebrow-lh: 16px;
+  --sunil-type-eyebrow-weight: var(--sunil-weight-semibold);
+  --sunil-type-eyebrow-ls: 0.273em;
+  --sunil-type-eyebrow-case: uppercase;
+
+  --sunil-type-action-family: var(--sunil-font-display);
+  --sunil-type-action-size: 13px;
+  --sunil-type-action-lh: 20px;
+  --sunil-type-action-weight: var(--sunil-weight-semibold);
+  --sunil-type-action-ls: 0.308em;
+  --sunil-type-action-case: uppercase;
+
+  --sunil-type-body-family: var(--sunil-font-mono);
+  --sunil-type-body-size: 14px;
+  --sunil-type-body-lh: 22px;
+  --sunil-type-body-weight: var(--sunil-weight-regular);
+  --sunil-type-body-ls: 0;
+  --sunil-type-body-case: none;
+
+  --sunil-type-body-sm-family: var(--sunil-font-mono);
+  --sunil-type-body-sm-size: 13px;
+  --sunil-type-body-sm-lh: 20px;
+  --sunil-type-body-sm-weight: var(--sunil-weight-regular);
+  --sunil-type-body-sm-ls: 0.02em;
+  --sunil-type-body-sm-case: none;
+
+  --sunil-type-caption-family: var(--sunil-font-mono);
+  --sunil-type-caption-size: 12px;
+  --sunil-type-caption-lh: 18px;
+  --sunil-type-caption-weight: var(--sunil-weight-regular);
+  --sunil-type-caption-ls: 0.08em;
+  --sunil-type-caption-case: none;
+
+  --sunil-type-micro-family: var(--sunil-font-mono);
+  --sunil-type-micro-size: 11px; /* corrected from the prototype's 10px (§6.4) */
+  --sunil-type-micro-lh: 16px;
+  --sunil-type-micro-weight: var(--sunil-weight-regular);
+  --sunil-type-micro-ls: 0.18em;
+  --sunil-type-micro-case: uppercase;
+
+  /* §3.3 Motion semantics */
+  --sunil-motion-hover: var(--sunil-duration-fast) var(--sunil-ease-out);
+  --sunil-motion-control: var(--sunil-duration-base) var(--sunil-ease-standard);
+  --sunil-motion-surface: var(--sunil-duration-slower) var(--sunil-ease-standard);
+  --sunil-motion-emphasis: var(--sunil-duration-slow) var(--sunil-ease-inout);
+
+  /* ===================================================================== */
+  /* LAYER 3 — COMPONENT TOKENS (DESIGN_TOKENS.md §4)                      */
+  /* ===================================================================== */
+
+  /* App shell */
+  --sunil-shell-sidebar-w: 264px;
+  --sunil-shell-sidebar-w-rail: 72px;
+  --sunil-shell-drawer-w: 288px;
+  --sunil-shell-header-h: 64px;
+  --sunil-shell-header-h-compact: 56px;
+  --sunil-shell-content-max: 1440px;
+  --sunil-shell-pad-x: var(--sunil-space-24);
+  --sunil-shell-pad-x-compact: var(--sunil-space-16);
+  --sunil-shell-bg: var(--sunil-bg);
+  --sunil-shell-header-bg: var(--sunil-surface-solid);
+  --sunil-shell-header-border: var(--sunil-border-subtle);
+
+  /* Nav item */
+  --sunil-nav-item-h: 40px;
+  --sunil-nav-item-pad-x: var(--sunil-space-12);
+  --sunil-nav-item-gap: var(--sunil-space-10);
+  --sunil-nav-item-radius: var(--sunil-radius-4);
+  --sunil-nav-item-fg: var(--sunil-text-secondary);
+  --sunil-nav-item-fg-hover: var(--sunil-text-primary);
+  --sunil-nav-item-fg-active: var(--sunil-text-accent);
+  --sunil-nav-item-fg-disabled: var(--sunil-text-disabled);
+  --sunil-nav-item-bg-hover: var(--sunil-accent-tint-weak);
+  --sunil-nav-item-bg-active: var(--sunil-accent-tint);
+  --sunil-nav-item-marker-w: var(--sunil-border-2);
+  --sunil-nav-item-marker: var(--sunil-accent-fill);
+  --sunil-nav-group-fg: var(--sunil-text-muted);
+
+  /* Panel */
+  --sunil-panel-bg: var(--sunil-surface);
+  --sunil-panel-bg-opaque: var(--sunil-surface-solid);
+  --sunil-panel-border: var(--sunil-border-subtle);
+  --sunil-panel-radius: var(--sunil-radius-6);
+  --sunil-panel-pad: var(--sunil-space-16);
+  --sunil-panel-pad-y: var(--sunil-space-14);
+  --sunil-panel-blur: 3px;
+  --sunil-panel-accent-w: 46px;
+  --sunil-panel-accent-inset: var(--sunil-space-12);
+  --sunil-panel-title-fg: var(--sunil-text-heading);
+  --sunil-panel-title-mb: var(--sunil-space-12);
+
+  /* Button */
+  --sunil-btn-h: 40px;
+  --sunil-btn-h-sm: 32px;
+  --sunil-btn-pad-x: var(--sunil-space-20);
+  --sunil-btn-radius: var(--sunil-radius-6);
+  --sunil-btn-primary-bg: var(--sunil-accent-fill);
+  --sunil-btn-primary-fg: var(--sunil-text-on-accent);
+  --sunil-btn-ghost-bg: var(--sunil-accent-tint-weak);
+  --sunil-btn-ghost-bg-hover: var(--sunil-accent-tint-strong);
+  --sunil-btn-ghost-fg: var(--sunil-text-accent);
+  --sunil-btn-ghost-border: var(--sunil-border-interactive);
+
+  /* Field */
+  --sunil-field-h: 44px;
+  --sunil-field-pad-x: var(--sunil-space-12);
+  --sunil-field-radius: var(--sunil-radius-4);
+  --sunil-field-bg: var(--sunil-surface-input);
+  --sunil-field-border: var(--sunil-border-interactive);
+  --sunil-field-border-focus: var(--sunil-border-focus);
+  --sunil-field-border-error: var(--sunil-border-danger);
+  --sunil-field-fg: var(--sunil-text-primary);
+  --sunil-field-placeholder: var(--sunil-text-placeholder);
+  --sunil-field-label-fg: var(--sunil-text-muted);
+  --sunil-field-hint-fg: var(--sunil-text-secondary);
+  --sunil-field-error-fg: var(--sunil-status-danger-text);
+
+  /* Lamp */
+  --sunil-lamp-size: 8px;
+  --sunil-lamp-on: var(--sunil-status-ok);
+  --sunil-lamp-warn: var(--sunil-status-warn);
+  --sunil-lamp-error: var(--sunil-status-danger);
+  --sunil-lamp-off: var(--sunil-status-offline);
+  --sunil-lamp-unknown: var(--sunil-status-unknown);
+
+  /* Badge / chip */
+  --sunil-badge-h: 18px;
+  --sunil-badge-pad-x: var(--sunil-space-6);
+  --sunil-badge-radius: var(--sunil-radius-2);
+  --sunil-badge-bg: var(--sunil-accent-tint-weak);
+  --sunil-badge-fg: var(--sunil-ice-500);
+  --sunil-badge-border: var(--sunil-border-subtle);
+
+  /* Focus ring */
+  --sunil-focus-w: var(--sunil-border-2);
+  --sunil-focus-offset: 2px;
+  --sunil-focus-color: var(--sunil-border-focus);
+
+  /* Presence canvas */
+  --sunil-presence-size-sm: 200px;
+  --sunil-presence-size-md: 320px;
+  --sunil-presence-size-lg: 440px;
+  --sunil-presence-point: var(--sunil-cyan-300);
+  --sunil-presence-arc: var(--sunil-cyan-400);
+  --sunil-presence-marker: var(--sunil-cyan-200);
+  --sunil-presence-glow: var(--sunil-cyan-400);
+
+  /* Skeleton */
+  --sunil-skeleton-bg: #0e1e2c; /* 1.14 on panel — a shape, never text */
+  --sunil-skeleton-sheen: #16303c;
+  --sunil-skeleton-radius: var(--sunil-radius-4);
+}
+
+/*
+ * DESIGN_TOKENS.md §3.3 — reduced motion is a token-level contract.
+ * 0.01ms rather than 0 so transitionend/animationend handlers still fire and no state
+ * machine stalls. <SunilPresence /> is NOT covered by this rule (a canvas ignores CSS);
+ * it has its own mandatory behaviour in SUNIL_PRESENCE_SPEC.md §8.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sunil-duration-instant: 0.01ms;
+    --sunil-duration-fast: 0.01ms;
+    --sunil-duration-base: 0.01ms;
+    --sunil-duration-slow: 0.01ms;
+    --sunil-duration-slower: 0.01ms;
+    --sunil-duration-pulse: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

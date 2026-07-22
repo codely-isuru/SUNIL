@@ -1,0 +1,42 @@
+# SUNIL — Phase 1 dev-loop override.
+#
+# Purpose (PHASE1_ARCHITECTURE.md §15.3 pitfall 6 — "Dev loop"): infra (`postgres`, `redis`)
+# runs in Compose; `api`/`web`/`worker`/`scheduler` run on the HOST via `turbo dev` for fast
+# hot reload (a Docker bind-mount dev loop on Windows is slow and symlink-hostile with pnpm —
+# §15.3 pitfall 1, and Next.js file-watching over a Windows bind mount is explicitly called out
+# as slow in §4 of the architecture). The base docker-compose.yml's full six-service build
+# remains the acceptance configuration; this file is a development convenience layered on top
+# of it, never a replacement for it.
+#
+# This file also fills the role PHASE1_ARCHITECTURE.md §15.1 calls "optional host publishing
+# behind a debug profile for developer inspection": rather than a Compose `profiles:` flag on
+# postgres/redis themselves (which would force an all-or-nothing choice on the base file), an
+# explicit second file that only takes effect when named gives the same "opt-in, never on by
+# default" guarantee and additionally serves host-run apps/tools in the dev loop. This is a
+# deliberate mechanism substitution — noted here for anyone reviewing against §15.1's literal
+# wording — not a silent reinterpretation.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+#
+# Then point host-run apps/tools at:
+#   DATABASE_URL=postgresql://<user>:<password>@localhost:${SUNIL_PORT_POSTGRES:-5432}/<db>
+#   REDIS_URL=redis://localhost:${SUNIL_PORT_REDIS:-6379}
+#
+# (Same credential fallback defaults as docker-compose.yml — see that file's comments. Override
+# via a real .env for anything beyond solo local dev.)
+
+services:
+  postgres:
+    ports:
+      - "${SUNIL_PORT_POSTGRES:-5432}:5432"
+
+  redis:
+    ports:
+      - "${SUNIL_PORT_REDIS:-6379}:6379"
+
+  # api/web/worker/scheduler are intentionally NOT overridden here. When you want infra-only
+  # (the normal dev-loop case), just don't name them:
+  #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+  # Compose only builds/starts services you name (plus their dependencies), so api/web/worker/
+  # scheduler — which don't have Dockerfiles yet in any case — are never touched by that command.

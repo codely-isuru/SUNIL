@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "references": [{ "path": "../core" }],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/__tests__/**", "dist", "node_modules"]
+}

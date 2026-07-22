@@ -1,0 +1,33 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json", ".npmrc"],
+  "globalEnv": ["NODE_ENV", "CI"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "src/generated/**", ".next/**", "!.next/cache/**"],
+      "env": ["DATABASE_URL"]
+    },
+    "typecheck": {
+      "dependsOn": ["build"],
+      "outputs": ["*.tsbuildinfo"]
+    },
+    "lint": {
+      "dependsOn": [],
+      "outputs": []
+    },
+    "//#lint:deps": {
+      "dependsOn": [],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": [".vitest/**", "coverage/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

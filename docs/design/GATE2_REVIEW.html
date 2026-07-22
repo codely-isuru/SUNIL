@@ -1,0 +1,956 @@
+<title>S.U.N.I.L — Gate 2 Design Review</title>
+
+<style>
+  :root{
+    color-scheme: dark;
+    /* corrected SUNIL tokens — this page is rendered with the palette it recommends */
+    --bg:#030712;
+    --panel:#060D1C;
+    --raised:#0B172A;
+    --input:#122238;
+    --glow-surface:#09303E;
+
+    --text-primary:#E3F5FA;
+    --text-secondary:#9AC5D4;
+    --text-muted:#1BA3BC;
+    --text-accent:#22D3EE;
+    --text-heading:#7DD3FC;
+    --text-emphasis:#A5F3FC;
+    --text-disabled:#6499AE;
+
+    --border-subtle:rgba(34,211,238,.18);
+    --border-rule:rgba(34,211,238,.12);
+    --border-interactive:#2E8296;
+    --focus:#67E8F9;
+
+    --ok:#34D399;
+    --warn:#FBBF24;
+    --danger:#F87171;
+    --danger-text:#FCA5A5;
+    --offline:#64748B;
+
+    /* System stacks that evoke Orbitron / Share Tech Mono. No fonts are loaded. */
+    --font-display:"Eurostile","Bank Gothic","Square721 BT","Trebuchet MS","Segoe UI",system-ui,-apple-system,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Mono","Consolas","SFMono-Regular",Menlo,"DejaVu Sans Mono",monospace;
+
+    --spec-scale:1;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{overflow-x:hidden;background:var(--bg)}
+
+  /* full-bleed backdrop so the page reads as SUNIL regardless of the host wrapper */
+  .backdrop{
+    position:fixed; inset:0; z-index:-2; background:var(--bg);
+  }
+  .backdrop::after{
+    content:""; position:absolute; inset:0; opacity:.045; pointer-events:none;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#67E8F9 2px 3px);
+  }
+  /* inset:0 so the glow can never extend past the viewport and create a scrollbar */
+  .aura{
+    position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:radial-gradient(760px 760px at calc(100% + 90px) -120px,
+      rgba(34,211,238,.14) 0%, rgba(34,211,238,0) 62%);
+  }
+
+  .page{
+    font-family:var(--font-mono);
+    font-size:15px; line-height:24px;
+    color:var(--text-primary);
+    max-width:1160px; margin:0 auto; padding:32px 20px 96px;
+    overflow-x:hidden;
+  }
+
+  /* ---------- type ---------- */
+  h1,h2,h3,h4{font-family:var(--font-display);font-weight:700}
+  h1{font-size:clamp(26px,5.2vw,40px);line-height:1.15;letter-spacing:.2em;color:var(--text-accent);
+     text-shadow:0 0 18px rgba(34,211,238,.45)}
+  h2{font-size:clamp(19px,3.2vw,25px);line-height:1.25;letter-spacing:.06em;color:var(--text-primary);margin-bottom:6px}
+  h3{font-size:16px;line-height:1.35;letter-spacing:.05em;color:var(--text-heading);margin-bottom:8px}
+  h4{font-size:11px;line-height:16px;letter-spacing:.2em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
+  p{margin-bottom:14px;max-width:74ch}
+  p:last-child{margin-bottom:0}
+  strong{color:var(--text-emphasis);font-weight:600}
+  em{color:var(--text-secondary);font-style:normal;border-bottom:1px dotted var(--border-interactive)}
+  a{color:var(--text-accent);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.35)}
+  a:hover{border-bottom-color:var(--text-accent)}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
+  code,.mono{font-family:var(--font-mono);font-size:.92em;color:var(--text-secondary);
+    background:rgba(34,211,238,.07);border:1px solid var(--border-rule);border-radius:3px;padding:1px 5px;
+    white-space:nowrap}
+  ul,ol{margin:0 0 14px 20px}
+  li{margin-bottom:7px;max-width:72ch}
+  li:last-child{margin-bottom:0}
+
+  .eyebrow{font-family:var(--font-display);font-size:11px;letter-spacing:.28em;text-transform:uppercase;
+    color:var(--text-muted);margin-bottom:10px}
+  .lede{font-size:16px;line-height:26px;color:var(--text-secondary);max-width:76ch}
+  .small{font-size:12px;line-height:19px;color:var(--text-secondary)}
+  .tiny{font-size:11px;line-height:16px;letter-spacing:.06em;color:var(--text-secondary)}
+
+  /* ---------- masthead ---------- */
+  .masthead{border-bottom:1px solid var(--border-subtle);padding-bottom:26px;margin-bottom:34px}
+  .masthead .rule{width:46px;height:2px;background:var(--text-accent);box-shadow:0 0 8px var(--text-accent);margin:14px 0 16px}
+  .masthead .sub{font-family:var(--font-display);font-size:11px;letter-spacing:.28em;text-transform:uppercase;
+    color:var(--text-secondary)}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:18px}
+  .meta div{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
+  .meta span{color:var(--text-secondary);text-transform:none;letter-spacing:0}
+
+  /* ---------- panels ---------- */
+  .panel{position:relative;background:var(--panel);border:1px solid var(--border-subtle);border-radius:6px;
+    padding:20px 18px}
+  .panel::before{content:"";position:absolute;top:-1px;left:12px;width:46px;height:2px;
+    background:var(--text-accent);box-shadow:0 0 8px var(--text-accent)}
+  .panel + .panel{margin-top:16px}
+
+  .callout{border-left:2px solid var(--warn);background:var(--raised);border-radius:0 6px 6px 0;padding:16px 18px}
+  .callout.rec{border-left-color:var(--ok)}
+  .callout.note{border-left-color:var(--text-accent)}
+  .callout h4{color:var(--text-heading)}
+
+  section{margin-bottom:56px;scroll-margin-top:16px}
+  .section-head{border-bottom:1px solid var(--border-rule);padding-bottom:14px;margin-bottom:24px}
+  .block{margin-bottom:30px}
+
+  /* ---------- TOC ---------- */
+  .toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:40px}
+  .toc a{display:block;border:1px solid var(--border-subtle);border-radius:4px;padding:11px 13px;
+    background:var(--panel);border-bottom:1px solid var(--border-subtle);font-size:13px;color:var(--text-secondary)}
+  .toc a:hover{background:rgba(34,211,238,.08);color:var(--text-primary);border-color:var(--border-interactive)}
+  .toc b{display:block;font-family:var(--font-display);font-size:10px;letter-spacing:.22em;
+    color:var(--text-muted);margin-bottom:3px;font-weight:600}
+
+  /* ---------- specimen grid ---------- */
+  .scale-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 18px;
+    padding:12px 14px;background:var(--raised);border:1px solid var(--border-rule);border-radius:6px}
+  .scale-bar .lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-muted)}
+  .scale-bar button{font-family:var(--font-display);font-size:12px;letter-spacing:.14em;
+    color:var(--text-accent);background:rgba(34,211,238,.08);border:1px solid var(--border-interactive);
+    border-radius:4px;padding:7px 15px;cursor:pointer;min-height:34px}
+  .scale-bar button:hover{background:rgba(34,211,238,.2)}
+  .scale-bar button[aria-pressed="true"]{background:rgba(34,211,238,.28);color:var(--text-emphasis);
+    border-color:var(--text-accent)}
+
+  .specimens{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start}
+  .col{min-width:0}
+  .col-head{border:1px solid var(--border-subtle);border-radius:6px 6px 0 0;padding:13px 14px;background:var(--raised)}
+  .col-head .name{font-family:var(--font-display);font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--text-primary);margin-bottom:5px}
+  .col-head .val{font-size:11px;line-height:16px;color:var(--text-secondary);word-break:break-all}
+  .verdict{display:inline-block;font-family:var(--font-display);font-size:10px;letter-spacing:.18em;
+    padding:3px 7px;border-radius:2px;margin-top:9px;text-transform:uppercase}
+  .verdict.fail{background:rgba(248,113,113,.14);border:1px solid var(--danger);color:var(--danger-text)}
+  .verdict.pass{background:rgba(52,211,153,.12);border:1px solid var(--ok);color:var(--ok)}
+  .col-body{border:1px solid var(--border-subtle);border-top:none;border-radius:0 0 6px 6px;overflow:hidden}
+
+  .surface{padding:16px 14px;border-bottom:1px solid var(--border-rule)}
+  .surface:last-child{border-bottom:none}
+  .surface--bg{background:#030712}
+  .surface--panel{background:#060D1C}
+  /* held at #09303E across the whole block so the quoted worst-case ratio is
+     the ratio actually being looked at, with only a slight fall-off at the edge */
+  .surface--glow{background:radial-gradient(circle at 50% 45%, #09303E 0%, #09303E 62%, #082A37 100%)}
+  .surface-tag{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    font-size:10px;line-height:14px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--text-secondary);margin-bottom:12px}
+  .surface-tag .r{color:var(--text-secondary);letter-spacing:.04em}
+  .surface-tag .r.bad{color:var(--danger-text)}
+  .surface-tag .r.good{color:var(--ok)}
+
+  /* the specimen HUD content — this is where the candidate colour is applied */
+  .spec{--c:var(--text-muted)}
+  .spec .stat{border:1px solid var(--border-rule);border-radius:4px;padding:9px 10px;margin-bottom:11px}
+  .spec .stat .k{font-family:var(--font-display);font-size:calc(10px * var(--spec-scale));
+    line-height:1.5;letter-spacing:.2em;text-transform:uppercase;color:var(--c)}
+  .spec .stat .v{font-family:var(--font-display);font-size:calc(22px * var(--spec-scale));line-height:1.25;
+    letter-spacing:.04em;color:var(--text-accent);margin:3px 0 1px;
+    font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(34,211,238,.4)}
+  .spec .stat .u{font-size:calc(10px * var(--spec-scale));line-height:1.5;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--c)}
+  .spec .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    padding:6px 0;border-bottom:1px dashed var(--border-rule)}
+  .spec .row:last-of-type{border-bottom:none}
+  .spec .row .n{font-size:calc(12px * var(--spec-scale));line-height:1.5;color:var(--text-primary)}
+  .spec .row .s{font-size:calc(10px * var(--spec-scale));line-height:1.6;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--c);white-space:nowrap}
+  .spec .lamp{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;
+    background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .spec .lamp.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+  .spec .lamp.off{background:#64748B;box-shadow:none}
+  .spec .stamp{font-size:calc(12px * var(--spec-scale));line-height:1.6;color:var(--c);
+    font-variant-numeric:tabular-nums;margin-top:11px}
+  .spec .stamp em{border:none;color:inherit;opacity:.92}
+  .spec .cap{font-size:calc(11px * var(--spec-scale));line-height:1.55;color:var(--c);margin-top:9px}
+
+  /* the three candidates */
+  .opt-orig .spec{--c:rgba(34,211,238,.55)}
+  .opt-a    .spec{--c:#1BA3BC}
+  .opt-b    .spec{--c:rgba(34,211,238,.72)}
+
+  /* ---------- D-4 before/after ---------- */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .ba .card{background:var(--panel);border:1px solid var(--border-subtle);border-radius:6px;padding:16px 16px 18px}
+  .ba .card h4{margin-bottom:12px}
+  .ba .body{font-size:14px;line-height:22px}
+  .ba .before .body{color:#22D3EE}
+  .ba .after .body{color:#E3F5FA}
+
+  /* ---------- tables ---------- */
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border-subtle);
+    border-radius:6px;background:var(--panel)}
+  table{border-collapse:collapse;width:100%;min-width:600px;font-size:13px;line-height:20px}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--border-rule);vertical-align:top}
+  th{font-family:var(--font-display);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--text-muted);background:var(--raised);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td strong{color:var(--text-heading);font-weight:600}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:7px;
+    vertical-align:-1px;border:1px solid rgba(255,255,255,.18)}
+
+  /* ---------- figures ---------- */
+  .figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .fig{background:var(--panel);border:1px solid var(--border-subtle);border-radius:6px;padding:15px 14px;text-align:center}
+  .fig .v{font-family:var(--font-display);font-size:28px;line-height:1.2;letter-spacing:.03em;
+    color:var(--text-accent);font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(34,211,238,.4)}
+  .fig .v.warn{color:var(--warn);text-shadow:0 0 12px rgba(251,191,36,.35)}
+  .fig .v.ok{color:var(--ok);text-shadow:0 0 12px rgba(52,211,153,.3)}
+  .fig .k{font-size:10px;line-height:15px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--text-muted);margin-top:8px}
+
+  /* ---------- decision cards ---------- */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+  .card-d{background:var(--panel);border:1px solid var(--border-subtle);border-radius:6px;padding:17px 16px}
+  .card-d .tag{font-family:var(--font-display);font-size:10px;letter-spacing:.2em;color:var(--text-muted);
+    text-transform:uppercase;margin-bottom:7px}
+  .card-d h3{margin-bottom:9px}
+  .card-d p{font-size:13px;line-height:21px;color:var(--text-secondary);margin-bottom:10px}
+  .card-d .out{font-size:12px;line-height:19px;color:var(--text-primary);
+    border-top:1px dashed var(--border-rule);padding-top:10px}
+
+  /* ---------- file index ---------- */
+  .files{display:flex;flex-direction:column;gap:9px}
+  .file{background:var(--panel);border:1px solid var(--border-subtle);border-radius:5px;padding:12px 14px}
+  .file .p{font-family:var(--font-mono);font-size:12px;line-height:18px;color:var(--text-accent);
+    word-break:break-all;margin-bottom:4px}
+  .file .d{font-size:12.5px;line-height:19px;color:var(--text-secondary)}
+  .file .sz{float:right;font-size:10px;letter-spacing:.12em;color:var(--text-disabled);
+    text-transform:uppercase;margin-left:10px}
+  .files h4{margin:14px 0 2px}
+  .files h4:first-child{margin-top:0}
+
+  .ask{background:var(--raised);border:1px solid var(--border-interactive);border-radius:6px;padding:20px 18px}
+  .ask h3{color:var(--text-emphasis)}
+  .ask ol{margin-bottom:0}
+
+  hr.sep{border:none;border-top:1px solid var(--border-rule);margin:26px 0}
+
+  footer{border-top:1px solid var(--border-subtle);padding-top:22px;margin-top:20px}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .specimens{grid-template-columns:1fr;gap:20px}
+    .ba{grid-template-columns:1fr}
+  }
+  @media (max-width:640px){
+    .page{padding:24px 14px 72px;font-size:14.5px}
+    h1{letter-spacing:.13em}
+    .panel{padding:16px 14px}
+    th,td{padding:9px 11px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  }
+</style>
+
+<div class="backdrop" aria-hidden="true"></div>
+<div class="aura" aria-hidden="true"></div>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Minions delivery team · UI/UX</div>
+    <h1>S.U.N.I.L</h1>
+    <div class="rule"></div>
+    <div class="sub">Gate 2 — Design Review &amp; Decision</div>
+    <div class="meta">
+      <div>Stage <span>3 — Specification</span></div>
+      <div>Branch <span>feature/phase-1-foundation</span></div>
+      <div>Phase <span>1 — Foundation</span></div>
+      <div>Awaiting <span>one decision from you (§1)</span></div>
+    </div>
+  </header>
+
+  <p class="lede">
+    Two things here. <strong>Section 1</strong> is the only decision that needs you: you asked to
+    see the dim-cyan text change rendered rather than argued from numbers, so it is rendered — real
+    HUD content, at the real sizes, on the real backdrops. <strong>Section 2</strong> is everything
+    Stage 3 produced, in a form you can skim in a few minutes, with a map of where the detail lives.
+  </p>
+
+  <div class="callout note" style="margin:22px 0 34px">
+    <h4>About what you are looking at</h4>
+    <p class="small" style="margin-bottom:0">
+      This page is a single self-contained file — no external fonts, scripts or stylesheets, because
+      it is served under a strict content-security policy. <strong>Orbitron and Share Tech Mono are
+      therefore not loaded here.</strong> The page substitutes the closest system faces, so the
+      letterforms are an approximation; the real product self-hosts both fonts. Everything that
+      matters for this decision — the colours, the sizes, the backdrops, the contrast ratios — is
+      exact. The palette on this page <em>is</em> the corrected palette, so you are also seeing the
+      design language working at page scale.
+    </p>
+  </div>
+
+  <nav class="toc" aria-label="Contents">
+    <a href="#d1"><b>Section 1</b>The D-1 decision, rendered</a>
+    <a href="#d4"><b>Section 1b</b>Body text: cyan → ice</a>
+    <a href="#tradeoff"><b>Section 1c</b>The real trade-off &amp; my recommendation</a>
+    <a href="#summary"><b>Section 2</b>What Stage 3 produced</a>
+    <a href="#dashboard"><b>Section 2e</b>What your dashboard will look like</a>
+    <a href="#files"><b>Section 2f</b>Where the detail lives</a>
+  </nav>
+
+  <!-- ================= SECTION 1 ================= -->
+  <section id="d1">
+    <div class="section-head">
+      <div class="eyebrow">Section 1 · Decision required</div>
+      <h2>The dim-cyan label colour, rendered three ways</h2>
+    </div>
+
+    <div class="block">
+      <p>
+        The prototype has exactly two text colours: bright cyan for values, and a 55%-transparent
+        cyan for everything else — labels, units, timestamps, status words. That second colour is
+        used by almost every small piece of text in the interface, and it <strong>fails the
+        accessibility contrast standard</strong> the project committed to (4.5:1 for normal text).
+        Measured, it reaches <strong>3.43:1</strong> at worst.
+      </p>
+      <p>
+        The awkward part: on a near-black background, "dimmer" and "harder to read" are the same
+        physical quantity. There is no version of dim cyan that is both dimmer and compliant. So the
+        question is not <em>whether</em> it changes, but <em>which</em> replacement still feels like
+        SUNIL. Below, the same three pieces of real interface — a stat tile, a status list and a
+        timestamp — drawn in each candidate, on each of the three backgrounds they actually appear
+        on in the product.
+      </p>
+    </div>
+
+    <div class="scale-bar" role="group" aria-labelledby="zoom-label">
+      <span class="lbl" id="zoom-label">Specimen size</span>
+      <button type="button" data-scale="1" aria-pressed="true">1× actual</button>
+      <button type="button" data-scale="1.5" aria-pressed="false">1.5×</button>
+      <button type="button" data-scale="2" aria-pressed="false">2×</button>
+      <span class="tiny" style="flex:1;min-width:180px">
+        Start at 1× — that is the true size. Zoom only to inspect the letterforms.
+      </span>
+    </div>
+
+    <div class="specimens">
+
+      <!-- ORIGINAL -->
+      <div class="col opt-orig">
+        <div class="col-head">
+          <div class="name">Original</div>
+          <div class="val"><span class="swatch" style="background:#14778B"></span>rgba(34,211,238,.55)</div>
+          <span class="verdict fail">Fails · 3.43:1 worst</span>
+        </div>
+        <div class="col-body">
+          <div class="surface surface--bg">
+            <div class="surface-tag"><span>On page background</span><span class="r bad">3.88:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">Session uptime</div>
+                <div class="v">04:12:07</div>
+                <div class="u">hh:mm:ss · since 16:36</div>
+              </div>
+              <div class="row"><span class="n"><span class="lamp"></span>POSTGRES</span><span class="s">Online</span></div>
+              <div class="row"><span class="n"><span class="lamp"></span>REDIS</span><span class="s">Online</span></div>
+              <div class="row"><span class="n"><span class="lamp warn"></span>SCHEDULER</span><span class="s">Starting</span></div>
+              <div class="row"><span class="n"><span class="lamp off"></span>ANTHROPIC</span><span class="s">Not configured</span></div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Last audit write · correlation 8f3c-a91d</div>
+            </div>
+          </div>
+          <div class="surface surface--panel">
+            <div class="surface-tag"><span>On panel</span><span class="r bad">3.89:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">Queue depth</div>
+                <div class="v">1,284</div>
+                <div class="u">jobs waiting</div>
+              </div>
+              <div class="row"><span class="n"><span class="lamp"></span>WORKER</span><span class="s">Online</span></div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Retention 90 days · append-only</div>
+            </div>
+          </div>
+          <div class="surface surface--glow">
+            <div class="surface-tag"><span>Over the presence glow</span><span class="r bad">3.43:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">State</div>
+                <div class="v">IDLE</div>
+                <div class="u">no task assigned</div>
+              </div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Hobart · configurable</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTION A -->
+      <div class="col opt-a">
+        <div class="col-head">
+          <div class="name">Option A — opaque</div>
+          <div class="val"><span class="swatch" style="background:#1BA3BC"></span>#1BA3BC</div>
+          <span class="verdict pass">Passes · 4.67:1 worst</span>
+        </div>
+        <div class="col-body">
+          <div class="surface surface--bg">
+            <div class="surface-tag"><span>On page background</span><span class="r good">6.72:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">Session uptime</div>
+                <div class="v">04:12:07</div>
+                <div class="u">hh:mm:ss · since 16:36</div>
+              </div>
+              <div class="row"><span class="n"><span class="lamp"></span>POSTGRES</span><span class="s">Online</span></div>
+              <div class="row"><span class="n"><span class="lamp"></span>REDIS</span><span class="s">Online</span></div>
+              <div class="row"><span class="n"><span class="lamp warn"></span>SCHEDULER</span><span class="s">Starting</span></div>
+              <div class="row"><span class="n"><span class="lamp off"></span>ANTHROPIC</span><span class="s">Not configured</span></div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Last audit write · correlation 8f3c-a91d</div>
+            </div>
+          </div>
+          <div class="surface surface--panel">
+            <div class="surface-tag"><span>On panel</span><span class="r good">6.48:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">Queue depth</div>
+                <div class="v">1,284</div>
+                <div class="u">jobs waiting</div>
+              </div>
+              <div class="row"><span class="n"><span class="lamp"></span>WORKER</span><span class="s">Online</span></div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Retention 90 days · append-only</div>
+            </div>
+          </div>
+          <div class="surface surface--glow">
+            <div class="surface-tag"><span>Over the presence glow</span><span class="r good">4.67:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">State</div>
+                <div class="v">IDLE</div>
+                <div class="u">no task assigned</div>
+              </div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Hobart · configurable</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTION B -->
+      <div class="col opt-b">
+        <div class="col-head">
+          <div class="name">Option B — alpha</div>
+          <div class="val"><span class="swatch" style="background:#1A9CB3"></span>rgba(34,211,238,.72)</div>
+          <span class="verdict pass">Passes · 4.79:1 worst</span>
+        </div>
+        <div class="col-body">
+          <div class="surface surface--bg">
+            <div class="surface-tag"><span>On page background</span><span class="r good">6.03:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">Session uptime</div>
+                <div class="v">04:12:07</div>
+                <div class="u">hh:mm:ss · since 16:36</div>
+              </div>
+              <div class="row"><span class="n"><span class="lamp"></span>POSTGRES</span><span class="s">Online</span></div>
+              <div class="row"><span class="n"><span class="lamp"></span>REDIS</span><span class="s">Online</span></div>
+              <div class="row"><span class="n"><span class="lamp warn"></span>SCHEDULER</span><span class="s">Starting</span></div>
+              <div class="row"><span class="n"><span class="lamp off"></span>ANTHROPIC</span><span class="s">Not configured</span></div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Last audit write · correlation 8f3c-a91d</div>
+            </div>
+          </div>
+          <div class="surface surface--panel">
+            <div class="surface-tag"><span>On panel</span><span class="r good">5.94:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">Queue depth</div>
+                <div class="v">1,284</div>
+                <div class="u">jobs waiting</div>
+              </div>
+              <div class="row"><span class="n"><span class="lamp"></span>WORKER</span><span class="s">Online</span></div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Retention 90 days · append-only</div>
+            </div>
+          </div>
+          <div class="surface surface--glow">
+            <div class="surface-tag"><span>Over the presence glow</span><span class="r good">4.79:1</span></div>
+            <div class="spec">
+              <div class="stat">
+                <div class="k">State</div>
+                <div class="v">IDLE</div>
+                <div class="u">no task assigned</div>
+              </div>
+              <div class="stamp">21 JUL 2026 · 20:48:03 <em>AEDT</em></div>
+              <div class="cap">Hobart · configurable</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.specimens -->
+
+    <p class="tiny" style="margin-top:14px">
+      Labels and units are set at 10px, timestamps and captions at 11–12px — the real sizes from the
+      specification. Ratios are computed, not estimated: WCAG&nbsp;2.1 relative luminance, with
+      transparency composited against its actual backdrop before measurement. The third surface is
+      the brightest background the product can produce (the presence sphere's glow at full
+      intensity), which is why every candidate scores lowest there.
+    </p>
+  </section>
+
+  <!-- ================= D-4 ================= -->
+  <section id="d4">
+    <div class="section-head">
+      <div class="eyebrow">Section 1b · Also worth your eye</div>
+      <h2>Body text: cyan → ice</h2>
+    </div>
+
+    <p>
+      Separate from the decision above, and the change you are most likely to <em>notice</em>. The
+      prototype sets <strong>all</strong> text to full cyan. That passes contrast comfortably — this
+      is not a compliance fix — but the prototype only ever displays about thirty words. The real
+      product shows audit tables, log lines, settings forms and error messages. Saturated cyan at
+      paragraph length on near-black is tiring to read, and it spends the accent colour on
+      everything, so nothing can stand out.
+    </p>
+
+    <div class="ba">
+      <div class="card before">
+        <h4>Before — #22D3EE · 10.74:1</h4>
+        <div class="body">
+          The audit log is append-only. Every mutating request writes a record naming the actor, the
+          action, the target and the outcome, correlated to the request identifier that appears in
+          the structured logs. Records cannot be edited or deleted through the application, and any
+          attempt to do so is itself refused and recorded.
+        </div>
+      </div>
+      <div class="card after">
+        <h4>After — #E3F5FA · 17.29:1</h4>
+        <div class="body">
+          The audit log is append-only. Every mutating request writes a record naming the actor, the
+          action, the target and the outcome, correlated to the request identifier that appears in
+          the structured logs. Records cannot be edited or deleted through the application, and any
+          attempt to do so is itself refused and recorded.
+        </div>
+      </div>
+    </div>
+
+    <p class="small" style="margin-top:16px">
+      Cyan is <strong>kept</strong> — for values, links, active navigation and headings, which is
+      where it reads as SUNIL's voice rather than as wallpaper. Every value in the specimens above is
+      still full cyan. This change only affects running prose.
+    </p>
+  </section>
+
+  <!-- ================= TRADE-OFF ================= -->
+  <section id="tradeoff">
+    <div class="section-head">
+      <div class="eyebrow">Section 1c</div>
+      <h2>The one real trade-off, and what I would pick</h2>
+    </div>
+
+    <div class="block">
+      <p>
+        Both options pass. The difference is not how they look — at 1× they are very close — it is
+        what each one <strong>permits later</strong>.
+      </p>
+      <p>
+        <strong>Option B keeps the translucent idiom</strong>, which is genuinely part of the
+        prototype's character: the colour is cyan seen <em>through</em> the interface rather than
+        painted on it. It also happens to score marginally better over the glow, because transparent
+        text brightens along with whatever is behind it.
+      </p>
+      <p>
+        The cost is that it leaves <strong>transparency legal as a text colour</strong>. A
+        transparent colour has no fixed contrast ratio — it only has one once you know exactly what
+        is painted behind it. Today there are three backgrounds and all three were measured. This
+        phase introduces several more: a raised menu surface, a modal, a hover tint, a selected-row
+        highlight. The moment a label lands on one of those, its ratio changes, and
+        <strong>nothing in the build catches it</strong> — there is no test that can check a colour
+        whose value depends on what is underneath. It would simply become non-compliant quietly, and
+        the next time anyone found out would be an accessibility audit.
+      </p>
+      <p>
+        <strong>Option A is a fixed colour.</strong> Measure it once and it stays measured, on every
+        surface that will ever exist. That is the entire difference.
+      </p>
+    </div>
+
+    <div class="callout rec">
+      <h4>My recommendation</h4>
+      <p style="margin-bottom:10px">
+        <strong>Option A — the opaque #1BA3BC</strong> — on the grounds of durability rather than
+        appearance. It is the one that cannot silently regress, and label colour is not somewhere you
+        want a quiet failure across twenty-two screens.
+      </p>
+      <p class="small" style="margin-bottom:0">
+        That said, this is a judgement about your product's character as much as its compliance, and
+        <strong>the decision is yours, not mine</strong>. If the translucent quality matters to you
+        more than the guarantee, Option B is a legitimate choice and is fully specified — I would
+        then add a rule that transparency is permitted for this one token and nothing else, and ask
+        QA to re-measure it whenever a new surface colour is introduced. That is a process control
+        rather than a build control, which is weaker, but it is honest and it works if it is
+        followed.
+      </p>
+    </div>
+
+    <div class="ask" style="margin-top:18px">
+      <h3>What I need from you</h3>
+      <ol>
+        <li><strong>D-1:</strong> Option A, Option B, or "leave it failing and record the exception" — the third is available and would be documented as a deliberate accessibility deviation, not hidden.</li>
+        <li><strong>D-4 (body text cyan → ice):</strong> confirm or reject. Independent of D-1.</li>
+      </ol>
+      <p class="small" style="margin-top:12px;margin-bottom:0">
+        Nothing else in Stage 3 is blocked on you. Section 2 is for information — flag anything that
+        looks wrong and it goes back to the specialist who owns it.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= SECTION 2 ================= -->
+  <section id="summary">
+    <div class="section-head">
+      <div class="eyebrow">Section 2 · For information</div>
+      <h2>What Stage 3 produced</h2>
+    </div>
+
+    <div class="block">
+      <h3>a · The three decisions the Architect was asked to make</h3>
+      <p class="small">
+        These were routed up from the requirements as questions the analyst deliberately refused to
+        answer alone. All three are now settled and written down as decision records.
+      </p>
+      <div class="cards">
+        <div class="card-d">
+          <div class="tag">ADR-001 · Permissions</div>
+          <h3>Plain strings, no wildcards</h3>
+          <p>
+            Permissions are simple <code>resource:action</code> rows in the database —
+            <code>user:invite</code>, <code>secret:rotate</code> — and the check is a straight
+            "is it in the list?". No pattern matching, because a pattern-matching bug is a
+            privilege-escalation bug.
+          </p>
+          <div class="out">
+            <strong>Only one owner account can exist</strong>, and that is enforced three deep:
+            the setup script, the service layer, and a database index that rejects a second one even
+            if the code is bypassed.
+          </div>
+        </div>
+
+        <div class="card-d">
+          <div class="tag">ADR-002 · Job durability</div>
+          <h3>Redis writes to disk every second</h3>
+          <p>
+            The job queue is configured to append every change to disk with a one-second flush, on a
+            named volume, and is forbidden from evicting data under memory pressure — eviction would
+            silently delete queued jobs.
+          </p>
+          <div class="out">
+            <strong>Worst case if the machine is pulled apart mid-run: about one second of work.</strong>
+            A normal stop and start loses nothing at all, and job history lives in the database, so it
+            survives even a total queue wipe.
+          </div>
+        </div>
+
+        <div class="card-d">
+          <div class="tag">ADR-003 · Sign-in</div>
+          <h3>The pattern, not the library</h3>
+          <p>
+            The architecture named "Lucia-style" sessions. Lucia was <strong>discontinued by its
+            author</strong> and turned into documentation, so depending on it would tie your sign-in
+            to an abandoned package.
+          </p>
+          <div class="out">
+            The documented pattern is implemented directly; every cryptographic part comes from a
+            maintained library — <strong>argon2id password hashing via @node-rs</strong>, chosen
+            partly because it installs on Windows without a build toolchain.
+            <strong>No home-made cryptography anywhere.</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="sep">
+
+    <div class="block">
+      <h3>b · Five deliberate departures from the architecture document</h3>
+      <p class="small">
+        The target architecture was written for the finished system. Phase 1 departs from it in
+        exactly five places, each argued rather than assumed.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Architecture said</th><th>Phase 1 does</th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="num"><strong>D-1</strong></td>
+              <td>Sessions "Lucia-style"</td>
+              <td>The pattern, hand-written; Lucia is not a dependency</td>
+              <td>Lucia was deprecated by its author; pinning your security core to an unmaintained package is indefensible.</td>
+            </tr>
+            <tr>
+              <td class="num"><strong>D-2</strong></td>
+              <td>A WebSocket gateway (Socket.IO)</td>
+              <td>None in Phase 1; the seam is left for Phase 2</td>
+              <td>Chat and live activity feeds are Phase 2. Building it now creates attack surface nobody exercises or reviews.</td>
+            </tr>
+            <tr>
+              <td class="num"><strong>D-3</strong></td>
+              <td>Five job queues</td>
+              <td>Two — <code>agents</code> and a new <code>system</code></td>
+              <td>Three of the five belong to features that do not exist yet. <code>system</code> gives housekeeping jobs a home that is not a Phase 2 concern.</td>
+            </tr>
+            <tr>
+              <td class="num"><strong>D-4</strong></td>
+              <td>No secrets table (only "credential references")</td>
+              <td>A real encrypted <code>secrets</code> table is added now</td>
+              <td>Encrypted credential storage is a Phase 1 requirement. This is the storage the architecture implies but never names.</td>
+            </tr>
+            <tr>
+              <td class="num"><strong>D-5</strong></td>
+              <td>Integrations and Memory packages in the layout</td>
+              <td>Not created yet</td>
+              <td>Empty placeholder folders invite scope creep and dead code. They arrive with the phases that fill them.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <hr class="sep">
+
+    <div class="block">
+      <h3>c · The contrast audit</h3>
+      <p class="small">
+        The analyst flagged a risk that the cyan-on-near-black palette would fail accessibility for
+        small text. It was computed rather than guessed — every foreground colour in the prototype
+        against every background it can appear on.
+      </p>
+      <div class="figs">
+        <div class="fig"><div class="v">60</div><div class="k">Pairs computed</div></div>
+        <div class="fig"><div class="v warn">32</div><div class="k">Below 4.5:1</div></div>
+        <div class="fig"><div class="v warn">3</div><div class="k">Real token defects</div></div>
+        <div class="fig"><div class="v ok">5 / 5</div><div class="k">Locked brand colours pass</div></div>
+      </div>
+      <p style="margin-top:16px">
+        The raw count looks alarming and mostly is not. Twenty of those thirty-two are decorative
+        canvas ornament — the scanline veil, the rotating HUD arcs, the orbital ring — which carry no
+        information and are exempt from the standard. The remaining twelve are the same three colours
+        each measured against four different backgrounds, so stripped back to things whose role
+        actually imposes a threshold there are <strong>three real defects</strong>:
+      </p>
+      <ul>
+        <li><strong>The dim-cyan label colour</strong> at 3.43:1 — Section 1 of this page.</li>
+        <li><strong>The "offline" status dot</strong> at 1.85:1, which is the sole visual carrier of "this connector is down". Corrected one shade lighter; visually almost indistinguishable.</li>
+        <li><strong>The single border colour</strong> at 1.37:1 — fine as a decorative panel edge, unusable as the outline of a text field or a button. Split into two tokens so the decorative one cannot leak onto a control.</li>
+      </ul>
+      <p>
+        <strong>Every colour locked in the architecture document passes unchanged</strong> — the cyan
+        <code>#22d3ee</code>, the background <code>#030712</code>, the panel fill, the amber and the
+        green. Nothing in your brand identity had to move.
+      </p>
+    </div>
+
+    <hr class="sep">
+
+    <div class="block">
+      <h3>d · Two defects inherited from the prototype</h3>
+      <p class="small">
+        Both were found by reading the prototype closely during design. Neither is anyone's mistake —
+        they are the kind of thing a demo gets away with and a product does not.
+      </p>
+      <div class="cards">
+        <div class="card-d">
+          <div class="tag">Defect 1 · The clock</div>
+          <h3>Pinned to Melbourne</h3>
+          <p>
+            The prototype's clock is hard-coded to <code>Australia/Melbourne</code> and prints the
+            fixed label "MELBOURNE · AEST". You operate on Hobart.
+          </p>
+          <div class="out">
+            The two share an offset most of the year, which is exactly why this would survive casual
+            testing and then be wrong during the daylight-saving changeover and in every exported
+            timestamp. Fixed properly: the zone is a setting, defaults to <strong>Australia/Hobart</strong>,
+            the abbreviation is derived rather than typed, and no part of the product is allowed to
+            format a time without saying which zone it means.
+          </div>
+        </div>
+        <div class="card-d">
+          <div class="tag">Defect 2 · The sphere</div>
+          <h3>Runs 2.4× fast on a good screen</h3>
+          <p>
+            The animation advances its clock by a fixed amount <em>per frame drawn</em>, not per
+            second elapsed. On the 60 Hz screen it was written for, that is correct.
+          </p>
+          <div class="out">
+            On a 144 Hz laptop the whole thing runs <strong>2.4× too fast</strong>; on a busy machine
+            dropping frames, half speed. The rebuilt component measures real elapsed time instead, and
+            clamps it so that returning to a background tab does not make the sphere lurch.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="sep">
+
+    <div class="block" id="dashboard">
+      <h3>e · What your dashboard will actually look like</h3>
+      <div class="callout">
+        <h4>Setting this expectation now rather than at the demo</h4>
+        <p style="margin-bottom:12px">
+          The prototype dashboard is full — revenue, subscribers, ad spend, a content queue, a task
+          list, six connector lamps. <strong>Every one of those numbers is typed into the file by
+          hand.</strong> None of it is connected to anything, and Phase 1 builds none of the features
+          that would connect it.
+        </p>
+        <p style="margin-bottom:12px">
+          So the Phase 1 dashboard will be <strong>mostly empty, on purpose</strong>. It has a
+          permanent banner saying which phase you are in and what does not exist yet; the presence
+          sphere; one panel of genuinely live data — database, queue, worker, scheduler status,
+          really queried; a plain list of what is coming and in which phase; and three links to the
+          things that do work.
+        </p>
+        <p style="margin-bottom:0">
+          There are no placeholder metrics and no sample charts, because the project rule is that
+          nothing mocked may be presented as complete. The alternative — copying the prototype's
+          layout and filling it with invented numbers — would give you a screen that lies at a
+          glance, and the first time you trusted one of those numbers it would cost more than the
+          empty space does. <strong>The empty space is the honest state of the system, and it will
+          fill in over Phases 2 and 3.</strong>
+        </p>
+      </div>
+    </div>
+
+    <hr class="sep">
+
+    <div class="block" id="files">
+      <h3>f · Where the detail lives</h3>
+      <p class="small">
+        Twenty-one documents on the branch <code>feature/phase-1-foundation</code>. You do not need to
+        read them; this is a map for when you want to check something specific. Paths are as they sit
+        on the machine.
+      </p>
+
+      <div class="files">
+
+        <h4>Design — my Stage 3 deliverables</h4>
+        <div class="file">
+          <span class="sz">52 KB</span>
+          <div class="p">C:\repo\SUNIL\docs\design\DESIGN_TOKENS.md</div>
+          <div class="d">The whole visual system as reusable values, every one traced back to a line in your prototype or marked as newly invented with a reason. Contains the full contrast audit and the deviation register — the D-1 and D-4 decisions in this page are section 6.</div>
+        </div>
+        <div class="file">
+          <span class="sz">52 KB</span>
+          <div class="p">C:\repo\SUNIL\docs\design\PORTAL_SHELL_SPEC.md</div>
+          <div class="d">Every screen in Phase 1, specified to the pixel: navigation with all 22 destinations, sign-in, the two-factor step, the dashboard, settings, system health — each in all four states (empty, loading, working, failed), plus keyboard and screen-reader behaviour and the timezone fix.</div>
+        </div>
+        <div class="file">
+          <span class="sz">30 KB</span>
+          <div class="p">C:\repo\SUNIL\docs\design\SUNIL_PRESENCE_SPEC.md</div>
+          <div class="d">The sphere, transcribed line by line from your prototype so it can be rebuilt faithfully rather than approximately — plus its three states, the speed defect above, and what it must do for someone who cannot see it.</div>
+        </div>
+        <div class="file">
+          <span class="sz">this page</span>
+          <div class="p">C:\repo\SUNIL\docs\design\GATE2_REVIEW.html</div>
+          <div class="d">This review.</div>
+        </div>
+
+        <h4>Requirements — what Phase 1 must do</h4>
+        <div class="file">
+          <span class="sz">96 KB</span>
+          <div class="p">C:\repo\SUNIL\docs\PHASE1_REQUIREMENTS.md</div>
+          <div class="d">The binding specification: every requirement written as a testable statement, the five exit tests that gate the phase, the exclusion list of things that must not be built early, assumptions, risks, and the questions that were escalated to you.</div>
+        </div>
+
+        <h4>Architecture — how it will be built</h4>
+        <div class="file">
+          <span class="sz">61 KB</span>
+          <div class="p">C:\repo\SUNIL\docs\PHASE1_ARCHITECTURE.md</div>
+          <div class="d">The engineering blueprint: workspace layout, database schema, the session state machine, encryption scheme, queue design, and the five deviations summarised above.</div>
+        </div>
+        <div class="file">
+          <span class="sz">15 KB</span>
+          <div class="p">C:\repo\SUNIL\docs\THREAT_MODEL.md</div>
+          <div class="d">What could go wrong and what stops it, for the Phase 1 surface specifically.</div>
+        </div>
+
+        <h4>Decision records — one question each</h4>
+        <div class="file">
+          <div class="p">C:\repo\SUNIL\docs\adr\ADR-001 … ADR-010</div>
+          <div class="d">
+            Ten short records, each stating a decision, the alternatives rejected and the consequences accepted:
+            <span class="tiny" style="display:block;margin-top:7px;color:var(--text-disabled)">
+              001 permission vocabulary · 002 Redis persistence · 003 session auth · 004 Prisma confirmed ·
+              005 audit-before-commit · 006 secret encryption · 007 monorepo tooling ·
+              008 LLM transport seam · 009 CSRF strategy · 010 repeatable job identity
+            </span>
+          </div>
+        </div>
+
+        <h4>Phase 0 — context, unchanged</h4>
+        <div class="file">
+          <div class="p">C:\repo\SUNIL\docs\SUNIL_ARCHITECTURE.md · SECURITY_MODEL.md · IMPLEMENTATION_PLAN.md · INTEGRATIONS.md · CURRENT_ARCHITECTURE.md</div>
+          <div class="d">The original target architecture, security model, phased plan, integration targets, and the assessment of what the prototype contained. The design work above treats all five as binding.</div>
+        </div>
+
+        <h4>The origin</h4>
+        <div class="file">
+          <div class="p">C:\repo\SUNIL\prototype\sunil-command-centre.html</div>
+          <div class="d">Your prototype, untouched and never edited — the source every colour, size and animation constant above was extracted from.</div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="small" style="margin-bottom:10px">
+      <strong>Review boundary.</strong> This page was produced by the UI/UX designer and presents that
+      designer's own work; it has not been approved by its author and must not be. The specifications
+      it summarises are queued for independent review — QA for accessibility and state coverage, the
+      Frontend Engineer for feasibility, the Solution Architect for the shared package shape.
+    </p>
+    <p class="tiny" style="margin-bottom:0">
+      Contrast figures computed to WCAG 2.1 (relative luminance; transparency composited against its
+      actual backdrop before measurement). Specimen colours, sizes and backgrounds on this page are
+      the real specified values. Typefaces are system substitutes — see the note at the top.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var bar = document.querySelector('.scale-bar');
+  if (!bar) return;
+  var buttons = bar.querySelectorAll('button[data-scale]');
+  bar.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-scale]');
+    if (!btn) return;
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute('aria-pressed', String(buttons[i] === btn));
+    }
+    document.documentElement.style.setProperty('--spec-scale', btn.getAttribute('data-scale'));
+  });
+})();
+</script>

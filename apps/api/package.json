@@ -1,0 +1,37 @@
+{
+  "name": "@sunil/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SKELETON — NestJS 11 on Fastify. Auth, RBAC, audit enforcement, secrets, all REST. Owned by wave-2 agents (§6, §7, §8, §13).",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.spec.json",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "dev": "node --watch dist/main.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/platform-fastify": "^11.1.28",
+    "@nestjs/swagger": "^11.4.6",
+    "@node-rs/argon2": "^2.0.2",
+    "@sunil/agents": "workspace:*",
+    "@sunil/core": "workspace:*",
+    "@sunil/db": "workspace:*",
+    "@sunil/llm": "workspace:*",
+    "bullmq": "^5.80.9",
+    "ioredis": "^5.11.1",
+    "nestjs-pino": "^4.6.1",
+    "otpauth": "^9.5.1",
+    "pino": "^9.14.0",
+    "pino-http": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  }
+}

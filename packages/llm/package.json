@@ -1,0 +1,32 @@
+{
+  "name": "@sunil/llm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SKELETON — LLMProvider interface, transport seam, Anthropic/OpenAI/Ollama adapters, usage recorder, mock transports. Owned by a wave-2 agent (§10, ADR-008).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.spec.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.112.4",
+    "@sunil/core": "workspace:*",
+    "@sunil/db": "workspace:*",
+    "openai": "6.48.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  }
+}

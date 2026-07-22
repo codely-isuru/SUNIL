@@ -1,0 +1,10 @@
+/*
+ * The single stylesheet `apps/web` imports: `import "@sunil/ui/styles.css"`.
+ *
+ * Order matters. Tokens are defined before anything can reference them, and the base layer is
+ * in place before the component layer, so first paint is already dark-themed and no unstyled
+ * or light flash is possible (FR-103).
+ */
+@import "../tokens/tokens.css";
+@import "./base.css";
+@import "./components.css";

@@ -1,0 +1,12 @@
+{
+  "//": "Typechecks the test sources, which the build tsconfig deliberately excludes so vitest never lands in dist.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

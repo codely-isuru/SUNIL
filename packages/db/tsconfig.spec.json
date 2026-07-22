@@ -1,0 +1,13 @@
+{
+  "//": "Typechecks the test sources, which the build tsconfig deliberately excludes.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "references": [{ "path": "../core" }],
+  "include": ["src/**/*.ts"]
+}

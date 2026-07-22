@@ -1,0 +1,1007 @@
+/*
+ * Component layer — the shell, navigation, panels and controls specified in
+ * PORTAL_SHELL_SPEC.md §2–§10. Mobile-first: every media query is `min-width`.
+ *
+ * Every value here is a token reference (DESIGN_TOKENS.md §4). The only literals are layout
+ * primitives with no design meaning (`1fr`, `100%`, `auto`).
+ */
+
+/* ====================================================================== */
+/* Shell (§2.2, §2.3)                                                     */
+/* ====================================================================== */
+
+.sunil-shell {
+  position: relative;
+  z-index: var(--sunil-z-content);
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: var(--sunil-shell-header-h-compact) 1fr;
+  grid-template-areas:
+    "header"
+    "main";
+  height: 100dvh;
+  background: var(--sunil-shell-bg);
+}
+
+.sunil-shell__header {
+  grid-area: header;
+  position: sticky;
+  top: 0;
+  z-index: var(--sunil-z-header);
+  display: flex;
+  align-items: center;
+  gap: var(--sunil-space-12);
+  height: var(--sunil-shell-header-h-compact);
+  padding: 0 var(--sunil-shell-pad-x-compact);
+  /* Opaque, not the translucent panel token: content scrolling under a translucent header
+     produces an unmeasurable text backdrop (DESIGN_TOKENS.md §5.4.3). */
+  background: var(--sunil-shell-header-bg);
+  border-bottom: var(--sunil-border-1) solid var(--sunil-shell-header-border);
+}
+
+.sunil-shell__spacer {
+  flex: 1;
+}
+
+.sunil-shell__nav {
+  grid-area: nav;
+  display: none;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--sunil-surface-solid);
+  border-right: var(--sunil-border-1) solid var(--sunil-border-subtle);
+}
+
+.sunil-shell__main {
+  grid-area: main;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sunil-shell-pad-x-compact);
+}
+
+.sunil-shell__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-16);
+  max-width: var(--sunil-shell-content-max);
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .sunil-shell {
+    grid-template-columns: var(--sunil-shell-sidebar-w-rail) 1fr;
+    grid-template-rows: var(--sunil-shell-header-h) 1fr;
+    grid-template-areas:
+      "nav header"
+      "nav main";
+  }
+
+  .sunil-shell__header {
+    height: var(--sunil-shell-header-h);
+    padding: 0 var(--sunil-shell-pad-x);
+  }
+
+  .sunil-shell__nav {
+    display: flex;
+  }
+
+  .sunil-shell__main {
+    padding: var(--sunil-shell-pad-x);
+  }
+
+  .sunil-shell__content {
+    gap: var(--sunil-space-20);
+  }
+}
+
+@media (min-width: 1024px) {
+  .sunil-shell {
+    grid-template-columns: var(--sunil-shell-sidebar-w) 1fr;
+  }
+
+  .sunil-shell__content {
+    gap: var(--sunil-space-24);
+  }
+}
+
+/* ====================================================================== */
+/* Header slots (§4)                                                      */
+/* ====================================================================== */
+
+.sunil-page-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sunil-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sunil-drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sunil-radius-4);
+  background: transparent;
+  color: var(--sunil-text-secondary);
+  cursor: pointer;
+}
+
+@media (min-width: 768px) {
+  .sunil-drawer-toggle {
+    display: none;
+  }
+}
+
+/* System status pill (§4.1) */
+.sunil-status-pill {
+  display: none;
+  align-items: center;
+  gap: var(--sunil-space-6);
+  height: 28px;
+  padding: 0 var(--sunil-space-10);
+  border: var(--sunil-border-1) solid var(--sunil-border-subtle);
+  border-radius: var(--sunil-radius-full);
+  background: var(--sunil-accent-tint-weak);
+  color: var(--sunil-text-secondary);
+  text-decoration: none;
+}
+
+.sunil-status-pill:hover {
+  background: var(--sunil-accent-tint);
+  text-decoration: none;
+}
+
+@media (min-width: 768px) {
+  .sunil-status-pill {
+    display: inline-flex;
+  }
+}
+
+/* Clock (§4.2) */
+.sunil-clock {
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.sunil-clock__time {
+  color: var(--sunil-text-accent);
+}
+
+.sunil-clock__zone {
+  color: var(--sunil-text-muted);
+}
+
+@media (min-width: 1024px) {
+  .sunil-clock {
+    display: flex;
+  }
+}
+
+/* User menu (§4, slot 6) */
+.sunil-user-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: var(--sunil-border-1) solid var(--sunil-border-interactive);
+  border-radius: var(--sunil-radius-full);
+  background: var(--sunil-accent-tint-weak);
+  color: var(--sunil-text-accent);
+  cursor: pointer;
+}
+
+.sunil-user-menu {
+  position: relative;
+}
+
+.sunil-user-menu__panel {
+  position: absolute;
+  top: calc(100% + var(--sunil-space-8));
+  right: 0;
+  z-index: var(--sunil-z-popover);
+  min-width: 220px;
+  padding: var(--sunil-space-8);
+  border: var(--sunil-border-1) solid var(--sunil-border-subtle);
+  border-radius: var(--sunil-radius-6);
+  background: var(--sunil-surface-raised);
+  box-shadow: var(--sunil-shadow-overlay);
+}
+
+.sunil-user-menu__identity {
+  padding: var(--sunil-space-8);
+  border-bottom: var(--sunil-border-1) solid var(--sunil-border-rule);
+}
+
+.sunil-user-menu__item {
+  display: block;
+  width: 100%;
+  padding: var(--sunil-space-8);
+  border: 0;
+  border-radius: var(--sunil-radius-4);
+  background: transparent;
+  color: var(--sunil-text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sunil-user-menu__item:hover {
+  background: var(--sunil-accent-tint-weak);
+  color: var(--sunil-text-primary);
+  text-decoration: none;
+}
+
+/* ====================================================================== */
+/* Navigation (§5)                                                        */
+/* ====================================================================== */
+
+.sunil-nav__brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: var(--sunil-shell-header-h);
+  padding: 0 var(--sunil-space-12);
+  color: var(--sunil-text-accent);
+}
+
+.sunil-nav__brand-rule {
+  width: var(--sunil-panel-accent-w);
+  height: var(--sunil-border-2);
+  margin-top: var(--sunil-space-6);
+  background: var(--sunil-accent-fill);
+  box-shadow: var(--sunil-glow-xs) var(--sunil-accent-glow);
+}
+
+.sunil-nav__scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--sunil-space-16);
+}
+
+.sunil-nav__group-label {
+  padding: var(--sunil-space-16) var(--sunil-space-12) var(--sunil-space-4);
+  color: var(--sunil-nav-group-fg);
+}
+
+.sunil-nav__group:first-child .sunil-nav__group-label {
+  padding-top: var(--sunil-space-4);
+}
+
+.sunil-nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sunil-nav-item-gap);
+  /* min-height, not height: the layout must survive text-spacing overrides (SC 1.4.12). */
+  min-height: var(--sunil-nav-item-h);
+  padding: 0 var(--sunil-nav-item-pad-x);
+  border-left: var(--sunil-nav-item-marker-w) solid transparent;
+  border-radius: var(--sunil-nav-item-radius);
+  color: var(--sunil-nav-item-fg);
+  text-decoration: none;
+  transition:
+    background var(--sunil-motion-hover),
+    color var(--sunil-motion-hover);
+}
+
+a.sunil-nav__item:hover {
+  background: var(--sunil-nav-item-bg-hover);
+  color: var(--sunil-nav-item-fg-hover);
+  text-decoration: none;
+}
+
+a.sunil-nav__item[aria-current="page"],
+a.sunil-nav__item[aria-current="true"] {
+  border-left-color: var(--sunil-nav-item-marker);
+  background: var(--sunil-nav-item-bg-active);
+  color: var(--sunil-nav-item-fg-active);
+  box-shadow: var(--sunil-glow-xs) var(--sunil-accent-tint);
+}
+
+a.sunil-nav__item[aria-current="page"]:hover {
+  background: var(--sunil-accent-tint-strong);
+}
+
+/* §5.4 — the disabled destination. Not a link, not a button, not focusable. */
+.sunil-nav__item--unavailable {
+  color: var(--sunil-nav-item-fg-disabled);
+  cursor: not-allowed;
+}
+
+.sunil-nav__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sunil-nav__icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+/* Opacity on the icon only — never on the label, which would silently change its measured
+   contrast (§5.4). */
+.sunil-nav__item--unavailable .sunil-nav__icon {
+  opacity: 0.55;
+}
+
+/* Icon rail at md (§5.4) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .sunil-nav__brand,
+  .sunil-nav__group-label,
+  .sunil-nav__label,
+  .sunil-nav__item .sunil-badge,
+  .sunil-nav__footer-detail {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .sunil-nav__item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sunil-nav__item--unavailable {
+    position: relative;
+  }
+
+  /* 6px "unknown" dot at the top-right of the icon box, since the badge is not visible. */
+  .sunil-nav__item--unavailable::after {
+    content: "";
+    position: absolute;
+    top: var(--sunil-space-6);
+    right: var(--sunil-space-16);
+    width: var(--sunil-space-6);
+    height: var(--sunil-space-6);
+    border-radius: var(--sunil-radius-full);
+    background: var(--sunil-status-unknown);
+  }
+}
+
+.sunil-nav__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-8);
+  padding: var(--sunil-space-12);
+  border-top: var(--sunil-border-1) solid var(--sunil-border-subtle);
+}
+
+/* Mobile drawer (§5.6) */
+.sunil-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sunil-z-scrim);
+  border: 0;
+  padding: 0;
+  background: var(--sunil-surface-scrim);
+}
+
+@media (max-width: 767px) {
+  .sunil-shell__nav--open {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--sunil-z-sidebar);
+    display: flex;
+    width: var(--sunil-shell-drawer-w);
+    /* transform only — never animate width or left (§5.6). */
+    transform: translateX(0);
+    transition: transform var(--sunil-motion-surface);
+    box-shadow: var(--sunil-shadow-overlay);
+  }
+}
+
+/* ====================================================================== */
+/* Panel (§ prototype .panel)                                             */
+/* ====================================================================== */
+
+.sunil-panel {
+  position: relative;
+  padding: var(--sunil-panel-pad-y) var(--sunil-panel-pad);
+  border: var(--sunil-border-1) solid var(--sunil-panel-border);
+  border-radius: var(--sunil-panel-radius);
+  background: var(--sunil-panel-bg);
+  backdrop-filter: blur(var(--sunil-panel-blur));
+}
+
+/* Opaque variant — mandatory for anything sitting over the presence canvas (§5.4.3). */
+.sunil-panel--opaque {
+  background: var(--sunil-panel-bg-opaque);
+  backdrop-filter: none;
+}
+
+/* The prototype's `.panel::before` accent bar — the HUD's fingerprint. */
+.sunil-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--sunil-panel-accent-inset);
+  width: var(--sunil-panel-accent-w);
+  height: var(--sunil-border-2);
+  background: var(--sunil-accent-fill);
+  box-shadow: var(--sunil-glow-xs) var(--sunil-accent-fill);
+}
+
+.sunil-panel__title {
+  margin-bottom: var(--sunil-panel-title-mb);
+  color: var(--sunil-panel-title-fg);
+}
+
+.sunil-panel__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-8);
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  text-align: center;
+  color: var(--sunil-text-secondary);
+}
+
+/* Prototype `.sysrow` */
+.sunil-sysrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sunil-space-8);
+  padding: var(--sunil-space-6) 0;
+  border-bottom: var(--sunil-border-1) dashed var(--sunil-border-rule);
+}
+
+.sunil-sysrow:last-child {
+  border-bottom: 0;
+}
+
+.sunil-sysrow__name {
+  flex: 1;
+  color: var(--sunil-text-secondary);
+}
+
+.sunil-sysrow__state {
+  color: var(--sunil-text-muted);
+}
+
+/* ====================================================================== */
+/* Lamp, badge, chip                                                      */
+/* ====================================================================== */
+
+.sunil-lamp {
+  display: inline-block;
+  flex: none;
+  width: var(--sunil-lamp-size);
+  height: var(--sunil-lamp-size);
+  border-radius: var(--sunil-radius-full);
+}
+
+.sunil-lamp--on {
+  background: var(--sunil-lamp-on);
+  box-shadow: var(--sunil-glow-xs) var(--sunil-lamp-on);
+}
+
+.sunil-lamp--warn {
+  background: var(--sunil-lamp-warn);
+  box-shadow: var(--sunil-glow-xs) var(--sunil-lamp-warn);
+}
+
+.sunil-lamp--error {
+  background: var(--sunil-lamp-error);
+  box-shadow: var(--sunil-glow-xs) var(--sunil-lamp-error);
+}
+
+.sunil-lamp--off {
+  background: var(--sunil-lamp-off);
+}
+
+.sunil-lamp--unknown {
+  background: var(--sunil-lamp-unknown);
+}
+
+.sunil-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: var(--sunil-badge-h);
+  padding: 0 var(--sunil-badge-pad-x);
+  border: var(--sunil-border-1) solid var(--sunil-badge-border);
+  border-radius: var(--sunil-badge-radius);
+  background: var(--sunil-badge-bg);
+  color: var(--sunil-badge-fg);
+}
+
+/* ====================================================================== */
+/* Button                                                                 */
+/* ====================================================================== */
+
+.sunil-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sunil-space-8);
+  min-height: var(--sunil-btn-h);
+  padding: 0 var(--sunil-btn-pad-x);
+  border: var(--sunil-border-1) solid transparent;
+  border-radius: var(--sunil-btn-radius);
+  cursor: pointer;
+  transition: all var(--sunil-motion-emphasis);
+}
+
+.sunil-btn--block {
+  width: 100%;
+}
+
+.sunil-btn--tall {
+  min-height: var(--sunil-field-h);
+}
+
+.sunil-btn--primary {
+  background: var(--sunil-btn-primary-bg);
+  color: var(--sunil-btn-primary-fg);
+}
+
+.sunil-btn--primary:hover {
+  box-shadow: var(--sunil-glow-xl) var(--sunil-cyan-a18);
+  text-decoration: none;
+}
+
+.sunil-btn--ghost {
+  border-color: var(--sunil-btn-ghost-border);
+  background: var(--sunil-btn-ghost-bg);
+  color: var(--sunil-btn-ghost-fg);
+}
+
+.sunil-btn--ghost:hover {
+  background: var(--sunil-btn-ghost-bg-hover);
+  box-shadow: var(--sunil-glow-xl) var(--sunil-cyan-a18);
+  text-decoration: none;
+}
+
+.sunil-btn--text {
+  min-height: var(--sunil-btn-h-sm);
+  padding: 0 var(--sunil-space-8);
+  background: transparent;
+  color: var(--sunil-text-accent);
+}
+
+.sunil-btn[aria-busy="true"] {
+  cursor: progress;
+}
+
+.sunil-btn:disabled {
+  color: var(--sunil-text-disabled);
+  cursor: not-allowed;
+}
+
+.sunil-btn--primary:disabled {
+  background: var(--sunil-surface-raised);
+}
+
+/* Loading spinner. The width of a busy button is frozen by the caller (§13). */
+.sunil-spinner {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: var(--sunil-border-2) solid var(--sunil-border-interactive);
+  border-top-color: var(--sunil-accent-fill);
+  border-radius: var(--sunil-radius-full);
+  animation: sunil-spin var(--sunil-duration-pulse) linear infinite;
+}
+
+.sunil-spinner--lg {
+  width: 24px;
+  height: 24px;
+}
+
+@keyframes sunil-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* ====================================================================== */
+/* Field                                                                  */
+/* ====================================================================== */
+
+.sunil-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-6);
+}
+
+.sunil-field__label {
+  color: var(--sunil-field-label-fg);
+}
+
+.sunil-field__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sunil-field__input {
+  width: 100%;
+  min-height: var(--sunil-field-h);
+  padding: 0 var(--sunil-field-pad-x);
+  border: var(--sunil-border-1) solid var(--sunil-field-border);
+  border-radius: var(--sunil-field-radius);
+  background: var(--sunil-field-bg);
+  color: var(--sunil-field-fg);
+}
+
+.sunil-field__input::placeholder {
+  color: var(--sunil-field-placeholder);
+}
+
+.sunil-field__input:focus-visible {
+  border-color: var(--sunil-field-border-focus);
+}
+
+.sunil-field__input[aria-invalid="true"] {
+  border-color: var(--sunil-field-border-error);
+}
+
+.sunil-field__input[readonly] {
+  color: var(--sunil-text-secondary);
+}
+
+.sunil-field__hint {
+  color: var(--sunil-field-hint-fg);
+}
+
+.sunil-field__error {
+  color: var(--sunil-field-error-fg);
+}
+
+.sunil-field__adornment {
+  position: absolute;
+  right: var(--sunil-space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--sunil-radius-4);
+  background: transparent;
+  color: var(--sunil-text-muted);
+  cursor: pointer;
+}
+
+/* MFA code input (§7.2) — one input, not six boxes. */
+.sunil-field__input--code {
+  min-height: 56px;
+  font-family: var(--sunil-type-display-sm-family);
+  font-size: var(--sunil-type-display-sm-size);
+  letter-spacing: 0.4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ====================================================================== */
+/* Alert (§7.1)                                                           */
+/* ====================================================================== */
+
+.sunil-alert {
+  display: flex;
+  gap: var(--sunil-space-8);
+  padding: var(--sunil-space-12);
+  border: var(--sunil-border-1) solid var(--sunil-border-danger);
+  border-radius: var(--sunil-radius-4);
+  background: var(--sunil-surface-raised);
+  color: var(--sunil-status-danger-text);
+}
+
+.sunil-alert--info {
+  border-color: var(--sunil-border-subtle);
+  color: var(--sunil-text-secondary);
+}
+
+.sunil-alert__glyph {
+  flex: none;
+}
+
+/* Permanent Phase 1 banner (§8.2) */
+.sunil-phase-banner {
+  padding: var(--sunil-space-12);
+  border-left: var(--sunil-border-2) solid var(--sunil-status-warn);
+  border-radius: var(--sunil-radius-6);
+  background: var(--sunil-surface-raised);
+  color: var(--sunil-text-primary);
+}
+
+/* ====================================================================== */
+/* Skeleton (§13)                                                         */
+/* ====================================================================== */
+
+.sunil-skeleton {
+  border-radius: var(--sunil-skeleton-radius);
+  background: linear-gradient(
+    90deg,
+    var(--sunil-skeleton-bg) 0%,
+    var(--sunil-skeleton-sheen) 50%,
+    var(--sunil-skeleton-bg) 100%
+  );
+  background-size: 200% 100%;
+  animation: sunil-sheen 1200ms linear infinite;
+}
+
+@keyframes sunil-sheen {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Under reduced motion the sheen becomes a static block (§11.6). */
+@media (prefers-reduced-motion: reduce) {
+  .sunil-skeleton {
+    background: var(--sunil-skeleton-bg);
+    animation: none;
+  }
+}
+
+/* ====================================================================== */
+/* Stat tile (prototype .stat) — System Health queue counts only (§12)     */
+/* ====================================================================== */
+
+.sunil-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-4);
+  padding: var(--sunil-space-12) var(--sunil-space-20);
+  border: var(--sunil-border-1) solid var(--sunil-border-subtle);
+  border-radius: var(--sunil-radius-6);
+  background: var(--sunil-surface);
+}
+
+.sunil-stat__value {
+  color: var(--sunil-text-accent);
+}
+
+.sunil-stat__value--danger {
+  color: var(--sunil-status-danger-text);
+}
+
+.sunil-stat__label {
+  color: var(--sunil-text-muted);
+}
+
+/* ====================================================================== */
+/* Dashboard (§8) and card grids                                          */
+/* ====================================================================== */
+
+.sunil-dash {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sunil-space-16);
+}
+
+@media (min-width: 1024px) {
+  .sunil-dash {
+    grid-template-columns: 1fr 320px;
+    gap: var(--sunil-space-24);
+  }
+
+  .sunil-dash__presence {
+    grid-column: 1;
+  }
+}
+
+@media (min-width: 1280px) {
+  .sunil-dash {
+    grid-template-columns: 320px 1fr 320px;
+  }
+
+  .sunil-dash__status {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .sunil-dash__presence {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .sunil-dash__soon {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .sunil-dash__next {
+    grid-column: 1 / -1;
+  }
+}
+
+.sunil-presence-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-12);
+  align-items: center;
+  justify-content: center;
+  padding: var(--sunil-space-16);
+}
+
+.sunil-greeting {
+  padding: var(--sunil-space-8);
+  border-radius: var(--sunil-radius-4);
+  /* Mandatory scrim: this line sits over the presence canvas (DESIGN_TOKENS.md §5.4.3). */
+  background: var(--sunil-surface-scrim);
+  color: var(--sunil-text-emphasis);
+}
+
+.sunil-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sunil-space-16);
+}
+
+.sunil-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-8);
+  min-height: 120px;
+  padding: var(--sunil-panel-pad-y) var(--sunil-panel-pad);
+  border: var(--sunil-border-1) solid var(--sunil-panel-border);
+  border-radius: var(--sunil-panel-radius);
+  background: var(--sunil-panel-bg);
+  color: var(--sunil-text-secondary);
+  text-decoration: none;
+}
+
+.sunil-card:hover {
+  background: var(--sunil-accent-tint-weak);
+  text-decoration: none;
+}
+
+.sunil-card__title {
+  color: var(--sunil-text-heading);
+}
+
+.sunil-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-8);
+}
+
+.sunil-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sunil-space-8);
+  color: var(--sunil-text-secondary);
+}
+
+.sunil-list__row-label {
+  flex: 1;
+}
+
+/* ====================================================================== */
+/* Auth pages (§7)                                                        */
+/* ====================================================================== */
+
+.sunil-auth {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--sunil-space-16);
+  overflow-y: auto;
+  background: var(--sunil-bg);
+}
+
+.sunil-auth__canvas {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sunil-z-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.sunil-auth__card {
+  position: relative;
+  z-index: var(--sunil-z-content);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-20);
+  width: 400px;
+  max-width: 100%;
+  padding: var(--sunil-space-32);
+  border: var(--sunil-border-1) solid var(--sunil-border-subtle);
+  border-radius: var(--sunil-radius-6);
+  /* Opaque: it sits over the canvas (§7). */
+  background: var(--sunil-surface-solid);
+}
+
+.sunil-auth__wordmark {
+  color: var(--sunil-text-accent);
+  text-shadow: var(--sunil-glow-lg) var(--sunil-accent-glow);
+}
+
+.sunil-auth__subtitle {
+  color: var(--sunil-text-muted);
+}
+
+.sunil-auth__heading {
+  margin-top: var(--sunil-space-20);
+  color: var(--sunil-text-primary);
+}
+
+.sunil-auth__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-16);
+}
+
+.sunil-auth__footer {
+  color: var(--sunil-text-secondary);
+}
+
+/* ====================================================================== */
+/* Settings (§9)                                                          */
+/* ====================================================================== */
+
+.sunil-settings {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sunil-space-16);
+}
+
+@media (min-width: 1024px) {
+  .sunil-settings {
+    grid-template-columns: 200px 1fr;
+    gap: var(--sunil-space-24);
+  }
+}
+
+.sunil-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sunil-space-16);
+}
+
+.sunil-settings__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sunil-space-12);
+}
+
+.sunil-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sunil-space-6);
+  color: var(--sunil-text-secondary);
+}
+
+/* ====================================================================== */
+/* Presence (SUNIL_PRESENCE_SPEC.md §7.1)                                 */
+/* ====================================================================== */
+
+.sunil-presence {
+  position: relative;
+  flex: none;
+}
+
+.sunil-presence__canvas,
+.sunil-presence__fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+

@@ -1,0 +1,39 @@
+{
+  "name": "@sunil/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prisma schema, migrations, the guarded client, the audit service, the UnitOfWork audit-before-commit primitive, thin repositories and the bootstrap seed.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "build": "prisma generate && tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.spec.json",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:status": "prisma migrate status",
+    "bootstrap": "node dist/bootstrap/cli.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true});require('node:fs').rmSync('tsconfig.tsbuildinfo',{force:true})\""
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "@prisma/client": "^6.19.3",
+    "@sunil/core": "workspace:*"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3",
+    "vitest": "^3.2.7"
+  }
+}

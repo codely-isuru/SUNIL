@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/llm" },
+    { "path": "../../packages/agents" }
+  ],
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/__tests__/**", "dist", "node_modules"]
+}

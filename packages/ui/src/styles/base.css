@@ -1,0 +1,308 @@
+/*
+ * Global base layer — reset, type utilities, accessibility utilities, ambience overlays.
+ * Every value is a token reference. No literal colour, no literal type size.
+ *
+ * Imported once via `@sunil/ui/styles.css` from `apps/web/src/app/layout.tsx`, BEFORE any
+ * component CSS, so no unstyled/light flash can occur on first paint (FR-103).
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+/*
+ * PORTAL_SHELL_SPEC.md §2.3 — the prototype's `html,body{overflow:hidden}` is retained
+ * deliberately: the shell is an application frame, not a document. `main` is the only
+ * scroll container for page content.
+ */
+html {
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--sunil-bg);
+  color: var(--sunil-text-primary);
+  font-family: var(--sunil-type-body-family);
+  font-size: var(--sunil-type-body-size);
+  line-height: var(--sunil-type-body-lh);
+  font-weight: var(--sunil-type-body-weight);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure,
+ul,
+ol {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: var(--sunil-text-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Focus (PORTAL_SHELL_SPEC.md §11.2)                                     */
+/* `:focus-visible` only — no ring on mouse click, always on keyboard.    */
+/* `outline: none` is permitted in exactly one place: <main tabindex=-1>. */
+/* ---------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: var(--sunil-focus-w) solid var(--sunil-focus-color);
+  outline-offset: var(--sunil-focus-offset);
+}
+
+.sunil-main:focus {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Type roles (DESIGN_TOKENS.md §3.2)                                      */
+/* ---------------------------------------------------------------------- */
+
+.sunil-type-display-lg,
+.sunil-type-display,
+.sunil-type-display-sm,
+.sunil-type-title,
+.sunil-type-eyebrow,
+.sunil-type-action,
+.sunil-type-body,
+.sunil-type-body-sm,
+.sunil-type-caption,
+.sunil-type-micro {
+  margin: 0;
+}
+
+.sunil-type-display-lg {
+  font-family: var(--sunil-type-display-lg-family);
+  font-size: var(--sunil-type-display-lg-size);
+  line-height: var(--sunil-type-display-lg-lh);
+  font-weight: var(--sunil-type-display-lg-weight);
+  letter-spacing: var(--sunil-type-display-lg-ls);
+  text-transform: var(--sunil-type-display-lg-case);
+}
+
+/* §7.5 — the clock, counters and latencies update in place; Orbitron is not monospaced and an
+   untreated numeric run jitters every second. */
+.sunil-type-display,
+.sunil-type-display-sm,
+.sunil-tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.sunil-type-display {
+  font-family: var(--sunil-type-display-family);
+  font-size: var(--sunil-type-display-size);
+  line-height: var(--sunil-type-display-lh);
+  font-weight: var(--sunil-type-display-weight);
+  letter-spacing: var(--sunil-type-display-ls);
+  text-transform: var(--sunil-type-display-case);
+}
+
+.sunil-type-display-sm {
+  font-family: var(--sunil-type-display-sm-family);
+  font-size: var(--sunil-type-display-sm-size);
+  line-height: var(--sunil-type-display-sm-lh);
+  font-weight: var(--sunil-type-display-sm-weight);
+  letter-spacing: var(--sunil-type-display-sm-ls);
+  text-transform: var(--sunil-type-display-sm-case);
+}
+
+.sunil-type-title {
+  font-family: var(--sunil-type-title-family);
+  font-size: var(--sunil-type-title-size);
+  line-height: var(--sunil-type-title-lh);
+  font-weight: var(--sunil-type-title-weight);
+  letter-spacing: var(--sunil-type-title-ls);
+  text-transform: var(--sunil-type-title-case);
+}
+
+.sunil-type-eyebrow {
+  font-family: var(--sunil-type-eyebrow-family);
+  font-size: var(--sunil-type-eyebrow-size);
+  line-height: var(--sunil-type-eyebrow-lh);
+  font-weight: var(--sunil-type-eyebrow-weight);
+  letter-spacing: var(--sunil-type-eyebrow-ls);
+  text-transform: var(--sunil-type-eyebrow-case);
+}
+
+.sunil-type-action {
+  font-family: var(--sunil-type-action-family);
+  font-size: var(--sunil-type-action-size);
+  line-height: var(--sunil-type-action-lh);
+  font-weight: var(--sunil-type-action-weight);
+  letter-spacing: var(--sunil-type-action-ls);
+  text-transform: var(--sunil-type-action-case);
+}
+
+.sunil-type-body {
+  font-family: var(--sunil-type-body-family);
+  font-size: var(--sunil-type-body-size);
+  line-height: var(--sunil-type-body-lh);
+  font-weight: var(--sunil-type-body-weight);
+  letter-spacing: var(--sunil-type-body-ls);
+}
+
+.sunil-type-body-sm {
+  font-family: var(--sunil-type-body-sm-family);
+  font-size: var(--sunil-type-body-sm-size);
+  line-height: var(--sunil-type-body-sm-lh);
+  font-weight: var(--sunil-type-body-sm-weight);
+  letter-spacing: var(--sunil-type-body-sm-ls);
+}
+
+.sunil-type-caption {
+  font-family: var(--sunil-type-caption-family);
+  font-size: var(--sunil-type-caption-size);
+  line-height: var(--sunil-type-caption-lh);
+  font-weight: var(--sunil-type-caption-weight);
+  letter-spacing: var(--sunil-type-caption-ls);
+}
+
+.sunil-type-micro {
+  font-family: var(--sunil-type-micro-family);
+  font-size: var(--sunil-type-micro-size);
+  line-height: var(--sunil-type-micro-lh);
+  font-weight: var(--sunil-type-micro-weight);
+  letter-spacing: var(--sunil-type-micro-ls);
+  text-transform: var(--sunil-type-micro-case);
+}
+
+/* Text-colour utilities. Every one resolves to an opaque token (Gate 2). */
+.sunil-fg-primary {
+  color: var(--sunil-text-primary);
+}
+.sunil-fg-secondary {
+  color: var(--sunil-text-secondary);
+}
+.sunil-fg-muted {
+  color: var(--sunil-text-muted);
+}
+.sunil-fg-accent {
+  color: var(--sunil-text-accent);
+}
+.sunil-fg-heading {
+  color: var(--sunil-text-heading);
+}
+.sunil-fg-emphasis {
+  color: var(--sunil-text-emphasis);
+}
+.sunil-fg-danger {
+  color: var(--sunil-status-danger-text);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Accessibility utilities                                                 */
+/* ---------------------------------------------------------------------- */
+
+/*
+ * The standard clip pattern (SUNIL_PRESENCE_SPEC.md §8.3). Never `display:none` and never
+ * `visibility:hidden` — both remove the element from the accessibility tree.
+ */
+.sunil-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* PORTAL_SHELL_SPEC.md §3.1 — visually hidden until focused. */
+.sunil-skip-link {
+  position: fixed;
+  top: var(--sunil-space-8);
+  left: var(--sunil-space-8);
+  z-index: var(--sunil-z-skiplink);
+  display: inline-flex;
+  align-items: center;
+  height: var(--sunil-btn-h);
+  padding: 0 var(--sunil-space-16);
+  border-radius: var(--sunil-radius-4);
+  background: var(--sunil-surface-raised);
+  color: var(--sunil-text-accent);
+  box-shadow: var(--sunil-shadow-overlay);
+  transform: translateY(-200%);
+  transition: transform var(--sunil-motion-control);
+  text-decoration: none;
+}
+
+.sunil-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Ambience (PORTAL_SHELL_SPEC.md §2.4) — decorative, never over content.  */
+/* ---------------------------------------------------------------------- */
+
+.sunil-ambience {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sunil-z-ambience);
+  pointer-events: none;
+}
+
+/* Prototype-faithful: repeating 5%-opacity cyan scanlines across the app background. */
+.sunil-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--sunil-cyan-300) 0,
+    var(--sunil-cyan-300) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.05;
+}
+
+.sunil-vignette {
+  background: radial-gradient(ellipse at center, transparent 40%, var(--sunil-scrim) 100%);
+}
+
+/* Settings → Appearance → Ambience turns the scanlines off (PORTAL_SHELL_SPEC.md §11.6). */
+[data-ambience="off"] .sunil-scanlines {
+  display: none;
+}
