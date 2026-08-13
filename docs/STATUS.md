@@ -55,9 +55,22 @@ the UI prototypes.
 
 ## 4. Known issues / open items
 
-* `node_modules/` in the repo root is stale from the retired TS build; it is
-  gitignored and will be replaced when the new frontend workspace is created.
-* No CI pipeline yet on `main` (was defined for the retired stack).
+* **BLOCKER — Docker daemon is not running** (found 2026-08-13 by the environment
+  survey, `docs/ENVIRONMENT.md`). Docker Desktop 29.7.2 is installed but its WSL2
+  distro is stopped, and this machine has **no native PostgreSQL and no Redis**.
+  The roadmap's whole data layer (Postgres + pgvector + Redis) therefore has no
+  local fallback. **Human action required:** start Docker Desktop. Until then no
+  DB-backed M1 work can be smoke-tested.
+* No `docker-compose.yml` yet — Epic 1, not started.
+* No LLM provider credentials configured in this shell. The Model Router needs
+  them via a secret store, never in prompts or code (`ROADMAP.md` §26.5).
+* `node_modules/` in the repo root is stale from the retired TS build (~1.1 GB);
+  gitignored, left in place, replaced when the V1 frontend workspace is created.
+* No CI pipeline yet on `main` (the old one was defined for the retired stack).
+
+**Ready and verified:** Python 3.13.14 (+pip, venv), Node 24.19.0, pnpm 11.8.0,
+Git 2.48.1 with working `origin` auth; ports 3000/3001/5173/8000/8080/5432/6379 all
+free. Port 4317 is the Minions Portal and must stay free.
 
 ## 5. Where the detail lives
 
