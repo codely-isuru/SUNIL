@@ -1,0 +1,48 @@
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# --- node / next.js ---
+node_modules/
+.pnpm-store/
+.next/
+next-env.d.ts
+dist/
+build/
+out/
+*.tsbuildinfo
+.turbo/
+
+# --- environment — never commit real values ---
+.env
+.env.*
+!.env.example
+*.local
+
+# --- test / logs ---
+coverage/
+.vitest/
+*.log
+
+# --- editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- minions delivery process ---
+# session bearer token is a secret; .minions/memory/ IS committed
+.minions/session.json
+.minions/launch.json
+.minions/*.token
+.register-key
+.portal-dir
