@@ -107,11 +107,26 @@ def require_owner_session(request: Request) -> str:
 def require_client_header(request: Request) -> None:
     """403 if `X-SUNIL-Client: web` is missing or wrong, or if an `Origin`
     header is present and does not match `WEB_ORIGIN` (ADR-008's CSRF
-    control — a custom header cannot be sent cross-origin without a
-    successful preflight, and the preflight only succeeds for
-    `WEB_ORIGIN`). `Origin` is not required to be present at all — some
-    legitimate non-browser or same-origin callers omit it; only a
-    *mismatched* `Origin` is rejected.
+    control).
+
+    **This check, not `SameSite=Lax`, is what actually stops a forged
+    request here.** `http://localhost:3000` and `http://localhost:8000`
+    are cross-*origin* but same-*site* (same registrable host), so
+    `SameSite=Lax` happily sends the session cookie on a cross-origin POST
+    between them — it does not distinguish one local port from another.
+    A malicious page on some other `localhost` port (or a page opened from
+    a file, or any origin at all) is same-site to this API and would ride
+    the cookie exactly the same way. What actually blocks it: a custom
+    header (`X-SUNIL-Client`) is non-safelisted, so sending it forces a
+    CORS preflight, and the preflight only succeeds for the one origin in
+    `CORSMiddleware(allow_origins=[WEB_ORIGIN])`. `SameSite=Lax` is real
+    but secondary — it stops a true cross-*site* attacker; it is this
+    header check that stops a same-site one. Do not read this function's
+    existence as redundant with the cookie's `SameSite` attribute.
+
+    `Origin` is not required to be present at all — some legitimate
+    non-browser or same-origin callers omit it; only a *mismatched*
+    `Origin` is rejected.
     """
     if request.headers.get("X-SUNIL-Client") != "web":
         raise HTTPException(status_code=403, detail="missing or invalid X-SUNIL-Client header")
