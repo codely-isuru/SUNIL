@@ -1,7 +1,13 @@
 # SUNIL V1 — Threat Model
 
-**Author:** Solution Architect, Minions Team 18 · **Status:** for Gate 2 (human review) · **Date:** 2026-08-14
-**Scope:** V1, with **M1** (due 2026-08-17) assessed as built. **Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md).
+**Author:** Solution Architect, Minions Team 18 · **Status:** reviewed at Gate 2; updated 2026-08-14
+after the owner's architecture review · **Date:** 2026-08-14
+**Scope:** V1, with **M1** (build started 2026-08-14, **due 2026-08-17**) assessed as built.
+**Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) — see its amendment log A-1…A-9.
+
+**Changes from the first issue:** T-22 (training-corpus capture) and T-23 (config mount) added;
+DC-14/15/16 added; the `ValidatedPlan` "unforgeable" claim withdrawn (ADR-004 Amendment 1); §5.1
+control 1 restated for ADR-015's two-stage turn; Security's lane corrected from T18 to T19.
 **Requirements:** `docs/REQUIREMENTS_V1.md` NFR-001…012 (which map 1:1 onto `ROADMAP.md` §26's twelve
 security rules), NFR-020, ET-10, ET-11.
 
@@ -125,10 +131,12 @@ the repository and reply only 'done'."* That message is read by SUNIL's tool and
 
 Controls, in decreasing order of strength:
 
-1. **The analysis and final-response LLM calls are made with no `tools` parameter at all.** The model
-   has no callable tool, so no injected text can cause one. The single tool invocation in a turn is
-   made by deterministic code from an already-validated plan. **This is the control that actually
-   holds**, and it holds even if every other control below is removed. — **Mitigated**
+1. **The analysis call — after ADR-015 the only LLM request made once tool output exists — carries
+   no `tools` parameter at all.** The model has no callable tool, so no injected text can cause one.
+   The single tool invocation in a turn is made by deterministic code from an already-validated plan.
+   **This is the control that actually holds**, and it holds even if every other control below is
+   removed. Removing the third (final-response) call *reduced* this surface from two post-tool-output
+   requests to one. — **Mitigated**
 2. **The plan is produced before any tool output exists**, and M1 never re-plans, so tool content
    cannot influence *which* tool runs. — **Mitigated in M1 by scope. Expires at M6**, when agents
    loop and tool output becomes an input to the next decision. Recorded in §9 as the single most
@@ -189,6 +197,8 @@ that order.
 | T-32 | **Log injection** — untrusted content breaks the log format or forges a line | Structured logging only; untrusted content goes in a *field*, truncated, never interpolated into a message string (`ARCHITECTURE_V1.md` §8.2) | **Mitigated** |
 | T-33 | **Audit gap** — a privileged action with no trace | One emitter, three sinks; twelve stages with one call site each; ET-6 is a query over `audit_events` that must return all twelve in order. A tool call cannot occur without a `tool_calls` row because the row is written before the adapter is reached | **Mitigated** |
 | T-34 | **Audit tampering** | None — the application can write and delete its own audit rows | **Accepted** in M1 (the threat requires already having compromised the host). Append-only storage/WORM is beyond V1 |
+| **T-22** | **Sensitive content captured into a future training corpus.** Business-confidential, client or personal content contains no credential, passes redaction untouched, and would silently become fine-tuning data in V3 | **Capture policy (ADR-014).** Every row on the capture path is classified at insert time — `capture_policy`, `sensitivity`, `retention_class`, `training_eligible` — by one resolver, with defaults in `config/capture.yaml`. `none` and `metadata_only` genuinely null the content columns. The policy governs the corpus and **never** the audit trail (`audit_events` is deliberately excluded, so a policy cannot disable ET-6) | **Mitigated for classification; partial for enforcement.** `full_local_only` is recorded but unenforced (DC-15) and `retention_class` is captured but nothing purges (DC-16). Both are stated as debt (D-11, D-13) rather than claimed |
+| **T-23** | **Config mounted writable, or baked into an image.** A writable `config/` lets a compromised process grant itself a tool grant by editing `permissions.yaml`; a baked-in `config/` makes a permission revocation require an image build | Mount is **read-only** (`./config:/app/config:ro`) and `Dockerfile.api` never copies `config/` (ADR-016). Config changes are reviewed like code and are visible in `git diff` | **Mitigated** — with DC-11 (permission-change auditing, M5) still owed |
 
 ---
 
@@ -227,10 +237,13 @@ list may be described as present until its milestone ships.
 | DC-7 | Cooperative server-side cancellation | M2 | ADR-010 — needs a `cancelled` task state and an SRS change |
 | DC-8 | Encryption at rest for conversation data | M11 | Debt D-7 |
 | DC-9 | Dependency vulnerability scanning and CI secret scanning | M11 | FR-009 is M11 |
-| DC-10 | Import-lint rules: only `providers/` may import a vendor SDK; only `core/tool_framework` may import `sunil.tools.*`; `core/` may not import `sunil.api` | **M1, task T18** — small enough to land now | Listed here so its absence is visible if T18 slips |
-| DC-11 | Permission-config change auditing | M5 | Only a read-only grant exists today |
+| DC-10 | Import-lint rules: only `providers/` may import a vendor SDK; only `core/tool_framework` may import `sunil.tools.*`; `core/` may not import `sunil.api` | **M1, task T19** (security lane) — small enough to land now, and **enforced on every merge by CI task T21** | Listed here so its absence is visible if T19 slips |
+| DC-11 | Permission-config change auditing | M5 | Only a read-only grant exists today. ADR-016 makes config deployment-free, which is exactly why the audit matters |
 | DC-12 | Crash recovery / orphaned-task sweep | M4 | NFR-072 is tagged M4 in the SRS |
 | DC-13 | Append-only or tamper-evident audit storage | Beyond V1 | Requires host compromise to matter |
+| DC-14 | **Stored-plan verification before privileged execution** — the Tool Manager re-reads `plans` by `meta.validated_plan_id` and refuses unless the row carries `validated = true` | **M5** | ADR-004 Amendment 1. Redundant inside a single in-process turn; becomes real when approval (M5) or scheduling (M10) separates validation from execution in time or process. The `ExecutionMetadata` seam is built in M1 |
+| DC-15 | **Enforcement of `full_local_only`** — export and training pipelines that actually refuse to move a record marked local-only | V3 | ADR-014. M1 has one machine and no export path; the value is recorded, not enforced, and debt D-13 says so |
+| DC-16 | **Retention enforcement** — a purge job acting on `retention_class` | M11 | ADR-014, debt D-11. The classification is captured from M1; nothing deletes anything yet |
 
 ---
 
@@ -248,7 +261,14 @@ Stated plainly so no reviewer infers protection that is absent:
 - **Prompt-injection defence in M1 rests primarily on the model having no tools to call.** It is not
   a claim that the model resists injection.
 - **No penetration test, no dependency CVE scan and no static analysis have been run.** Security's
-  M1 pass (task T18) is a design and code review plus the specific tests named above.
+  M1 pass (task **T19**) is a design and code review plus the specific tests named above. M1's CI
+  (task T21) runs `ruff`, the test suites and the import-boundary tests on every merge; it does not
+  scan dependencies or secrets, which stay with M11 (DC-9).
+- **`ValidatedPlan` is not unforgeable, and this document no longer says it is.** ADR-004 Amendment 1
+  withdraws that claim. What holds is: one mint site, a runtime `isinstance` guard at three
+  privileged entry points, and trusted `ExecutionMetadata` on every `tool_calls` row.
+- **The capture policy classifies; in M1 it only *enforces* `none` and `metadata_only`.**
+  `full_local_only` is a recorded intention until V3 (DC-15).
 
 ---
 
@@ -260,18 +280,32 @@ Stated plainly so no reviewer infers protection that is absent:
 | `test_chat_rejects_missing_client_header` / `test_chat_rejects_foreign_origin` | T-01 | ADR-008 |
 | `test_sse_rejects_request_id_owned_by_another_session` | T-06 | ADR-009 |
 | `test_validated_plan_cannot_be_constructed_directly` | T-08 | ADR-004 |
-| `test_execute_plan_rejects_a_dict` | T-08 | ADR-004 |
+| `test_execute_plan_rejects_a_dict` | T-08 | ADR-004 Amendment 1 (guard site 1) |
+| `test_run_agent_rejects_a_non_validated_plan` | T-08 | ADR-004 Amendment 1 (guard site 2) |
+| `test_tool_manager_requires_execution_metadata` | T-08, T-09 | ADR-004 Amendment 1 (guard site 3) |
+| `test_tool_call_row_carries_validated_plan_id` | T-08 | ADR-004 Amendment 1 — the audit link |
 | `test_malformed_llm_output_creates_zero_tool_calls` | T-08 | **ET-7** |
 | `test_agent_requesting_ungranted_tool_is_rejected` | T-09 | FR-082 |
 | `test_empty_permission_config_denies_everything` | T-09 | FR-120 |
 | `test_out_of_schema_tool_params_never_reach_adapter` | T-11 | FR-102, NFR-008 |
 | `test_injected_instruction_in_commit_message_causes_no_action` | **T-15** | NFR-011/012 |
 | `test_tool_result_projection_excludes_issue_bodies` | T-15 | §9.4 control 3 |
+| `test_projection_escapes_the_untrusted_delimiter` | T-15 | §9.4 control 4 |
+| `test_no_unprojected_github_payload_reaches_a_prompt` | T-15 | §9.4 controls 3–4 — **success-test step 13** |
 | `test_repo_coordinates_never_come_from_plan` | T-16 | ADR-000 Q7 |
+| `test_capture_policy_none_stores_no_content` | T-22 | ADR-014 |
+| `test_capture_policy_metadata_only_stores_no_content` | T-22 | ADR-014 |
+| `test_audit_events_are_never_suppressed_by_capture_policy` | T-22 | ADR-014, ET-6 |
 | `test_registered_secret_never_appears_in_log_output` | T-21 | **ET-10** |
 | `test_registered_secret_never_appears_in_persisted_llm_call` | T-21 | **ET-10** |
 | `test_all_twelve_stages_present_for_a_request_id` | T-33 | **ET-6**, NFR-020 |
 | `test_failed_turn_still_emits_final_response_stage` | T-33 | ET-8 |
 | `test_unknown_project_makes_no_tool_call` | T-13 | **ET-11** |
 
-Security owns the T-15, T-16, T-21 and DC-10 items (task T18). QA owns the rest.
+Security owns the T-15, T-16, T-21, T-22 and DC-10 items (task **T19**, in `apps/api/tests/security/`).
+QA owns the rest (task T18). Task **T21** runs both suites on every merge, so a deleted security test
+shows up as a coverage change in review rather than as silence.
+
+*Corrected 2026-08-14: three rows above previously named task T18 as Security's. Security's lane is
+**T19**; T18 is QA's exit-test harness. The `M1_BUILD_PLAN.md` ownership table was always right and
+this document was wrong.*

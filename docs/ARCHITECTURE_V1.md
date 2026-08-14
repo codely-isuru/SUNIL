@@ -7,6 +7,29 @@
 **Design specs this must serve:** [`docs/design/M1_CHAT_SPEC.md`](design/M1_CHAT_SPEC.md), [`docs/design/DESIGN_SYSTEM.md`](design/DESIGN_SYSTEM.md).
 **Decisions:** ADR-001 … ADR-013 in [`docs/decisions/`](decisions/). **Threat model:** [`docs/THREAT_MODEL.md`](THREAT_MODEL.md).
 **Build order:** [`docs/M1_BUILD_PLAN.md`](M1_BUILD_PLAN.md).
+**Git workflow (Delivery Manager's document, in force):** [`docs/GIT_WORKFLOW.md`](GIT_WORKFLOW.md).
+
+---
+
+## Amendment log
+
+The owner reviewed this architecture on **2026-08-14** and approved the direction *after targeted
+corrections* (his review is archived at `docs/reviews/2026-08-14-owner-architecture-review.md`).
+No fundamental decision changed. The corrections below are applied in place; each one is listed
+here because my standing convention is that a changed decision is a recorded change, never a
+silent edit.
+
+| # | Amendment | Origin | Where |
+|---|---|---|---|
+| A-1 | The framework package renames (`core/models`→`core/routing`, `core/agents`→`core/agent_framework`, `core/tools`→`core/tool_framework`) are **accepted by the owner**, not merely proposed | review §2.2 | §2.1, §2.2, ADR-011 |
+| A-2 | "Exactly three LLM calls" replaced by **logical LLM purposes vs provider attempts**; cost, rate limits, latency and the trace are all counted in provider attempts | review §6 | §1.1, §4.5, §5, §8.1, §13 |
+| A-3 | The `ValidatedPlan` claim is narrowed. "Unforgeable" and "no expressible code path" are withdrawn — Python annotations and module-private names are not security boundaries — and replaced by a **runtime `isinstance` guard plus trusted execution metadata** threaded to the Tool Manager | review §7 | §6.1, §6.3, §9.3, ADR-004 Amendment 1 |
+| A-4 | **M1 has two logical LLM stages, not three.** The Project Manager agent's analysis summary is the user-facing response; the `final_response` trace stage is still emitted, by deterministic code | review §11 | §1.1, §3.4, §5, ADR-015 |
+| A-5 | A **server-side turn deadline** (40 s) is introduced, below the frontend's 45 s client timeout, and retries may not start an attempt that cannot finish inside it | derived from A-2 | §5, §11.3, §14.4 |
+| A-6 | **Training-data capture policy** added: `NONE / METADATA_ONLY / REDACTED_FULL / FULL_LOCAL_ONLY` plus `sensitivity`, `retention_class`, `training_eligible` on the five capture tables | review §10 | §7.3, §13, ADR-014 |
+| A-7 | **Config deployment policy** stated: `config/*.yaml` is mounted, never baked into an image, and a permissions change is change-controlled even though it needs no code deploy | review §12 | §14.5, ADR-016 |
+| A-8 | **Minimal CI lands in M1** (backend `ruff` + `pytest`, frontend typecheck + build, security import-boundary and critical security tests) and gates every merge | review §8 | §16 debt D-6, `M1_BUILD_PLAN.md` T21 |
+| A-9 | The M1 date is settled: **build starts 2026-08-14, M1 is due 2026-08-17.** No document may state otherwise | review §9 + owner ruling | throughout |
 
 ---
 
@@ -22,8 +45,9 @@ Three rules govern every decision below:
 1. **Deterministic code holds the privilege.** LLMs produce *proposals*; only validated, typed
    objects reach an executor, and only the permission engine decides whether a tool runs
    (§33 rules 2, 3, 5).
-2. **Buildable by a Sonnet engineer in 72 hours.** Where depth costs the M1 date, depth is deferred
-   and the debt is recorded in §16. Elegance that misses 2026-08-17 is the wrong call.
+2. **Buildable by a Sonnet engineer inside the window that closes on 2026-08-17** (build started
+   2026-08-14). Where depth costs the M1 date, depth is deferred and the debt is recorded in §16.
+   Elegance that misses 2026-08-17 is the wrong call.
 3. **Nothing is claimed that the code will not have.** Deferred controls live in the threat model
    with an owning milestone, never in prose that implies they exist.
 
@@ -46,12 +70,40 @@ architecture draws the line as a **hard interface**, not a convention.
 | Deciding whether a tool may run | Deterministic (`core/permissions`) | §11, §33.5 — never model judgement |
 | Validating tool arguments | Deterministic (Pydantic models on each operation) | §26.8 |
 | Executing the tool call | Deterministic (`core/tool_framework` → `tools/*`) | §10 |
-| **Analysing the tool result** | **LLM** | Reasoning over data |
-| **Writing the final user-facing answer** | **LLM** | Response generation |
+| **Analysing the tool result, and writing the answer in the same call** | **LLM** | Reasoning over data + response generation. In M1 these are one purpose, not two (ADR-015) |
+| Composing the turn's user-facing message | Deterministic in M1 (`core/orchestrator` persists the agent's summary); an LLM synthesiser from M6, when several agent results must be merged | ADR-015 |
 | Recording every stage, cost, and decision | Deterministic (`core/trace`, `core/audit`) | §28, §33.10 |
 
-There are exactly **three LLM calls in an M1 turn** — plan, analysis, final response — and each one
-is made through the Model Router, never by an agent holding a vendor SDK (FR-040).
+**Logical LLM purposes are not provider API calls. Do not conflate them.**
+
+An M1 turn contains **two logical LLM purposes** — *planning* and *analysis*. (The V1 design has a
+third, *final-response synthesis*; ADR-015 removes it from M1 because there is one agent and one
+result to report, so the analysis call already produces the user-facing prose. The `final_response`
+trace stage is still emitted — by deterministic code — so the trace shape and the frontend are
+unchanged.)
+
+Each **logical** request may produce **multiple provider attempts**:
+
+```
+logical planning request
+├── provider attempt 1        transport failure  → llm_calls row, attempt=1
+├── provider attempt 2        transport failure  → llm_calls row, attempt=2
+└── provider attempt 3        success            → llm_calls row, attempt=3
+        └── plan fails validation → a *second logical* planning request (§6.2), up to 3
+```
+
+So a single turn can legitimately reach **9 provider attempts for planning alone** in the worst
+case, plus up to 3 for analysis. That distinction is load-bearing in four places, and every one of
+them is written against **provider attempts**, never against logical stages:
+
+| Concern | Counted in | Where |
+|---|---|---|
+| Cost | one `llm_calls` row **per provider attempt** | §4.5, §7.3, §13, ET-9 |
+| Rate limits | provider attempts per turn (worst case 12, typical 2) | §4.5 |
+| Latency / p95 | wall time across all attempts, bounded by the turn deadline | §5 |
+| Trace | **twelve stage events per turn, at most one each**; attempt counts live in `detail`, not in extra stages | §8.1 |
+
+Every attempt is made through the Model Router, never by an agent holding a vendor SDK (FR-040).
 
 **The orchestrator never asks a model what to do next.** It asks for a plan once, validates it, and
 then executes a fixed pipeline. That is what §33.2 means by "does not pretend to think", and it is
@@ -277,18 +329,25 @@ and the SSE events.
 | 2 | `context_loaded` | `core/conversations` | `audit_events` |
 | 3 | `memory_retrieved` | `core/memory` | `memories` (source=request), `audit_events` |
 | 4 | `model_selected` | `core/routing` | `audit_events` |
-| 5 | `llm_io` | `core/routing` → `providers/anthropic` | `llm_calls` (purpose=`plan`), `audit_events` |
+| 5 | `llm_io` | `core/routing` → `providers/anthropic` | `llm_calls` (purpose=`plan`) — **one row per provider attempt**, `audit_events` |
 | 6 | `plan_created` | `core/orchestrator/plan_validator` | `plans`, `tasks`, `workflows`, `audit_events` |
 | 7 | `agent_started` | `core/agent_framework/runner` | `task_status_events`, `audit_events` |
 | 8 | `tool_requested` | `agents/project_manager` → `core/tool_framework` | `audit_events` |
 | 9 | `permission_decision` | `core/permissions` | `tool_calls` (decision), `audit_events` |
 | 10 | `tool_result` | `tools/github` | `tool_calls` (result), `audit_events` |
-| 11 | `agent_result` | `agents/project_manager` (LLM call, purpose=`analysis`) | `llm_calls`, `audit_events` |
-| 12 | `final_response` | `core/orchestrator` (LLM call, purpose=`final_response`) | `llm_calls`, `messages` (assistant), `audit_events` |
+| 11 | `agent_result` | `agents/project_manager` — the *analysis* logical request | `llm_calls` (purpose=`analysis`) — one row per provider attempt, `audit_events` |
+| 12 | `final_response` | `core/orchestrator` — **no LLM call in M1** (ADR-015); the agent's summary is persisted as the assistant message | `messages` (assistant), `audit_events` |
 
 Every stage passes through **one** function, `TraceContext.emit(stage, detail=...)`, which writes a
 structured log line, an `audit_events` row, and an SSE event. That is why NFR-020/ET-6 is provable
 rather than aspirational: there is no second way to advance a stage.
+
+**Each of the twelve stages is emitted at most once per turn.** Retries — provider attempts *and*
+whole re-planning attempts — do **not** emit extra stage events; they are recorded as `llm_calls`
+and `plans` rows and surface in the emitting stage's `detail` (`detail.provider_attempts`,
+`detail.plan_attempts`). Without that rule a retried turn would emit fourteen stage rows and ET-6's
+"all twelve, in order" assertion would become ambiguous. QA may therefore assert both *presence*
+and *uniqueness*.
 
 Failure paths short-circuit the pipeline and set a terminal `outcome`, but **always emit stage 12**
 with the failure kind, so the trace is complete for a failed turn too (ET-8).
@@ -309,7 +368,9 @@ is exactly this); (b) `ModelRouter.run()` takes no model or provider argument.
 ```python
 # sunil/providers/base.py
 class LLMPurpose(StrEnum):
-    PLAN = "plan"; ANALYSIS = "analysis"; FINAL_RESPONSE = "final_response"
+    PLAN = "plan"; ANALYSIS = "analysis"
+    FINAL_RESPONSE = "final_response"    # defined; NOT used by any M1 code path (ADR-015).
+                                         # M1 writes llm_calls rows with purpose ∈ {plan, analysis} only.
 
 @dataclass(frozen=True)
 class ChatTurn:      role: Literal["user", "assistant"]; content: str
@@ -431,11 +492,15 @@ Selection in M1 is a config lookup: `capability → {provider, model, max_tokens
 
 Retry (FR-045, NFR-070, ADR-000 Q6):
 
-- **3 attempts max**, backoff `1s, 2s, 4s` with full jitter (`sleep = random()*base`), on
-  `ProviderTransientError` only.
+- **3 provider attempts max per logical request**, backoff `1s, 2s, 4s` with full jitter
+  (`sleep = random()*base`), on `ProviderTransientError` only.
+- **The turn deadline is checked before each attempt (§5.3).** If the attempt's own timeout exceeds
+  the remaining budget, the attempt is not started and the router raises immediately. A retry that
+  cannot finish is not a retry, it is a way to blow the latency budget quietly.
 - `ProviderPermanentError` fails immediately — retrying a 400 wastes the latency budget.
 - **Every attempt writes its own `llm_calls` row** with `attempt` and `error_kind`. That is how
-  FR-045's "the retry count is visible in the logs" is satisfied by data rather than by a log string.
+  FR-045's "the retry count is visible in the logs" is satisfied by data rather than by a log string,
+  and it is why cost and rate-limit arithmetic are done over attempts, never over stages (A-2).
 - On exhaustion, the router raises; the orchestrator produces the `provider_error` outcome (§11.3)
   and stage 12 still fires.
 
@@ -459,18 +524,60 @@ and runs a full turn.
 
 ## 5. Latency budget (NFR-060: ≤30 s p95)
 
+Re-derived after A-2 (provider attempts, not logical stages) and A-4 (two logical stages, not
+three). **The old table's 11–24 s counted one attempt per stage and silently assumed no retry ever
+happens.** It does not survive contact with a rate limit.
+
+### 5.1 The nominal turn — every logical request succeeds on its first provider attempt
+
 | Step | Model | Budget |
 |---|---|---|
-| Plan (structured, ~600 out) | `claude-sonnet-5` | 3–7 s (first call with a new schema pays a one-off grammar-compilation cost; compiled grammars are cached ~24 h) |
+| Plan — 1 provider attempt (structured, ~600 out) | `claude-sonnet-5` | 3–7 s (the first call after a schema change pays a one-off grammar-compilation cost; compiled grammars cache ~24 h) |
 | GitHub read (3 endpoints, concurrent) | — | 0.5–2 s |
-| Analysis (~500 out) | `claude-sonnet-5` | 4–8 s |
-| Final response (~250 out) | `claude-sonnet-5` | 3–6 s |
+| Analysis — 1 provider attempt (~500 out), **this is also the user-facing answer** | `claude-sonnet-5` | 4–8 s |
 | DB + overhead | — | <0.5 s |
-| **Total** | | **11–24 s** |
+| **Nominal total** | | **7.5–17.5 s** |
 
-`claude-sonnet-5` is the M1 default for all three capabilities — it is the documented best
+Removing the third call (ADR-015) took 3–6 s off the nominal path, which is the headroom that pays
+for the retry case below.
+
+### 5.2 What a retry actually costs
+
+| Case | Added | Turn total |
+|---|---|---|
+| 1 transient provider retry (backoff base 1 s, full jitter → avg 0.5 s) + a fresh attempt | +3.5–7.5 s | 11–25 s |
+| 2 transient retries (1 s + 2 s bases, avg 1.5 s of sleep) + 2 fresh attempts | +7.5–15.5 s | 15–33 s |
+| 1 plan-validation retry (a whole second **logical** planning request) | +3–7 s | 10.5–24.5 s |
+| Worst legal case: 3 logical plan requests × 3 provider attempts, then analysis | — | **far past 30 s** |
+
+**Honest statement of NFR-060.** ≤30 s p95 holds **only if fewer than 5% of turns need more than one
+extra provider attempt.** That is a claim about Anthropic's transient-error rate on this account,
+not about SUNIL's code, and M1 cannot prove it — five timed runs (T20) measure a median and a max,
+not a 95th percentile. So NFR-060 is reported in M1 as *"median and max of N observed turns against
+a 30 s target, with the attempt count for each"*, and true p95 needs the sample size that M11's
+soak testing provides. Anything else would be arithmetic theatre.
+
+### 5.3 The turn deadline — new, and it closes a real gap
+
+`M1_CHAT_SPEC` §5.3 has the browser abandon a turn at **45 s**. Nothing on the server knew that
+number, so a retrying turn could keep working — and keep spending — after the only user had been
+shown a timeout error, and the turn's own failure would never be recorded as a failure.
+
+**Decision: a monotonic per-turn deadline of `SUNIL_TURN_DEADLINE_S` (default 40 s), started by
+`RequestContextMiddleware` and carried on `TraceContext`.**
+
+- The Model Router checks the remaining budget **before starting any attempt** and refuses to start
+  one whose own timeout exceeds what is left. A retry that cannot finish is not attempted.
+- On breach, the turn ends deterministically: outcome `failed`, `failure.kind = provider_error`
+  (no new failure kind, so the frozen §6 contract and the Designer's four `ErrorCard` variants are
+  untouched), `error_kind = turn_deadline_exceeded` in the trace detail and on the `tasks` row, and
+  **stage 12 still fires** (ET-8).
+- 40 < 45 by design: the server always produces a persisted, traced failure *before* the client
+  gives up, so a timeout is never invisible on the server side.
+
+`claude-sonnet-5` is the M1 default for both live capabilities — it is the documented best
 speed/intelligence trade and at $2/$10 per MTok it keeps the whole $150 budget comfortable.
-`claude-opus-5` is wired to `complex_reasoning` and is not on the M1 hot path. Three Opus calls with
+`claude-opus-5` is wired to `complex_reasoning` and is not on the M1 hot path. Opus calls with
 `effort: high` would put the 30 s target at genuine risk; that is the reason, stated so it is not
 rediscovered.
 
@@ -535,7 +642,12 @@ agent is actually granted the named tools in `config/permissions.yaml`. Layer 1 
 deliberately redundant: Layer 1 is the provider's guarantee, Layer 4 is ours. If Anthropic ever
 serves a stale compiled grammar, or a provider is swapped, Layer 4 still holds.
 
-**Layer 5 — the type system, made unforgeable.** This is the structural guarantee.
+**Layer 5 — a validated type, enforced at runtime.** *(Amended per A-3. The earlier text called this
+"unforgeable" and claimed "no expressible code path from raw LLM output to a tool adapter". Both
+claims are withdrawn: they are too strong for Python. Type annotations are erased at runtime,
+`__slots__` does not stop `object.__new__(ValidatedPlan)`, and a module-private token is reachable
+through the module's `__dict__` by any code that imports it. The design is unchanged and remains
+correct; only the claim is now accurate — and the enforcement it needed is now written down.)*
 
 ```python
 # sunil/core/orchestrator/plan_models.py
@@ -551,17 +663,67 @@ class ValidatedPlan:
         ...
 ```
 
-`validate_plan()` is the only code that holds `_VALIDATOR_TOKEN`. Every downstream signature demands
-the type:
+`validate_plan()` is the only code that holds `_VALIDATOR_TOKEN`, so no *accidental* construction
+compiles into existence and every downstream signature demands the type. What makes that a control
+rather than a convention is the guard, which is checked on the execution path itself:
 
 ```python
-async def execute_plan(plan: ValidatedPlan, ctx: TraceContext) -> TurnOutcome: ...
-async def run_agent(agent_id: str, plan: ValidatedPlan, task: Task, ctx: TraceContext) -> AgentResult: ...
+# sunil/core/orchestrator/guards.py
+class InvalidPlanExecution(Exception): ...
+
+def require_validated_plan(plan: object) -> ValidatedPlan:
+    if not isinstance(plan, ValidatedPlan):
+        raise InvalidPlanExecution(
+            f"execution requires a ValidatedPlan, received {type(plan).__name__}"
+        )
+    return plan
 ```
 
-and `ToolManager.execute()` requires a `ToolCallRequest` carrying `plan.plan_id`, which only exists
-on a `ValidatedPlan`. **There is therefore no expressible code path from raw LLM output to a tool
-adapter.** Not a convention — a `TypeError`.
+`require_validated_plan()` is the **first statement** of `execute_plan()`, of the agent runner, and
+of `ToolManager.execute()`. Three call sites, one function, and a test per site.
+
+**Trusted execution metadata.** Privilege does not travel on a type alone; it travels on a value
+that only the orchestrator can mint:
+
+```python
+@dataclass(frozen=True)
+class ExecutionMetadata:
+    validated_plan_id: str     # == the `plans` row written with validated = true
+    request_id: str
+    task_id: str
+    agent_id: str
+```
+
+`ToolManager.execute(tool, operation, params, meta: ExecutionMetadata)` requires it, all four fields
+are written onto the `tool_calls` row, and the agent runner constructs it from the `ValidatedPlan`
+and the `Task` — an agent never builds one. A tool call is therefore traceable to the exact
+validated plan that authorised it, which is also what makes the audit trail answer *"which plan
+caused this call?"* without inference.
+
+**Stored-plan verification (specified now, lands with M5).** The Tool Manager can additionally
+re-read `plans` by `meta.validated_plan_id` and refuse to execute unless the stored row carries
+`validated = true`. Inside a single M1 turn this is genuinely redundant — the same process validated
+the plan seconds earlier and holds it in memory — so implementing it now would buy a DB round trip
+and no security. It stops being redundant the moment validation and execution are separated by a
+process boundary or by time: **M5's approval queue** (a human approves at T+10 minutes) and **M10's
+scheduler** (a worker executes a plan it did not validate). It is therefore recorded as deferred
+control **DC-14**, owned by M5, with the metadata seam built in M1 so it is a ten-line addition and
+not a refactor.
+
+**The full chain, as the owner's review §7 specifies it:**
+
+```
+LLM output
+   ↓ schema validation      (constrained decoding — layer 1)
+   ↓ Pydantic validation    (layer 3)
+   ↓ registry validation    (layer 4)
+   ↓ ValidatedPlan          (layer 5, minted only by validate_plan())
+   ↓ runtime execution guard        require_validated_plan()  → InvalidPlanExecution
+   ↓ agent permission check         the agent's own config/agents.yaml grant (FR-082)
+   ↓ tool parameter validation      params_model, extra="forbid" (FR-102)
+   ↓ permission engine              default-deny decide() (FR-120)
+   ↓ tool adapter
+```
 
 ### 6.2 Retry and failure
 
@@ -576,11 +738,16 @@ prompt as corrective context. On exhaustion: terminal outcome `plan_rejected`, s
 | Test | Asserts |
 |---|---|
 | `test_validated_plan_cannot_be_constructed_directly` | `TypeError` raised |
-| `test_execute_plan_rejects_a_dict` | `TypeError`, no DB writes |
+| `test_execute_plan_rejects_a_dict` | `InvalidPlanExecution`, no DB writes |
+| `test_run_agent_rejects_a_non_validated_plan` | `InvalidPlanExecution` at the agent runner (guard site 2) |
+| `test_tool_manager_requires_execution_metadata` | `ToolManager.execute()` refuses a call with no `ExecutionMetadata` (guard site 3) |
+| `test_tool_call_row_carries_validated_plan_id` | all four `ExecutionMetadata` fields land on the `tool_calls` row |
 | `test_plan_schema_enums_match_registries` | schema builder output == registry keys |
 | `test_unknown_agent_in_plan_is_rejected` | `PlanRejected`, zero tool calls (FR-061) |
 | `test_malformed_llm_output_creates_zero_tool_calls` | **ET-7** — `SELECT count(*) FROM tool_calls == 0` |
 | `test_three_failed_plans_return_plan_rejected_outcome` | FR-062, user-visible failure, zero tool calls |
+
+Nine tests, three of them new with A-3. Deleting any one of them deletes the control it proves.
 
 ---
 
@@ -660,8 +827,9 @@ its emptiness as a passing control.
 make the schema Postgres-only and put Docker back on the critical path for zero M1 benefit
 (FR-143 is COULD/M7).
 
-**`llm_calls`** — `request_id`, `task_id` FK nullable, `agent_id` nullable, `purpose`
-(`plan|analysis|final_response`), `capability`, `provider`, `model`, `attempt` int,
+**`llm_calls`** — one row **per provider attempt** (A-2). `request_id`, `task_id` FK nullable,
+`agent_id` nullable, `purpose` (`plan|analysis|final_response` — M1 writes only the first two,
+ADR-015), `capability`, `provider`, `model`, `attempt` int,
 `request_system` Text, `request_messages` JSON, `request_schema` JSON nullable, `response_text` Text
 nullable, `response_json` JSON nullable, `stop_reason` nullable, `input_tokens`, `output_tokens`,
 `cost_micro_usd`, `pricing_version`, `latency_ms`, `error_kind` nullable, `provider_request_id`
@@ -679,6 +847,27 @@ a synchronisation bug. `tool_calls.agent_id` and `tasks.assigned_agent` store th
 validates that every agent referenced in `permissions.yaml` exists in `agents.yaml` and refuses to
 boot otherwise. This is a deliberate deviation from §21's "Agent" object — the object exists, as a
 config schema (§10.2).
+
+### 7.3.1 Capture-policy columns (A-6, ADR-014)
+
+Five tables hold content that V3 may one day train on. Each of them carries the same four columns,
+written at insert time by one resolver (§13.2), never back-filled by guesswork later:
+
+| Column | Type | Values |
+|---|---|---|
+| `capture_policy` | `String` + `CheckConstraint` | `none` · `metadata_only` · `redacted_full` · `full_local_only` |
+| `sensitivity` | `String`, **non-null** | `public` · `internal` · `confidential` · `restricted` |
+| `retention_class` | `String`, non-null | `transient` · `standard` · `long` · `permanent` |
+| `training_eligible` | `Boolean`, non-null | derived, never hand-set (§13.2) |
+
+Applied to: **`messages`, `plans`, `llm_calls`, `tool_calls`, `memories`** (which already carried
+`sensitivity` for NFR-009; it gains the other three).
+
+**Deliberately *not* applied to `audit_events`.** The audit trail is an operational and security
+record, not a training corpus. A capture policy must never be able to suppress an audit row —
+ET-6 grades the completeness of that table, and a policy that could empty it would be a control
+that disables a control. `audit_events.detail` remains redacted (§8.3), and under a restrictive
+policy the *excerpts* inside `detail` are omitted while every stage row still exists.
 
 ### 7.4 Migrations
 
@@ -785,6 +974,10 @@ ADR-009 also names it the **designated descope lever**: if the M1 date comes und
 dropped, the flag goes false, and the frontend falls back to the deterministic client-side stepper
 the Designer already specified in M1_CHAT_SPEC §5.3. No redesign, no renegotiation.
 
+**Status after the owner's review: T12 is pre-classified OPTIONAL / post-M1** (review §14). It is
+built only if the vertical slice is green with time to spare. `SUNIL_PROGRESS_EVENTS` therefore
+ships defaulting to **`false`**, and is flipped to `true` the moment T12 lands.
+
 Mechanics:
 
 - `GET /api/v1/chat/{request_id}/events`, `text/event-stream`.
@@ -881,8 +1074,15 @@ class ToolAdapter(Protocol):
     operations: dict[str, ToolOperation]
 ```
 
-`ToolManager.execute()` — the order matters and each step is a requirement:
+`ToolManager.execute(tool, operation, params, meta: ExecutionMetadata)` — the order matters and
+each step is a requirement:
 
+0. **Runtime guard (A-3).** Reject the call unless it carries an `ExecutionMetadata` whose
+   `validated_plan_id`, `request_id`, `task_id` and `agent_id` are all present; the plan object on
+   the execution path is checked with `require_validated_plan()` at the same moment. A caller with
+   no validated plan cannot reach step 1. All four fields are then written onto the `tool_calls`
+   row, so every executed call names the plan that authorised it. (DC-14 later re-verifies that the
+   stored `plans` row carries `validated = true`; see §6.1.)
 1. **Resolve** tool + operation in the registry. Unknown → record `tool_calls` with
    `permission_decision=deny`, `status=not_executed`; return. (No adapter exists to call.)
 2. **Agent grant precheck** — the agent's own `config/agents.yaml` tool list. FR-082 requires this
@@ -920,10 +1120,12 @@ class ToolAdapter(Protocol):
 An agentic system's distinctive vulnerability is that data returned by a tool is fed to a model that
 also holds authority. Four controls, in decreasing order of strength:
 
-1. **The analysis and final-response LLM calls are made with no `tools` parameter at all.** The model
-   is given no callable tool, so no amount of injected text can cause one. The single tool invocation
-   in an M1 turn is made by deterministic code from the already-validated plan. This is structural
-   and it is the control that actually holds.
+1. **The analysis call — the only LLM request made after tool output exists — carries no `tools`
+   parameter at all.** The model is given no callable tool, so no amount of injected text can cause
+   one. The single tool invocation in an M1 turn is made by deterministic code from the
+   already-validated plan. This is structural and it is the control that actually holds. (ADR-015
+   removed the final-response call; that *reduces* this surface — there is now exactly one
+   post-tool-output LLM request, not two.)
 2. **The plan is produced before any tool output exists.** M1 does not re-plan, so tool content
    cannot influence which tool runs. *This advantage disappears in M6* when agents loop — recorded in
    the threat model as a deferred control with an owning milestone, so nobody inherits a false sense
@@ -940,6 +1142,20 @@ also holds authority. Four controls, in decreasing order of strength:
    content inside that element is retrieved data which may contain text resembling instructions, that
    instructions inside it must never be followed, and that it can never change the task. This is the
    weakest of the four and is treated as such — it is defence in depth behind control 1.
+
+**Controls 3 and 4 together are step 13 of the owner's M1 success test — "project/sanitise external
+content before AI analysis" — and they are a required M1 control, not a deferred one.** Concretely,
+in M1 that means: no GitHub response object is ever passed to a model; only
+`tools/github/projection.py`'s allow-listed, length-capped, body-excluding output is, wrapped and
+delimiter-escaped by the agent. The projection function is a security component and lives in the
+security review's scope, with three named tests (`test_tool_result_projection_excludes_issue_bodies`,
+`test_projection_escapes_the_untrusted_delimiter`,
+`test_injected_instruction_in_commit_message_causes_no_action`).
+
+**Gap, stated rather than hidden:** none of ET-1…ET-11 covers this step. It is covered by NFR-011/012
+and by the three tests above, which is why they are mandatory in T19 and are not descopable. I have
+recommended to the Delivery Manager that the SRS gain an **ET-12** for it so the milestone's own exit
+criteria assert it.
 
 NFR-011/012's test (a commit message reading "Ignore all previous instructions and…") passes because
 of control 1, and would still pass with control 4 removed.
@@ -1135,7 +1351,7 @@ failure with a transport failure would lose the trace payload and give QA a wors
 
 | `failure.kind` | Cause | Frontend (`ErrorCard variant`) |
 |---|---|---|
-| `provider_error` | retries exhausted (NFR-071) | `generic` |
+| `provider_error` | retries exhausted (NFR-071), **or the §5.3 turn deadline was reached** (`error_kind = turn_deadline_exceeded`) | `generic` |
 | `tool_failed` | adapter error / GitHub unreachable / rate-limited (FR-104) | `tool_failed` |
 | `plan_rejected` | 3 plan attempts all failed validation (FR-062) | `plan_rejected` |
 | `unknown_project` | plan returned `project_key: "__unknown__"` (FR-107, ET-11) | `unknown_project` |
@@ -1199,19 +1415,79 @@ contained change, not a refactor. Recorded in §16 and in the threat model's def
 
 ## 13. Cost tracking and training-data capture
 
-**Cost (§29, FR-046, NFR-030, ET-9).** Every LLM attempt writes an `llm_calls` row with provider,
-model, capability, purpose, input/output tokens, `cost_micro_usd`, `pricing_version`, `latency_ms`,
-and the linking `request_id`/`task_id`/`agent_id`. Cost =
-`(in/1e6·in_price + out/1e6·out_price)` from the pinned table in `config/models.yaml`, rounded to
-micro-USD. Aggregation views are M3 (NFR-031); the **write path exists from M1**, which is the
-requirement.
+### 13.1 Cost
 
-**Training capture (§30, NFR-050).** No new machinery — the tables already written *are* the capture:
-`messages` (original request, final result), `audit_events` (context loaded, memory retrieved),
-`plans` (every attempt, correct and rejected), `llm_calls` (full prompts and responses, redacted),
-`tool_calls` (parameters and results), `task_status_events` (outcome). `GET /api/v1/trace/{id}`
-reassembles a complete trace from them, which is both the NFR-050 verification query and the export
-shape V3 will consume. `approvals` will add user corrections from M5 (NFR-051).
+**(§29, FR-046, NFR-030, ET-9.)** Every **provider attempt** — not every logical stage (A-2) —
+writes an `llm_calls` row with provider, model, capability, purpose, `attempt`, input/output tokens,
+`cost_micro_usd`, `pricing_version`, `latency_ms`, `error_kind`, and the linking
+`request_id`/`task_id`/`agent_id`. Cost = `(in/1e6·in_price + out/1e6·out_price)` from the pinned
+table in `config/models.yaml`, rounded to micro-USD. A turn's cost is the **sum over its attempts**,
+which is the only definition that stays true when a retry happens; a failed attempt that consumed
+input tokens still costs money and still appears. Aggregation views are M3 (NFR-031); the **write
+path exists from M1**, which is the requirement.
+
+### 13.2 Training-data capture policy (A-6, ADR-014)
+
+**(§30, NFR-050.)** The tables already written *are* the capture: `messages` (original request,
+final result), `audit_events` (context loaded, memory retrieved), `plans` (every attempt, accepted
+and rejected), `llm_calls` (full prompts and responses, redacted), `tool_calls` (parameters and
+results), `task_status_events` (outcome). `GET /api/v1/trace/{id}` reassembles a complete trace from
+them, which is both the NFR-050 verification query and the export shape V3 will consume. `approvals`
+adds user corrections from M5 (NFR-051).
+
+**Secret redaction is not a capture policy.** §8.3 removes credentials. It does not, and cannot,
+decide whether a client's support conversation, a private repository's contents or a piece of
+personal information belongs in a corpus that a model will be fine-tuned on in V3. Those records
+contain no API key and are still not training data. So capture is governed by an explicit,
+recorded policy from V1 — because the context needed to classify a record (who asked, which project,
+which tool, which agent) exists **only at capture time**, and reconstructing it in V3 from stored
+rows would be guesswork applied to data that has already been persisted under no policy at all.
+
+**The four policy values, and what each one actually does in M1:**
+
+| Policy | Stored | Enforced in M1? |
+|---|---|---|
+| `none` | nothing but the row's existence, ids and timestamps — content columns written `NULL` | **Yes.** The writer nulls the content columns |
+| `metadata_only` | ids, timestamps, counts, lengths, token usage, cost, `error_kind` — **no content** | **Yes.** Same writer path |
+| `redacted_full` | full content after §8.3 redaction. **The M1 default** | **Yes** (it is today's behaviour) |
+| `full_local_only` | full redacted content, flagged as never-exportable and never-uploadable | **Recorded, not enforced.** M1 has one machine and no export path, so there is nothing yet to prevent; enforcement is a V2/V3 control on the export and training pipelines. Stated here so nobody reads the value as a working guarantee |
+
+**Resolution** is one pure function, called by the persistence layer, never by an agent:
+
+```python
+def resolve_capture(*, kind: CaptureKind, project_key: str | None,
+                    agent_id: str | None, source: ContentSource) -> CaptureDecision
+# → CaptureDecision(capture_policy, sensitivity, retention_class, training_eligible)
+```
+
+Defaults come from `config/capture.yaml` (a sixth registry file, cross-validated at startup like the
+others), keyed by content kind, with a per-project override — so `projects.yaml` can mark one
+client's project `confidential / metadata_only` without a code change. M1 ships exactly one project
+and the defaults below.
+
+`training_eligible` is **derived, never hand-set**:
+`training_eligible = capture_policy in {redacted_full, full_local_only} and sensitivity in {public, internal}`.
+`full_local_only` may still be training-eligible — it constrains *where* training may happen (on
+this machine, V3), not *whether*.
+
+**M1 defaults, stated so the exit run's data is interpretable:**
+
+| Content | policy | sensitivity | retention | training_eligible |
+|---|---|---|---|---|
+| Owner's chat message / assistant reply | `redacted_full` | `internal` | `standard` | true |
+| Plan JSON (accepted and rejected) | `redacted_full` | `internal` | `standard` | true |
+| LLM prompt/response (`llm_calls`) | `redacted_full` | `internal` | `standard` | true |
+| GitHub projection in `tool_calls.result` (commit titles, PR/issue titles) | `redacted_full` | `internal` | `standard` | true |
+| Any secret or credential | — | — | — | **never stored at all** (§8.3, ET-10) |
+| Payment/card data | — | — | — | **never stored at all**; no code path handles it in V1 |
+| Short-term memory rows | `redacted_full` | `internal` | `transient` | true |
+
+**What is schema-only in M1, said plainly:** `retention_class` is written and nothing purges — there
+is no retention job until M11 (debt D-11). `training_eligible` is written and nothing exports —
+there is no corpus builder until V3. `full_local_only` is written and nothing restricts. What is
+*real* in M1 is that `none` and `metadata_only` genuinely null the content columns, that the four
+values are decided at capture time by one auditable function, and that the columns exist so V3
+inherits classified data rather than an undifferentiated pile.
 
 ---
 
@@ -1259,7 +1535,7 @@ started, not before:
 |---|---|---|---|---|
 | `postgres` | `pgvector/pgvector:pg17` | `5432:5432` | `sunil_pgdata:/var/lib/postgresql/data` | default |
 | `redis` | `redis:7-alpine` | `6379:6379` | `sunil_redisdata:/data` | `queue` (not started by default) |
-| `api` | built from `infra/docker/Dockerfile.api` | `8000:8000` | source bind-mount for reload | `full` |
+| `api` | built from `infra/docker/Dockerfile.api` | `8000:8000` | source bind-mount for reload **plus `./config:/app/config:ro`** (§14.5) | `full` |
 
 `pgvector/pgvector:pg17` rather than plain `postgres` so M7's extension is a `CREATE EXTENSION`, not
 an image migration. Redis sits behind a profile because **nothing in M1 or M2 uses it**; it is there
@@ -1292,28 +1568,65 @@ ADR-005, ADR-009).
 | `WEB_ORIGIN` | `http://localhost:3000` | CORS + origin check | no |
 | `API_HOST` / `API_PORT` | `127.0.0.1` / `8000` | uvicorn | no |
 | `LOG_LEVEL` | `INFO` | logging | no |
-| `SUNIL_PROGRESS_EVENTS` | `true` | SSE feature flag / descope lever | no |
+| `SUNIL_PROGRESS_EVENTS` | `false` | SSE feature flag; **defaults false until T12 lands** (§8.4) | no |
+| `SUNIL_CONFIG_DIR` | `./config` | registry loaders (§14.5) | no |
+| `SUNIL_TURN_DEADLINE_S` | `40` | orchestrator turn deadline (§5.3) | no |
 | `OWNER_USERNAME` / `OWNER_PASSWORD` | `isuru` / `REPLACE_ME` | seed script only | **yes** |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | `apps/web` | no |
 
 Also gitignore: `var/` (the SQLite database and any local artefacts). `.env` is already ignored.
 
+### 14.5 Config deployment policy (A-7, ADR-016)
+
+§2.2 says "config is not code" and FR-084 requires agent role, instructions and permissions to
+change **without a code deployment**. That sentence is only true if the deployment mechanism keeps
+the config outside the artefact. Bake `config/*.yaml` into a Docker image and every permission edit
+becomes an image build — the requirement would be satisfied on paper and false in practice.
+
+**V1 policy:**
+
+1. **`config/` is never `COPY`ed into an image.** `Dockerfile.api` copies the package and nothing
+   from `config/`. Compose mounts `./config:/app/config:ro` (read-only: the API reads config, it
+   never writes it). A hosted deployment mounts the same directory from a volume, a config map or a
+   secrets-manager-rendered file — the mechanism is the deployment's business; *not in the image* is
+   the rule.
+2. **`SUNIL_CONFIG_DIR` names the directory**, defaulting to `./config`. There is exactly one place
+   the loaders look, and it is an environment variable, so an operator can relocate config without
+   touching code.
+3. **A config change takes effect on restart.** No hot reload, no file watcher, no SIGHUP in V1: the
+   registries are cross-validated once at startup and refusing to boot on a mismatch is the control
+   that makes a bad edit loud (§10.2). Reloading mid-flight would let a turn straddle two permission
+   sets, which is precisely the ambiguity the permission engine exists to remove. Restart-on-change
+   is explicitly sufficient for local development and for V1's single-instance deployment.
+4. **"No code deployment" is not "no change control."** `config/permissions.yaml` *is* a privilege
+   boundary and `config/projects.yaml` *is* the tool's target list; both are in git, both are
+   reviewed like code, and DC-11 (permission-config change auditing, M5) exists because a
+   deployment-free change is exactly the kind that escapes an audit trail.
+
 ---
 
-## 15. What the owner must decide at Gate 2
+## 15. Gate 2 — decided, and what is still outstanding
 
-1. **Approve the architecture and ADR-001…013**, in particular: SQLite-for-M1 with Postgres as the V1
-   target (ADR-001), no Redis in M1 (ADR-005), no pgvector until M7 (ADR-013). These three are what
-   take Docker off M1's critical path.
-2. **Supply two secrets** (after approval, into `.env`, never into the repo):
+**The owner reviewed this architecture on 2026-08-14 and approved the direction after the targeted
+corrections now applied as A-1…A-9.** Items 1, 3 and 4 below are therefore settled; item 5 is
+settled by Docker Desktop now running (server 29.7.2, Linux containers, Compose v5.3.1 — verified),
+which makes the no-Docker path a *contingency* rather than the primary plan, without moving Docker
+onto M1's critical path. **Item 2 is the one thing still outstanding and it blocks the exit run.**
+
+1. ~~**Approve the architecture and ADR-001…013**~~ — **done.** SQLite-for-M1 with Postgres as the V1
+   target (ADR-001), no Redis in M1 (ADR-005), no pgvector until M7 (ADR-013) are accepted, along
+   with the single `sunil` package, SSE over WebSocket, YAML agent config and `/api/v1` versioning.
+2. **⏳ Supply two secrets** (into `.env`, never into the repo):
    `ANTHROPIC_API_KEY`, and a **fine-grained GitHub PAT** scoped to
    `codely-isuru/easy_clean_workforce` with **Contents: read** + **Pull requests: read** +
    **Issues: read** and nothing else.
-3. **Confirm the SSE progress channel is in scope** (ADR-009) and acknowledge it is the designated
-   descope lever if the date slips.
-4. **Accept client-side-only Cancel for M1** (ADR-010).
-5. **Start Docker Desktop when convenient** — not a blocker any more, but it is needed before Gate 3
-   so the Alembic migration can be verified once against real PostgreSQL (§16, D-2).
+3. ~~**Confirm the SSE progress channel is in scope**~~ — **decided, and downgraded.** ADR-009 stands,
+   but the owner's review pre-classifies **T12 (SSE) as OPTIONAL / post-M1**. The frontend's fallback
+   stepper carries the UI if it is not built.
+4. ~~**Accept client-side-only Cancel for M1**~~ — **done** (ADR-010).
+5. ~~**Start Docker Desktop**~~ — **done.** Still not on M1's critical path (ADR-001/005/013), and
+   still needed before Gate 3 so the Alembic migration is verified once against real PostgreSQL
+   (§16, D-2).
 
 ---
 
@@ -1332,6 +1645,8 @@ All deviations in one place, as is my standing convention.
 | V-7 | §21's `Agent` is config, not a table | §7.3 |
 | V-8 | §24's API paths gain a `/v1` segment | §11.1 |
 | V-9 | M1 progress uses SSE, not §24's `/ws/…` WebSocket channels | §8.4, ADR-009 |
+| V-10 | M1 runs **two** logical LLM stages, not the three §22 implies; the final response is composed deterministically from the agent's summary | §1.1, §5, ADR-015 |
+| V-11 | A sixth registry file, `config/capture.yaml`, joins the five in §20 | §13.2, ADR-014 |
 
 **Checked against §33's twelve non-negotiable rules: no contradiction.** Rules 2, 3, 5, 10, 11 and 12
 are the ones this architecture spends its effort on (§1.1, §6, §8, §9). Rule 6 ("sensitive actions
@@ -1349,11 +1664,15 @@ arguing against a §33 rule is therefore required.
 | D-3 | Signed-cookie session cannot be revoked server-side; a session table would fix it | M5 |
 | D-4 | Cancel is client-side only; cooperative abort + a `cancelled` task state | M2 |
 | D-5 | Tailwind pinned to 3.4.19; migrate the token contract to v4 `@theme` | M8 |
-| D-6 | No CI pipeline (FR-009 is M11) | M11 |
+| D-6 | **Amended (A-8):** M1 ships validation CI (`ruff`, `pytest`, frontend typecheck + build, security boundary tests) as a merge gate — task T21. **Deployment** CI, dependency CVE scanning and secret scanning remain deferred (FR-009) | M11 |
 | D-7 | SQLite file unencrypted at rest and holds conversation content | M11 |
 | D-8 | Prompt-injection safety in M1 leans on "no re-planning"; M6's agent loop invalidates that | M6 |
 | D-9 | No aggregate cost reporting, only per-call rows (NFR-031) | M3 |
 | D-10 | Capability metadata is a static table; the Models API (`client.models.list()`) is the real source | M3 |
+| D-11 | `retention_class` is captured but nothing purges; no retention job exists (ADR-014) | M11 |
+| D-12 | NFR-060 is reported in M1 as median/max over a handful of timed runs, not a measured p95 (§5.2) | M11 |
+| D-13 | `full_local_only` is recorded but unenforced — there is no export or training path to restrict yet (ADR-014) | V3 |
+| D-14 | The final-response synthesiser is deferred; M6's multiple concurrent agent results will need one (ADR-015) | M6 |
 
 ---
 
