@@ -107,8 +107,10 @@ Gate 2 approval.
   directories, pytest raises `import file mismatch` and **aborts the whole collection**:
   `1 error in 0.68s`, no tests run. Each lane passes in isolation; only the merge shows it.
   CI would have gone red on the first multi-lane merge and looked like a code defect.
-  Assigned to OPS (owns the pytest/CI configuration). Fix is a collection-mode setting or
-  test packages, **not** renaming another lane's files.
+  **FIXED** by BE-1 during T5 — it renamed its own file to `test_db_capture.py` after
+  trying `--import-mode=importlib` and reverting it, because T3's registry tests depend
+  on prepend-mode's `sys.path` insertion. OPS retains the harder half: making CI fail
+  loudly on a collection *error* (exit 2), and on the wider "absent is green" family.
 * Docker is still needed before Gate 3: the Alembic migration must be verified once
   against real PostgreSQL (architecture debt D-2).
 * No LLM provider credentials configured in this shell. The Model Router needs
