@@ -1,0 +1,16 @@
+# The permission engine's grants (ARCHITECTURE_V1.md §9.2, FR-120/121).
+# `core/permissions/engine.py` (T7) is the decision function; this file is
+# only the data it reads. A missing entry is DENY structurally — that is
+# enforced in the decision function, not by anything in this file.
+#
+# Startup cross-validates every agent named here against config/agents.yaml
+# and every tool/operation named here against config/tools.yaml, and
+# refuses to boot on a mismatch.
+version: 1
+
+agents:
+  project_manager:
+    github:
+      # The only grant that exists in M1 — read-only, and the only
+      # operation the tool exposes (ARCHITECTURE_V1.md §9.2).
+      list_recent_activity: allow
