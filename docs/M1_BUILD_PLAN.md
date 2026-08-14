@@ -21,11 +21,11 @@ before execution."* His corrections are applied, not evaluated. The substantive 
 | 1 | **The stated critical path was wrong.** `T1→T2→T4→T5→T11→T20` omitted the T8→T10 chain. T6, T8, T9 and T10 are **on** the critical path and were wrongly described as slack | §1, §8 |
 | 2 | **No concurrent commits to `main`.** One branch per task, worktrees per lane, merge through review + CI | §0.1 |
 | 3 | **Minimal CI now**, gating every merge — new task **T21** | §5, T21 |
-| 4 | T2's "eleven tables" listed twelve. It is **twelve** (thirteen counting nothing — there is no thirteenth) | T2 |
+| 4 | T2 said "all eleven tables" and then listed twelve. It is **twelve** | T2 |
 | 5 | **T12, T13, T17 are pre-classified OPTIONAL / post-M1**, decided now rather than on the day | §9 |
 | 6 | The owner's 24-step success test is adopted as the definitive acceptance walkthrough | §10 |
 | 7 | The date is settled: **build starts 08-14, due 08-17.** The old "date ambiguity" warning is deleted | header |
-| 8 | T11 is **split into T11a / T11b** — my change, to take 3 h off the tail of the critical path | §2 |
+| 8 | T11 is **split into T11a / T11b** — my change, to take ~2.5 h off the tail of the critical path | §2 |
 
 **And the headline, stated plainly because the owner asked for plainness, not optimism:
 the recalculated critical path is ~27.5 hours of work and review latency against roughly 28
