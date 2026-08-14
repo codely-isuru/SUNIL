@@ -42,6 +42,12 @@ is dropped, the flag goes false, and the frontend falls back to the Designer's a
 client-side stepper. No redesign, no renegotiation, no surprise. That is agreed in advance rather
 than discovered on the last day.
 
+> **Amendment, 2026-08-14 (owner's architecture review §14).** The lever has been pulled in advance:
+> **T12 is pre-classified OPTIONAL / post-M1.** It is built only if the vertical slice is green with
+> time to spare. `SUNIL_PROGRESS_EVENTS` therefore ships defaulting to `false` and is flipped to
+> `true` when T12 lands. The decision *that SSE is the right channel* is unchanged and still stands
+> against WebSocket for when it is built.
+
 **Mechanics** (full detail in `ARCHITECTURE_V1.md` §8.4): the browser generates the `request_id`
 (FR-004 already permits an accepted-if-supplied ID) and sends it as `X-Request-Id` on the POST and in
 the SSE path. `TraceBus` holds per-`request_id`: owning `user_id`, a 64-event replay buffer,

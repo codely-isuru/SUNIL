@@ -10,7 +10,12 @@ FR-020 requires the chat endpoint to return SUNIL's full answer **in the same re
 cycle**. `ROADMAP.md` §4 and §23 Step 1 list Redis and a background job queue as V1 foundation
 technology. There is no Redis on this machine and the Docker daemon is down.
 
-A turn is three LLM calls plus one tool call: 11–24 s expected, ≤30 s p95 (ADR-000 Q5).
+A turn is **two logical LLM stages** (ADR-015) — planning and analysis, each of which may take up to
+three provider attempts — plus one tool call: **7.5–17.5 s nominal**, bounded by the 40 s turn
+deadline, against a ≤30 s p95 target (ADR-000 Q5, `ARCHITECTURE_V1.md` §5).
+*Amended 2026-08-14: this line originally read "three LLM calls … 11–24 s expected". Both figures
+changed with ADR-015 and A-2; the decision below is unaffected — a long synchronous turn is still a
+synchronous turn.*
 
 ## Decision
 
