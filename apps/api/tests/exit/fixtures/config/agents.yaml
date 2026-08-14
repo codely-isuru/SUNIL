@@ -1,0 +1,19 @@
+# QA fixture config — NOT the real config/agents.yaml (that is T3's file).
+# Content mirrors ARCHITECTURE_V1.md §10.2's own example verbatim so it is a valid
+# input to the real loader once T3/T1 build it. Pointed at via SUNIL_CONFIG_DIR
+# (documented, ARCHITECTURE_V1.md §14.4/§14.5) so these tests are independent of the
+# real config/ directory's existence, content or timing.
+version: 1
+agents:
+  project_manager:
+    role: "Manage software projects and identify risks."
+    instructions:
+      - "Review recent project activity."
+      - "Highlight anything that looks like it needs attention."
+      - "Never claim anything the tool result does not show."
+    objectives: ["Report current project status."]
+    memory_scope: [short_term]
+    preferred_capability: general_reasoning
+    escalation_capability: complex_reasoning
+    tools:
+      github: [list_recent_activity]

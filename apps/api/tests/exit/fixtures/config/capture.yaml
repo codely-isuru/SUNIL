@@ -1,0 +1,9 @@
+# QA fixture config. Mirrors the M1 defaults ARCHITECTURE_V1.md §13.2 states plainly
+# ("M1 ships exactly one project and the defaults below").
+version: 1
+defaults:
+  message: {capture_policy: redacted_full, sensitivity: internal, retention_class: standard}
+  plan: {capture_policy: redacted_full, sensitivity: internal, retention_class: standard}
+  llm_call: {capture_policy: redacted_full, sensitivity: internal, retention_class: standard}
+  tool_call: {capture_policy: redacted_full, sensitivity: internal, retention_class: standard}
+  memory: {capture_policy: redacted_full, sensitivity: internal, retention_class: transient}
