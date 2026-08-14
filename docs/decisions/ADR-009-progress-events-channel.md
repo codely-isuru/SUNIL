@@ -37,7 +37,7 @@ Three reasons, in order of weight:
    connection never opens, drops mid-turn, or the feature is switched off with
    `SUNIL_PROGRESS_EVENTS=false`, the turn completes identically and the answer still arrives.
 
-**And it is the designated descope lever.** If the 2026-08-17 date comes under pressure, task **T12**
+**And it is the designated descope lever.** If the 2026-08-18 date comes under pressure, task **T12**
 is dropped, the flag goes false, and the frontend falls back to the Designer's already-specified
 client-side stepper. No redesign, no renegotiation, no surprise. That is agreed in advance rather
 than discovered on the last day.

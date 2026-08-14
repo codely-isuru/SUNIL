@@ -2,7 +2,7 @@
 
 **Project:** S.U.N.I.L. — Personal + Business Agentic OS
 **Scope of this document:** V1 ("SUNIL Core") only, with Milestone 1 (M1) fully specified.
-**M1 is DUE 2026-08-17** — that is the delivery date, not the build-start date. Build started
+**M1 is DUE 2026-08-18** — that is the delivery date, not the build-start date. Build started
 2026-08-14.
 **Plan of record this SRS refines:** [`docs/ROADMAP.md`](ROADMAP.md) (all section references
 below, e.g. "§22", refer to that document).
@@ -60,7 +60,7 @@ a defect.
 ### 1.4 Deferred *within* V1 (still in scope, just not Milestone 1)
 
 V1 itself spans 12 epics (§14) built out over multiple milestones (Section 2). Anything tagged
-M2 or later in Section 4/5 below is V1 work that is **deferred past 2026-08-17**, not excluded:
+M2 or later in Section 4/5 below is V1 work that is **deferred past 2026-08-18**, not excluded:
 conversation streaming/history, OpenAI/Codex providers, the full approval-queue UI, the
 remaining 7 agents, the remaining tool integrations, RAG/vector memory, the dashboard, voice,
 and the scheduler.
@@ -71,7 +71,7 @@ and the scheduler.
 
 | Milestone | Content | Roadmap source | Due date |
 |---|---|---|---|
-| **M1** | §22 vertical slice: Chat UI → FastAPI → Conversation Gateway → Orchestrator → Claude provider → validated structured plan → Project Manager Agent → **one tool** → result → chat, fully logged. Minimum viable subset of Epics 1, 2, 3, 4, 5, 6. | §22, §23 Steps 1–7 | **2026-08-17** (the only dated milestone) |
+| **M1** | §22 vertical slice: Chat UI → FastAPI → Conversation Gateway → Orchestrator → Claude provider → validated structured plan → Project Manager Agent → **one tool** → result → chat, fully logged. Minimum viable subset of Epics 1, 2, 3, 4, 5, 6. | §22, §23 Steps 1–7 | **2026-08-18** (the only dated milestone) |
 | M2 | Conversation Gateway completion: streaming, persistence/history, multi-turn context | §14 Epic 2, §23 Step 3 | TBD, after Gate 1/2 |
 | M3 | Model Provider Layer completion: OpenAI provider, capability metadata, cost reporting | §14 Epic 3, §23 Step 2 | TBD |
 | M4 | Orchestrator hardening: full task state machine, failure detection/reporting, crash recovery | §14 Epic 4, §23 Step 4 | TBD |
@@ -84,7 +84,7 @@ and the scheduler.
 | M11 | V1 Hardening: unit/integration/agent-eval test suites, permission tests, security review, failure/retry testing, cost monitoring, backup strategy, CI pipeline | §23 Step 14 | TBD — depends on all prior milestones |
 
 Every FR/NFR below is tagged with the milestone it belongs to. **Only M1 requirements are due
-2026-08-17.** Sections 6 (acceptance criteria) and 7 (exit tests) cover M1 only, since that is
+2026-08-18.** Sections 6 (acceptance criteria) and 7 (exit tests) cover M1 only, since that is
 the only milestone currently scheduled.
 
 ---
@@ -690,7 +690,7 @@ schedule after Gate 1/Gate 2.
 - **A6.** The ~$150 budget covers the agent team's own LLM usage in building M1, plus whatever
   Claude API usage M1's own exit tests incur; ongoing production cloud costs for SUNIL itself
   are out of this SRS's concern.
-- **A7.** The 2026-08-17 deadline applies to M1 only. No commitment is made in this document to
+- **A7.** The 2026-08-18 deadline applies to M1 only. No commitment is made in this document to
   dates for M2 onward.
 
 ## 11. Risks
@@ -722,7 +722,7 @@ read-only is low-risk (no write scope) and directly matches the roadmap's own su
 (§22: "Recommended first tool: GitHub or a mock tool"). **Fallback:** if GitHub API/PAT access
 cannot be arranged inside the build window, fall back to a mock tool returning fixture data so
 the vertical slice is not blocked by an external dependency — Architect to confirm feasibility
-against the 2026-08-17 deadline.
+against the 2026-08-18 deadline.
 
 **Q2 — What must the Project Manager Agent actually do in M1 to satisfy "Check project X"?**
 Recommended default: given a validated plan naming project X, the agent (a) resolves X to a

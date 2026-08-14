@@ -2,7 +2,7 @@
 
 **Author:** Solution Architect, Minions Team 18 · **Status:** reviewed at Gate 2; updated 2026-08-14
 after the owner's architecture review · **Date:** 2026-08-14
-**Scope:** V1, with **M1** (build started 2026-08-14, **due 2026-08-17**) assessed as built.
+**Scope:** V1, with **M1** (build started 2026-08-14, **due 2026-08-18**) assessed as built.
 **Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) — see its amendment log A-1…A-9.
 
 **Changes from the first issue:** T-22 (training-corpus capture) and T-23 (config mount) added;
@@ -194,6 +194,7 @@ that order.
 | T-29 | **`.env` committed** | Already in `.gitignore` (`.env`, `.env.*`, `!.env.example`); `.env.example` carries placeholders only (FR-005) | **Mitigated** |
 | T-30 | **Secret pasted into a commit message, log excerpt, issue or agent report** | Redaction covers application output. It does **not** cover a human or an agent copying a value by hand | **Partial** — process control only. The team's standing rule ("never place secrets in code, output or logs") is the mitigation |
 | T-31 | **Supply-chain compromise via an unpinned dependency** | `pnpm-lock.yaml` committed for the frontend; backend dependencies pinned in `pyproject.toml` with a locked constraints file. Every dependency was checked to exist and support Python 3.13 on 2026-08-14 (`ARCHITECTURE_V1.md` §14.3) | **Partial** — pinning without hash verification or a vulnerability scan. **Deferred → M11** (CI, FR-009) |
+| **T-24** | **Upstream base-URL redirection** — `ANTHROPIC_BASE_URL` / `GITHUB_API_BASE_URL` are settable, so anything that can set an environment variable can send every prompt, and the GitHub `Authorization: Bearer <PAT>`, to a host of its choosing. Nothing in the audit trail would look wrong: from SUNIL's side the call succeeded | **A non-canonical base URL must resolve to loopback (`localhost`, `127.0.0.0/8`, `::1`) or the application refuses to boot** — one validator, enforced at `Settings` construction, not behind a mode flag that can be forgotten (ADR-017, §9.7). `follow_redirects=False` on the GitHub client stops a local double bouncing the PAT onward | **Mitigated to same-machine.** Residual: a hostile local process listening on loopback could harvest the PAT — but it can already read `.env`, so this adds no meaningful exposure. **Accepted** |
 | T-32 | **Log injection** — untrusted content breaks the log format or forges a line | Structured logging only; untrusted content goes in a *field*, truncated, never interpolated into a message string (`ARCHITECTURE_V1.md` §8.2) | **Mitigated** |
 | T-33 | **Audit gap** — a privileged action with no trace | One emitter, three sinks; twelve stages with one call site each; ET-6 is a query over `audit_events` that must return all twelve in order. A tool call cannot occur without a `tool_calls` row because the row is written before the adapter is reached | **Mitigated** |
 | T-34 | **Audit tampering** | None — the application can write and delete its own audit rows | **Accepted** in M1 (the threat requires already having compromised the host). Append-only storage/WORM is beyond V1 |
@@ -293,6 +294,8 @@ Stated plainly so no reviewer infers protection that is absent:
 | `test_projection_escapes_the_untrusted_delimiter` | T-15 | §9.4 control 4 |
 | `test_no_unprojected_github_payload_reaches_a_prompt` | T-15 | §9.4 controls 3–4 — **success-test step 13** |
 | `test_repo_coordinates_never_come_from_plan` | T-16 | ADR-000 Q7 |
+| `test_non_loopback_api_base_override_refuses_to_boot` | **T-24** | ADR-017, §9.7 |
+| `test_anthropic_client_is_constructed_with_settings_base_url` | T-24 | ADR-017 — the seam cannot be broken by a hard-coded kwarg |
 | `test_capture_policy_none_stores_no_content` | T-22 | ADR-014 |
 | `test_capture_policy_metadata_only_stores_no_content` | T-22 | ADR-014 |
 | `test_audit_events_are_never_suppressed_by_capture_policy` | T-22 | ADR-014, ET-6 |
