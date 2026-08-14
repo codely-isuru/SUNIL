@@ -38,7 +38,17 @@ prior plan document, and the previous TypeScript/NestJS build is retired.
 
 ## 2. Where we are now
 
-**Stage 3 — Architecture & Design: COMPLETE. Awaiting GATE 2 (human).**
+**Stage 3 — Architecture & Design: COMPLETE. GATE 2 OPEN — build is HELD.**
+
+⏸ **2026-08-14 — the owner is reviewing the architecture and will supply written
+recommendations before approving Gate 2.** No development starts until those are read
+and folded in. Two staffing/logistics decisions are already settled:
+
+* **Secrets deferred.** T1–T10 build against fixtures and the frozen API contract in
+  `M1_BUILD_PLAN.md` §6. `ANTHROPIC_API_KEY` and the read-only GitHub PAT must land
+  before the exit tests run on Day 3 — ET-1 cannot be proven without them.
+* **T11 is paired.** Both backend engineers work the orchestrator turn from Day 2.
+  It is the sole enabler of seven of the eleven exit tests and had no slack as scoped.
 
 **✅ GATE 1 APPROVED — 2026-08-14, by the owner.** Scope, requirements and all seven
 recommended defaults accepted as-is. Recorded in
@@ -62,9 +72,9 @@ Gate 2 approval.
 
 ## 3. What happens next
 
-1. **GATE 2 (human) — pending now.** Approve the architecture and ADR-001…013, and
-   supply two secrets: `ANTHROPIC_API_KEY`, and a fine-grained GitHub PAT scoped to
-   `codely-isuru/easy_clean_workforce`, read-only.
+1. **GATE 2 (human) — open, awaiting the owner's written recommendations on the
+   architecture.** On approval, Stage 4 starts: QA writes the red exit tests first,
+   then T1 onward per `docs/M1_BUILD_PLAN.md`.
 2. **Stage 4–6 — Build the Milestone 1 vertical slice**, per `ROADMAP.md` §22:
    chat → FastAPI → Conversation Gateway → Orchestrator → Claude provider →
    validated JSON plan → Project Manager Agent → GitHub read-only tool → result →
