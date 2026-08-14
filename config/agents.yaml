@@ -1,0 +1,34 @@
+# The Agent Registry (FR-080, FR-084). Role, instructions, objectives,
+# memory scope, model-capability preference and tool grants are all data —
+# changing any of them requires no code change and no deployment; a
+# restart picks up the edit (ARCHITECTURE_V1.md §10.2, ADR-016).
+#
+# Startup cross-validates this file against config/permissions.yaml (every
+# agent permissions.yaml grants must exist here) and config/tools.yaml
+# (every tool/operation named in `tools:` below must exist there) and
+# refuses to boot on a mismatch.
+version: 1
+
+agents:
+  project_manager:
+    role: "Manage software projects and identify risks."
+    instructions:
+      - "Review recent project activity."
+      - "Highlight anything that looks like it needs attention."
+      - "Never claim anything the tool result does not show."
+    objectives:
+      - "Report current project status."
+    memory_scope:
+      - short_term
+    # Both capabilities are defined in config/models.yaml. M1 has one agent
+    # and no escalation logic that fires it (ARCHITECTURE_V1.md §4.5) — the
+    # field exists so M6's multi-agent escalation is additive, not a schema
+    # change.
+    preferred_capability: general_reasoning
+    escalation_capability: complex_reasoning
+    # tool name -> operations this agent may ever request. FR-082: a
+    # request for anything not listed here is rejected before the Tool
+    # Manager is reached.
+    tools:
+      github:
+        - list_recent_activity

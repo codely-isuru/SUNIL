@@ -1,0 +1,18 @@
+# The static project-name -> repository mapping (FR-107, ADR-000 Q7).
+#
+# This is the ONLY place the M1 repository coordinates are named. Nothing
+# in `sunil/tools/github/` or anywhere else may hard-code an owner/repo —
+# the adapter resolves `project_key` (validated against this file) to the
+# `github` block below (ARCHITECTURE_V1.md §9.3, THREAT_MODEL.md T-16).
+#
+# `"__unknown__"` is the plan schema's reserved sentinel for "the model did
+# not recognise a configured project" (§6.1) and may never appear as a key
+# here — the loader refuses to boot if it does.
+version: 1
+
+projects:
+  easy_clean_workforce:
+    display_name: "EasyClean Workforce"
+    github:
+      owner: codely-isuru
+      repo: easy_clean_workforce
