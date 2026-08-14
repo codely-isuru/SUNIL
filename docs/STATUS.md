@@ -101,6 +101,14 @@ Gate 2 approval.
   Docker Desktop; verified directly: server 29.7.2, Linux containers, Compose v5.3.1.
   It is no longer on M1's critical path either way — ADR-001/005/013 put M1 on SQLite
   with no Redis and no pgvector, so M1 needs zero containers.
+* **BUG (integration, found 2026-08-14 by the DM while building T8's base):** two test
+  modules share the basename `test_capture.py` — `tests/unit/test_capture.py` (T2) and
+  `tests/unit/registry/test_capture.py` (T3). With no `__init__.py` in the test
+  directories, pytest raises `import file mismatch` and **aborts the whole collection**:
+  `1 error in 0.68s`, no tests run. Each lane passes in isolation; only the merge shows it.
+  CI would have gone red on the first multi-lane merge and looked like a code defect.
+  Assigned to OPS (owns the pytest/CI configuration). Fix is a collection-mode setting or
+  test packages, **not** renaming another lane's files.
 * Docker is still needed before Gate 3: the Alembic migration must be verified once
   against real PostgreSQL (architecture debt D-2).
 * No LLM provider credentials configured in this shell. The Model Router needs
