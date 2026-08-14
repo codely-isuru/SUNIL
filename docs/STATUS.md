@@ -38,20 +38,32 @@ prior plan document, and the previous TypeScript/NestJS build is retired.
 
 ## 2. Where we are now
 
-**Stage 1 — Idea Intake / requirements** (Minions 10-stage workflow).
+**Stage 3 — Architecture & Design**, running now (Architect ∥ Designer, in parallel).
 
-Nothing of V1 is built yet. `main` currently holds the roadmap, this status file and
-the UI prototypes.
+**✅ GATE 1 APPROVED — 2026-08-14, by the owner.** Scope, requirements and all seven
+recommended defaults accepted as-is. Recorded in
+[`docs/decisions/ADR-000-gate-1-scope-decisions.md`](decisions/ADR-000-gate-1-scope-decisions.md).
+
+Delivered so far:
+
+| Document | What | Commit |
+|---|---|---|
+| `docs/REQUIREMENTS_V1.md` | The SRS — 61 FRs (39 in M1), 25 NFRs, ET-1…ET-11, M1…M11 | `811b73a` |
+| `docs/ENVIRONMENT.md` | Read-only survey of this machine | `bd71286` |
+| `docs/decisions/ADR-000…` | The seven Gate 1 decisions | this commit |
+
+Nothing of V1 is built yet — no application code exists on `main`.
 
 ## 3. What happens next
 
-1. **Stage 2 — Requirements (BA)** → SRS for V1 Milestone 1. → **Gate 1 (human)**
-2. **Stage 3 — Architecture (Architect ∥ Designer)** → stack, data model, Model
-   Router + orchestrator design, permission model, threat model, ADRs. → **Gate 2 (human)**
-3. **Stage 4–7 — Build the Milestone 1 vertical slice**, per `ROADMAP.md` §22:
+1. **Stage 3 (running)** — Architect: architecture, data model, Model Router, plan
+   validation, permission engine, threat model, ADR-001+, and the M1 task breakdown.
+   Designer: design system + the M1 chat spec. → **Gate 2 (human)**
+2. **Stage 4–6 — Build the Milestone 1 vertical slice**, per `ROADMAP.md` §22:
    chat → FastAPI → Conversation Gateway → Orchestrator → Claude provider →
-   validated JSON plan → Project Manager Agent → one tool → result → chat, fully logged.
-4. **Gate 3 (human)** before anything reaches production.
+   validated JSON plan → Project Manager Agent → GitHub read-only tool → result →
+   chat, fully traced. QA writes the red exit tests first.
+3. **Stage 7 — Staging**, then **Gate 3 (human)** before anything reaches production.
 
 ## 4. Known issues / open items
 
