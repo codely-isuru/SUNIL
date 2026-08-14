@@ -1,0 +1,10 @@
+# QA fixture config. The one M1 tool and its one read-only operation
+# (ARCHITECTURE_V1.md §9.3, FR-100/105).
+version: 1
+tools:
+  github:
+    operations:
+      list_recent_activity:
+        read_only: true
+        params:
+          project_key: string
