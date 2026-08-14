@@ -1,8 +1,9 @@
 # SUNIL V1 — Software Requirements Specification (SRS)
 
 **Project:** S.U.N.I.L. — Personal + Business Agentic OS
-**Scope of this document:** V1 ("SUNIL Core") only, with Milestone 1 (M1) fully specified for
-build-start on 2026-08-17.
+**Scope of this document:** V1 ("SUNIL Core") only, with Milestone 1 (M1) fully specified.
+**M1 is DUE 2026-08-17** — that is the delivery date, not the build-start date. Build started
+2026-08-14.
 **Plan of record this SRS refines:** [`docs/ROADMAP.md`](ROADMAP.md) (all section references
 below, e.g. "§22", refer to that document).
 **Author:** Business Analyst, Minions Team 18. **Status:** Draft for Gate 1 (human review).

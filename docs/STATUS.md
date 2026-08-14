@@ -10,7 +10,7 @@
 | **Branch** | `main` (single-branch rule; feature work lands via short-lived branches → `main`) |
 | **Delivery** | Minions Team 18 (portal `http://localhost:4317`) |
 | **Due** | 2026-08-17 (Milestone 1 vertical slice) · budget ~$150 |
-| **Last updated** | 2026-08-13 |
+| **Last updated** | 2026-08-14 |
 
 ---
 
@@ -38,7 +38,7 @@ prior plan document, and the previous TypeScript/NestJS build is retired.
 
 ## 2. Where we are now
 
-**Stage 3 — Architecture & Design**, running now (Architect ∥ Designer, in parallel).
+**Stage 3 — Architecture & Design: COMPLETE. Awaiting GATE 2 (human).**
 
 **✅ GATE 1 APPROVED — 2026-08-14, by the owner.** Scope, requirements and all seven
 recommended defaults accepted as-is. Recorded in
@@ -50,15 +50,21 @@ Delivered so far:
 |---|---|---|
 | `docs/REQUIREMENTS_V1.md` | The SRS — 61 FRs (39 in M1), 25 NFRs, ET-1…ET-11, M1…M11 | `811b73a` |
 | `docs/ENVIRONMENT.md` | Read-only survey of this machine | `bd71286` |
-| `docs/decisions/ADR-000…` | The seven Gate 1 decisions | this commit |
+| `docs/decisions/ADR-000` | The seven Gate 1 decisions | `d7c7f79` |
+| `docs/design/` | Design system, M1 chat spec, dashboard direction | `9bc72ec` |
+| `docs/ARCHITECTURE_V1.md` | V1 architecture, M1 as first buildable slice | `ca02c02` |
+| `docs/decisions/ADR-001…013` | The thirteen technical decisions | `8188570` |
+| `docs/THREAT_MODEL.md` | 7 trust boundaries, 34 threats, 13 deferred controls | `b4450e3` |
+| `docs/M1_BUILD_PLAN.md` | T1…T20, exclusive file ownership, exit-test coverage | `d3d90aa` |
 
-Nothing of V1 is built yet — no application code exists on `main`.
+Nothing of V1 is built yet — no application code exists on `main`. Build starts on
+Gate 2 approval.
 
 ## 3. What happens next
 
-1. **Stage 3 (running)** — Architect: architecture, data model, Model Router, plan
-   validation, permission engine, threat model, ADR-001+, and the M1 task breakdown.
-   Designer: design system + the M1 chat spec. → **Gate 2 (human)**
+1. **GATE 2 (human) — pending now.** Approve the architecture and ADR-001…013, and
+   supply two secrets: `ANTHROPIC_API_KEY`, and a fine-grained GitHub PAT scoped to
+   `codely-isuru/easy_clean_workforce`, read-only.
 2. **Stage 4–6 — Build the Milestone 1 vertical slice**, per `ROADMAP.md` §22:
    chat → FastAPI → Conversation Gateway → Orchestrator → Claude provider →
    validated JSON plan → Project Manager Agent → GitHub read-only tool → result →
@@ -67,13 +73,12 @@ Nothing of V1 is built yet — no application code exists on `main`.
 
 ## 4. Known issues / open items
 
-* **BLOCKER — Docker daemon is not running** (found 2026-08-13 by the environment
-  survey, `docs/ENVIRONMENT.md`). Docker Desktop 29.7.2 is installed but its WSL2
-  distro is stopped, and this machine has **no native PostgreSQL and no Redis**.
-  The roadmap's whole data layer (Postgres + pgvector + Redis) therefore has no
-  local fallback. **Human action required:** start Docker Desktop. Until then no
-  DB-backed M1 work can be smoke-tested.
-* No `docker-compose.yml` yet — Epic 1, not started.
+* ~~BLOCKER — Docker daemon not running~~ **CLEARED 2026-08-14.** The owner started
+  Docker Desktop; verified directly: server 29.7.2, Linux containers, Compose v5.3.1.
+  It is no longer on M1's critical path either way — ADR-001/005/013 put M1 on SQLite
+  with no Redis and no pgvector, so M1 needs zero containers.
+* Docker is still needed before Gate 3: the Alembic migration must be verified once
+  against real PostgreSQL (architecture debt D-2).
 * No LLM provider credentials configured in this shell. The Model Router needs
   them via a secret store, never in prompts or code (`ROADMAP.md` §26.5).
 * `node_modules/` in the repo root is stale from the retired TS build (~1.1 GB);
