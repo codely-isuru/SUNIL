@@ -72,6 +72,31 @@ export async function getSession(): Promise<SessionResponse> {
   return res.json();
 }
 
+// --- Projects (§6, A-14 ruling 4) ---
+
+interface ProjectsResponse {
+  projects: KnownProject[];
+}
+
+/**
+ * `GET /api/v1/projects` — the empty-state suggestion chips' only source
+ * (M1_CHAT_SPEC.md §3). Deliberately never throws: on any failure (network,
+ * a non-2xx, a session that has lapsed, malformed JSON) this resolves to
+ * `[]`. **There is no hard-coded fallback list** — a product whose entire
+ * claim is that it does not fabricate must not fabricate its own capability
+ * list, so an empty result renders as no chips, never a stale guess.
+ */
+export async function getProjects(): Promise<KnownProject[]> {
+  try {
+    const res = await apiFetch("/api/v1/projects");
+    if (!res.ok) return [];
+    const data = (await res.json()) as ProjectsResponse;
+    return Array.isArray(data.projects) ? data.projects : [];
+  } catch {
+    return [];
+  }
+}
+
 // --- Chat turn (§6) ---
 
 export interface ChatTraceEntry {
@@ -80,7 +105,12 @@ export interface ChatTraceEntry {
   detail: unknown;
 }
 
-export interface ChatKnownProject {
+/**
+ * The one project-list shape in the system (A-14, ruling 4): the same
+ * element type `GET /api/v1/projects` returns and `failure.known_projects`
+ * carries — one type, one renderer, two producers of one registry.
+ */
+export interface KnownProject {
   key: string;
   display_name: string;
 }
@@ -89,7 +119,7 @@ export type ChatFailureKind = "provider_error" | "tool_failed" | "plan_rejected"
 
 export interface ChatFailure {
   kind: ChatFailureKind;
-  known_projects?: ChatKnownProject[];
+  known_projects?: KnownProject[];
 }
 
 export interface ChatMessagePayload {

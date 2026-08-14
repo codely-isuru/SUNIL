@@ -57,6 +57,13 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
   const liveRef = useRef(false);
   const lastPhaseChangeAtRef = useRef(0);
   const startedAtRef = useRef(0);
+  // `project_display_name` is only carried on `plan_created`'s `detail`
+  // (`ARCHITECTURE_V1.md` §3.4) — the later "working"-phase stages don't
+  // repeat it. Remembered here for the turn's duration so the "Checking
+  // {Project}…" label stays specific once the phase moves to "working",
+  // instead of reverting to the generic "Working on it…" the moment the
+  // one event that carried the name has passed.
+  const projectNameRef = useRef<string | undefined>(undefined);
 
   const clearFallbackTimers = useCallback(() => {
     fallbackTimersRef.current.forEach((id) => window.clearTimeout(id));
@@ -122,6 +129,7 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
       liveRef.current = false;
       lastPhaseChangeAtRef.current = Date.now();
       startedAtRef.current = Date.now();
+      projectNameRef.current = undefined;
 
       setActiveTurn({
         kind: "working",
@@ -147,7 +155,9 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
         onStage: ({ stage, detail }) => {
           liveRef.current = true;
           clearFallbackTimers();
-          setPhase(phaseForStage(stage as StageName), dynamicLabelFromDetail(detail));
+          const projectName = dynamicLabelFromDetail(detail);
+          if (projectName) projectNameRef.current = projectName;
+          setPhase(phaseForStage(stage as StageName), projectNameRef.current);
         },
         onError: () => {
           // Identical to `SUNIL_PROGRESS_EVENTS` being off — the fallback

@@ -1,4 +1,5 @@
 import type { TraceStep } from "@/components/chat";
+import type { KnownProject } from "./api";
 import type { StageName } from "./phases";
 
 /**
@@ -16,27 +17,6 @@ export function formatTimestamp(input: string | Date): string {
   const date = typeof input === "string" ? new Date(input) : input;
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
 }
-
-export interface KnownProject {
-  key: string;
-  display_name: string;
-}
-
-/**
- * STOPGAP — flagged to the Delivery Manager. §6's frozen contract has no
- * endpoint to fetch the configured-project list *before* the first turn:
- * `known_projects` only appears inside an `unknown_project` failure
- * response, which by definition can't exist before any message has been
- * sent. The empty-state chips (M1_CHAT_SPEC.md §3) need that list anyway.
- * This mirrors the single M1 entry in `config/projects.yaml`
- * (`easy_clean_workforce` → "EasyClean Workforce") rather than inventing a
- * name, but it is still a hard-coded stand-in for a real API call and
- * should be replaced the moment the Architect names one (a new endpoint,
- * or a field added to `GET /api/v1/auth/session`).
- */
-export const FALLBACK_KNOWN_PROJECTS: KnownProject[] = [
-  { key: "easy_clean_workforce", display_name: "EasyClean Workforce" },
-];
 
 export function formatKnownProjectList(projects: KnownProject[]): string {
   return projects.map((project) => project.display_name).join(", ");
@@ -85,12 +65,13 @@ export function formatOffset(offsetMs: number): string {
 /**
  * Turns one `trace[]` entry into the plain-English line `TraceDisclosure`
  * renders (M1_CHAT_SPEC.md §5.5's example table). The base label per stage
- * is fixed; a handful of stages additionally interpolate `detail` when it
- * looks like the field names the §5.5 example implies (e.g. "Created a
- * plan: check {Project} activity"). **`detail`'s shape is not part of §6's
- * frozen contract** (see `phases.ts`'s `dynamicLabelFromDetail` comment) —
- * this degrades to the fixed base label whenever the expected field isn't
- * present, rather than guess wrong.
+ * is fixed; a handful of stages additionally interpolate `detail`, whose
+ * keys are now **contracted per stage** (`ARCHITECTURE_V1.md` §3.4 —
+ * `project_display_name`, `model`, `tool`/`operation`, `decision`, etc.).
+ * This still degrades to the fixed base label whenever a key is absent —
+ * that stays correct defensive behaviour even against a contracted key,
+ * because the contract is additive (a future stage/key that isn't handled
+ * here yet must not break rendering).
  */
 export function formatTraceStep(stage: StageName, offsetMs: number, detail?: unknown): TraceStep {
   return { label: describeStage(stage, detail), offset: formatOffset(offsetMs) };
@@ -105,13 +86,19 @@ function describeStage(stage: StageName, detail?: unknown): string {
       return typeof model === "string" ? `Selected ${model} for reasoning` : STAGE_LABELS.model_selected;
     }
     case "plan_created": {
-      const project = record?.project_display_name ?? record?.project;
+      const project = record?.project_display_name;
       return typeof project === "string"
         ? `Created a plan: check ${project} activity`
         : STAGE_LABELS.plan_created;
     }
+    case "agent_started": {
+      const agent = record?.agent_display_name;
+      return typeof agent === "string" ? `Started ${agent}` : STAGE_LABELS.agent_started;
+    }
     case "tool_requested": {
-      const tool = record?.tool ?? record?.operation;
+      const tool = record?.tool;
+      const operation = record?.operation;
+      if (typeof tool === "string" && typeof operation === "string") return `Requested ${tool} — ${operation}`;
       return typeof tool === "string" ? `Requested ${tool}` : STAGE_LABELS.tool_requested;
     }
     case "permission_decision": {

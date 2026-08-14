@@ -43,17 +43,18 @@ export function phaseForStage(stage: StageName): WorkPhase {
 }
 
 /**
- * Best-effort project/tool name extraction from a stage event's `detail`
- * payload, for `WorkIndicator`'s "Checking {Project}…" substitution
- * (§5.3). **`detail`'s shape per stage is not specified by §6's frozen
- * contract** — this is a guess at plausible field names, not a documented
- * schema, and degrades to `undefined` (the generic "Working on it…" copy)
- * rather than assume a shape that turns out wrong. Flagged to the
- * Delivery Manager as an open question on the contract.
+ * Extracts the resolved project name from a stage event's `detail`, for
+ * `WorkIndicator`'s "Checking {Project}…" substitution (§5.3).
+ * `project_display_name` is a contracted key (`ARCHITECTURE_V1.md` §3.4),
+ * but it is only carried on `plan_created` (the "planning" phase) — the
+ * later "working"-phase stages (`agent_started`/`tool_requested`/
+ * `permission_decision`/`tool_result`) don't repeat it. `useTurn` is what
+ * remembers the last-known value across a turn and keeps supplying it once
+ * the phase moves to "working"; this function only reads one event.
  */
 export function dynamicLabelFromDetail(detail: unknown): string | undefined {
   if (!detail || typeof detail !== "object") return undefined;
   const record = detail as Record<string, unknown>;
-  const candidate = record.project_display_name ?? record.display_name ?? record.project;
+  const candidate = record.project_display_name;
   return typeof candidate === "string" ? candidate : undefined;
 }

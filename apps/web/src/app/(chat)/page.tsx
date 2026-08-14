@@ -10,8 +10,9 @@ import {
   type ActiveTurn,
   type ChatMessage,
 } from "@/components/chat";
-import { getSession, logout } from "@/lib/api";
-import { FALLBACK_KNOWN_PROJECTS, formatTimestamp, suggestionsFor } from "@/lib/copy";
+import type { KnownProject } from "@/lib/api";
+import { getProjects, getSession, logout } from "@/lib/api";
+import { formatTimestamp, suggestionsFor } from "@/lib/copy";
 import { useTurn } from "@/lib/useTurn";
 
 /**
@@ -28,6 +29,7 @@ export default function ChatPage() {
   const [composerValue, setComposerValue] = useState("");
   const [expandedTraceIds, setExpandedTraceIds] = useState<ReadonlySet<string>>(new Set());
   const [focusToken, setFocusToken] = useState(0);
+  const [projects, setProjects] = useState<KnownProject[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +49,19 @@ export default function ChatPage() {
       cancelled = true;
     };
   }, [router]);
+
+  useEffect(() => {
+    // `getProjects()` never throws and resolves to `[]` on any failure
+    // (network, session, malformed response) — the empty-state chips then
+    // render as no chips, not a stale guess (A-14, ruling 4).
+    let cancelled = false;
+    getProjects().then((result) => {
+      if (!cancelled) setProjects(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleTrace = useCallback((id: string) => {
     setExpandedTraceIds((prev) => {
@@ -151,7 +166,7 @@ export default function ChatPage() {
         messages={renderedMessages}
         activeTurn={displayTurn}
         onJumpToBottom={() => {}}
-        suggestions={suggestionsFor(FALLBACK_KNOWN_PROJECTS)}
+        suggestions={suggestionsFor(projects)}
         onPickSuggestion={handlePickSuggestion}
       />
     </ChatShell>
