@@ -100,3 +100,64 @@ Redaction (§8.3) plus ET-10 are the enforcement, and no capture policy can re-e
   (debt D-11). Recorded so its presence is not mistaken for a working retention control.
 - V3 inherits classified data instead of an undifferentiated pile, which is the entire point of
   doing this two versions early.
+
+---
+
+## Amendment 1 — one canonical vocabulary, in one leaf module
+
+**Date:** 2026-08-14 · **Origin:** cross-lane contract mismatch reported by the Delivery Manager
+**Status:** Accepted · **Applies to:** the decision's §2 and §3. The policy values are unchanged.
+
+### What happened
+
+T2 (`sunil/db/capture.py`) and T3 (`sunil/core/registry/capture.py`) each defined the vocabulary,
+because this ADR named the *columns* and the *resolver signature* but never said **who owns the
+types**. Two of five `CaptureKind` values diverged and the container types were incompatible:
+
+| | T2 | T3 |
+|---|---|---|
+| Kinds | `message, plan, llm_call, **tool_call_result**, **memory_short_term**` | `message, plan, llm_call, **tool_call**, **memory**` |
+| Type | `CaptureRule` NamedTuple over its own StrEnums | `CaptureDefaults` Pydantic model of plain strings |
+
+T2's `resolve_capture(overrides: dict[CaptureKind, CaptureRule] | None)` therefore could not accept
+T3's registry output — the seam and the thing meant to flow through it never fit. That is my defect,
+not the engineers': two lanes implemented one under-specified sentence, correctly and differently.
+
+### Ruling
+
+1. **`sunil/capture.py` is the single owner of the vocabulary** — a top-level leaf beside
+   `redaction.py`, importing nothing from `sunil`. It exports `CaptureKind`, `CapturePolicy`,
+   `Sensitivity`, `RetentionClass`, `ContentSource`, `CaptureRule` (frozen dataclass) and
+   `CaptureDecision`. Neither `core/` nor `db/` may define a second copy.
+2. **`CaptureKind` is table-keyed: `message · plan · llm_call · tool_call · memory`** — T3's set,
+   one value per capture table named in §2.
+3. **`CaptureRule` is the type that crosses the boundary.**
+   `core/registry/capture.py` returns `dict[CaptureKind, CaptureRule]`; `db/capture.py` accepts
+   exactly that. No plain strings cross.
+4. **Conversion happens once, in `core/registry/capture.py`** — the point where untyped YAML enters —
+   and an unknown kind or policy value refuses to boot, like every other registry (§10.2). BE-2 does
+   this; BE-1 does not.
+
+### Why table-keyed, when the finer names are more descriptive
+
+The four capture columns live **on the row**. A kind finer than a row cannot be honoured:
+`tool_call_result` implies `tool_calls.parameters` and `tool_calls.result` can carry different
+policies, and they cannot — there is one `capture_policy` column per row. `memory_short_term`
+additionally duplicates `memories.type`, and bakes an M1-only value into a V1 vocabulary that would
+then have to grow `memory_long_term`, `memory_structured`, `memory_knowledge`, `memory_preference`
+along an axis that is not `CaptureKind`'s.
+
+**T2's instinct was right and is preserved by the parameter that already existed for it.** External
+tool results genuinely deserve a different default from SUNIL-generated parameters — that is
+`source: ContentSource` (`kind=tool_call, source=external_tool_result` vs `source=sunil_generated`),
+not a second kind. Where one row draws on several sources, **the row takes the most restrictive
+applicable policy**: fail safe, and it keeps one policy per row true.
+
+### Rejected alternatives
+
+| Rejected | Why |
+|---|---|
+| **The registry converts to `db/capture.py`'s types** | Makes config loading import the persistence module, pulling SQLAlchemy into registry parsing and inverting the dependency: vocabulary is domain language, not a persistence detail. |
+| **`db/capture.py` widens to accept plain strings** | Pushes validation to the last possible moment — the write path — and loses the "refuse to boot on a bad config value" property that every other registry has. A typo in `capture.yaml` would then surface as a mis-classified row, months later, in data. |
+| **Keep both and translate at the call site** | A mapping table nobody owns, which is exactly how the two definitions drifted in the first place. |
+| **Adopt T2's finer kinds and add a second policy column per row** | A schema change to `0001` for a granularity nothing in V1 needs, and it would still not answer which of two policies governs `training_eligible` for the row. |
