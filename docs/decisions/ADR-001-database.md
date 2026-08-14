@@ -45,3 +45,12 @@ one user, no partitioning, no extensions. FR-143 (vector embeddings) is COULD/M7
 - **Debt D-7:** the SQLite file holds conversation content and prompts, unencrypted, in `var/`.
   `var/` is gitignored; encryption at rest is M11.
 - Any future column must obey §7.2's portability rules or it silently breaks one engine.
+
+> **Context update, 2026-08-14 — the decision is unchanged.** Docker Desktop is now running (server
+> 29.7.2, Linux containers, Compose v5.3.1). The "Context" section above describes the situation when
+> this decision was taken and is left as written, per ADR practice. The decision stands on its own
+> merits and not on the daemon's state: the same reasoning that says a stopped daemon must not block
+> M1 says a started daemon must not pull containers onto the critical path three days from the
+> milestone. What changes is that **debt D-2 can now be discharged** — the migration can be run once
+> against real PostgreSQL before Gate 3 — and that the compose stack (T17) becomes usable the moment
+> someone wants it. The same update applies to ADR-005 and ADR-013, which cite the same context.

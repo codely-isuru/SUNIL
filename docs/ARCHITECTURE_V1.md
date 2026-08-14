@@ -1495,9 +1495,16 @@ inherits classified data rather than an undifferentiated pile.
 
 ### 14.1 What a developer runs **today**, with no Docker
 
-This is the path that matters: Docker Desktop's daemon is down, there is no native Postgres and no
-Redis on this machine, and M1 is due 2026-08-17. **M1 needs neither Postgres nor Redis** (ADR-001,
-ADR-005, ADR-013), so the build lane does not wait for anyone.
+This is the path that matters. **M1 needs neither Postgres nor Redis** (ADR-001, ADR-005, ADR-013),
+so the build lane does not wait for anyone, and this is still the primary path.
+
+*Updated 2026-08-14: Docker Desktop is now running (server 29.7.2, Linux containers, Compose v5.3.1).
+That changes nothing here by design — the three ADRs above were taken so that a stopped daemon could
+never block M1, and the same reasoning says a started daemon should not now pull containers onto the
+critical path four days from the milestone. Docker's availability makes the compose stack (T17) a
+convenience and makes D-2's PostgreSQL verification possible before Gate 3; it does not make either
+one an M1 dependency. `docs/ENVIRONMENT.md` still records the daemon as down and is now stale on that
+point — the DevOps lane owns that document.*
 
 ```powershell
 # backend  — terminal 1
