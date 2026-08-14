@@ -6,24 +6,28 @@ Callers name a **capability**, never a vendor or a model (§33 rule 1) —
 (FR-040's own acceptance criterion; checked by T19's import-boundary test,
 run on every merge by T21).
 
-**Trace stages are the caller's job, not this router's.** `model_selected`
-(stage 4) and `llm_io` (stage 5) belong to the *first* logical request in
-a turn — the orchestrator's own plan-generation call — while the PM
-agent's analysis call is folded into stage 11 (`agent_result`) instead
-(`ARCHITECTURE_V1.md` §3.4's table ties stage 5 to `purpose=plan`
-specifically). Because `run()` is invoked once per **logical request**
-and a turn makes at least two of those (plan, then analysis), it cannot
-safely call `ctx.emit()` itself without risking a second `model_selected`/
-`llm_io` emission on the analysis call — a `DuplicateStageEmission`
-(§3.4: "at most once per turn"). So this router only *reads* the trace
-context (`remaining_deadline_s()`, for the §5.3 deadline check); whoever
-calls `run()` (T9 for the plan, T10/T11b for the analysis) emits the
-stage that surrounds that particular call.
+**Trace stages are the caller's job, not this router's — now A-17,
+confirmed in `ARCHITECTURE_V1.md` §4.5 rather than only in this
+docstring.** `model_selected` (stage 4) and `llm_io` (stage 5) belong to
+the *first* logical request in a turn — the orchestrator's own
+plan-generation call — while the PM agent's analysis call is folded into
+stage 11 (`agent_result`) instead. Because `run()` is invoked once per
+**logical request** and a turn makes at least two of those (plan, then
+analysis), it cannot safely call `ctx.emit()` itself without risking a
+second `model_selected`/`llm_io` emission on the analysis call — a
+`DuplicateStageEmission` (§3.4: "at most once per turn"). So this router
+only *reads* the trace context (`remaining_deadline_s()`, for the §5.3
+deadline check); whoever calls `run()` (T9 for the plan, T10/T11b for the
+analysis) emits the stage that surrounds that particular call. The
+router still *writes data* — a `ProviderAttemptRecord` per attempt — and
+the returned `LLMResponse.attempts` tells the caller how many, for
+`detail.provider_attempts` (A-17).
 """
 
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -326,7 +330,11 @@ class ModelRouter:
                     provider_request_id=response.provider_request_id,
                 )
             )
-            return response
+            # A-17: "the router... returns the attempt count so the
+            # caller can put it in `detail.provider_attempts`." The
+            # provider itself is attempt-agnostic (always `attempts=1`);
+            # this is the one place that knows the real count.
+            return dataclasses.replace(response, attempts=attempt)
 
         # MAX_ATTEMPTS transient failures, none of them permanent enough
         # to raise early.

@@ -66,6 +66,14 @@ class LLMResponse:
     stop_reason: str | None
     provider_request_id: str | None
     latency_ms: int
+    # How many provider attempts the *logical* request took to produce
+    # this response (A-17: "the router... returns the attempt count so
+    # the caller can put it in `detail.provider_attempts`"). A single
+    # `AnthropicProvider.generate()` call cannot know this — it always
+    # constructs `attempts=1` — the Model Router overwrites it with the
+    # real count via `dataclasses.replace()` before returning to its
+    # caller (`core/routing/router.py`).
+    attempts: int = 1
 
 
 @dataclass(frozen=True)

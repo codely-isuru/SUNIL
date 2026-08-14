@@ -139,3 +139,76 @@ def test_settings_is_cached_per_process(monkeypatch: pytest.MonkeyPatch) -> None
         assert first is second
     finally:
         get_settings.cache_clear()
+
+
+# -- Upstream base URLs (A-11, ADR-017) -----------------------------------
+# Added by BE-2 (T6) ahead of T1/T5 picking up the ADR-017 delta — see
+# `settings.py`'s own "Cross-lane note" docstring. Co-located with the
+# rest of this file's tests rather than a second file, since they test
+# the same class's own validators.
+
+
+def test_base_urls_default_to_the_canonical_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("GITHUB_API_BASE_URL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.anthropic_base_url == "https://api.anthropic.com"
+    assert settings.github_api_base_url == "https://api.github.com"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "env_var"),
+    [("anthropic_base_url", "ANTHROPIC_BASE_URL"), ("github_api_base_url", "GITHUB_API_BASE_URL")],
+)
+@pytest.mark.parametrize(
+    "loopback_value",
+    [
+        "http://localhost:9001",
+        "http://127.0.0.1:9001",
+        "http://127.5.5.5:9001",
+        "http://[::1]:9001",
+    ],
+)
+def test_loopback_base_url_overrides_are_accepted(
+    monkeypatch: pytest.MonkeyPatch, field_name: str, env_var: str, loopback_value: str
+) -> None:
+    """The QA test seam (ADR-017): a local scripted double on loopback
+    must be settable, or the exit harness cannot script upstream
+    behaviour against the real adapter code."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv(env_var, loopback_value)
+
+    settings = Settings(_env_file=None)
+
+    assert getattr(settings, field_name) == loopback_value
+
+
+@pytest.mark.parametrize(
+    ("field_name", "env_var"),
+    [("anthropic_base_url", "ANTHROPIC_BASE_URL"), ("github_api_base_url", "GITHUB_API_BASE_URL")],
+)
+def test_non_canonical_non_loopback_base_url_refuses_to_boot(
+    monkeypatch: pytest.MonkeyPatch, field_name: str, env_var: str
+) -> None:
+    """ADR-017 §9.7: 'a non-canonical base URL must be loopback, or the
+    application refuses to boot.' An attacker-controlled host must never
+    be a legal value — this is the exfiltration-channel guard."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv(env_var, "https://evil.example.com")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_the_canonical_value_itself_is_always_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    monkeypatch.setenv("GITHUB_API_BASE_URL", "https://api.github.com")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.anthropic_base_url == "https://api.anthropic.com"
+    assert settings.github_api_base_url == "https://api.github.com"
