@@ -57,6 +57,17 @@ export interface ErrorTurn {
   onEdit?: () => void;
 }
 
-export type ActiveTurn = WorkingTurn | ErrorTurn | null;
+/**
+ * Cancel (§6) replaces `WorkIndicator` with "a small, neutral, centred
+ * system note (not a bubble, not danger-styled — cancellation is not an
+ * error)" — a third visual state `ErrorCard`'s four variants don't cover.
+ * Added here while wiring T16's `useTurn`, as a small follow-on refinement
+ * to a T15 file discovered by the dependent work, not a rewrite of it.
+ */
+export interface CancelledTurn {
+  kind: "cancelled";
+}
+
+export type ActiveTurn = WorkingTurn | ErrorTurn | CancelledTurn | null;
 
 export type SessionStatus = "active";

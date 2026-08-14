@@ -10,6 +10,14 @@ export interface ComposerProps {
   onCancel: () => void;
   busy: boolean;
   maxRows?: number;
+  /**
+   * Bump this (e.g. a counter) to imperatively focus the textarea — used by
+   * `SuggestionChips.onPick` ("populates the composer ... and focuses it",
+   * §3) and `ErrorCard`'s `unknown_project`/`plan_rejected` "Edit message"
+   * action (§5.8/§5.9), both from T16. A prop rather than a forwarded ref,
+   * to keep this a plain props-driven component.
+   */
+  focusToken?: number;
 }
 
 const PLACEHOLDER = "Ask SUNIL to check on something…";
@@ -42,13 +50,25 @@ function getServerIsDesktopViewport() {
  * holding the original text, which the caller (T16) is responsible for
  * re-populating after an error/cancel.
  */
-export function Composer({ value, onChange, onSend, onCancel, busy, maxRows = 6 }: ComposerProps) {
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  onCancel,
+  busy,
+  maxRows = 6,
+  focusToken,
+}: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isDesktop = useSyncExternalStore(
     subscribeToViewport,
     getIsDesktopViewport,
     getServerIsDesktopViewport,
   );
+
+  useEffect(() => {
+    if (focusToken !== undefined) textareaRef.current?.focus();
+  }, [focusToken]);
 
   // Auto-grow 1 → maxRows lines, then become internally scrollable.
   useEffect(() => {

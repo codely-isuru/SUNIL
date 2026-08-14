@@ -134,6 +134,16 @@ export function MessageList({
               onEdit={activeTurn.onEdit}
             />
           )}
+          {activeTurn?.kind === "cancelled" && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="px-4 text-center font-mono-body text-small text-text-muted"
+            >
+              You cancelled this. I&rsquo;ll stop showing progress for it — it won&rsquo;t appear
+              as a reply, even if I finish it in the background.
+            </p>
+          )}
         </div>
       </div>
 
