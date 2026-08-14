@@ -68,11 +68,20 @@ def make_unprocessable_entity_error() -> anthropic.UnprocessableEntityError:
 
 
 def make_overloaded_error() -> anthropic.OverloadedError:
-    """Not on `ARCHITECTURE_V1.md` §4.3's verified transient/permanent
-    lists — used to prove the adapter's conservative catch-all (unlisted
-    `AnthropicError` -> permanent, never silently retried on an
-    assumption the architecture doc never made)."""
+    """A-16: not on the old name-keyed transient list, but its
+    `status_code` (529) is `>= 500` — proves classification is by status
+    code, not by class name. A name-keyed list gets this one wrong."""
     return anthropic.OverloadedError("overloaded", response=make_httpx_response(529), body=None)
+
+
+def make_conflict_error() -> anthropic.ConflictError:
+    return anthropic.ConflictError("conflict", response=make_httpx_response(409), body=None)
+
+
+def make_request_too_large_error() -> anthropic.RequestTooLargeError:
+    return anthropic.RequestTooLargeError(
+        "request too large", response=make_httpx_response(413), body=None
+    )
 
 
 def make_text_block(text: str) -> SimpleNamespace:

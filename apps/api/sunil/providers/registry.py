@@ -46,7 +46,14 @@ def build_provider_registry(
     """
     registry = ProviderRegistry()
     registry.register(
-        AnthropicProvider(api_key=settings.anthropic_api_key, model_registry=model_registry)
+        AnthropicProvider(
+            api_key=settings.anthropic_api_key,
+            # A-11/ADR-017: explicit, from Settings — never the SDK's own
+            # env reading, and never a hard-coded canonical literal (which
+            # would outrank QA's ANTHROPIC_BASE_URL test seam).
+            base_url=settings.anthropic_base_url,
+            model_registry=model_registry,
+        )
     )
     # A second provider is one more line here (§4.6) — nothing else changes.
     return registry

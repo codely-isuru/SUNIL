@@ -6,13 +6,25 @@ claude-api skill rather than guessing").
 This is the only module in SUNIL permitted to `import anthropic` — every
 other package depends on `sunil.providers.base`'s protocol and dataclasses
 instead (ADR-003, FR-040).
+
+**Two Architect rulings landed here on 2026-08-14 (A-16, A-17 / ADR-017):**
+
+1. `base_url` is passed **explicitly** from `Settings.anthropic_base_url`.
+   Read from the installed SDK's `_client.py`, precedence is
+   `base_url` kwarg -> `ANTHROPIC_BASE_URL` env -> profile -> default; a
+   hard-coded canonical kwarg would outrank the env var and silently
+   point the entire exit suite at the real API with a real key.
+2. Errors are classified **by `status_code`, not by exception class
+   name** (A-16): a name-keyed list classified `OverloadedError` (529) as
+   permanent, which is wrong — 529 means "try again". See
+   `_classify_and_raise()`.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 import anthropic
 from anthropic import AsyncAnthropic
@@ -28,21 +40,39 @@ from sunil.providers.base import (
     StructuredOutputError,
 )
 
-# §4.3, verified against the live SDK: connection failures, timeouts, rate
-# limits and 5xx are retryable; everything else that names a concrete
-# problem with *this* request is not.
-_TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = (
-    anthropic.APIConnectionError,  # covers APITimeoutError too (subclass)
-    anthropic.RateLimitError,
-    anthropic.InternalServerError,
-)
-_PERMANENT_EXCEPTIONS: tuple[type[Exception], ...] = (
-    anthropic.BadRequestError,
-    anthropic.AuthenticationError,
-    anthropic.PermissionDeniedError,
-    anthropic.NotFoundError,
-    anthropic.UnprocessableEntityError,
-)
+# A-16: status codes that mean "try again" — 408 (request timeout), 429
+# (rate limited), and any 5xx. Not a name-keyed list, precisely so a
+# vendor exception class this document does not name (or does not yet
+# exist in the installed package — `ServiceUnavailableError` and
+# `DeadlineExceededError` are named in ARCHITECTURE_V1.md §4.3 but are not
+# present in anthropic==0.122.0, checked directly rather than assumed) is
+# still classified correctly by its status code.
+_TRANSIENT_STATUS_CODES = frozenset({408, 429})
+
+
+def _classify_and_raise(exc: anthropic.AnthropicError) -> NoReturn:
+    """A-16's rule, in order. Never keys off an exception *class name* —
+    only `APIConnectionError`/`APITimeoutError` (no status at all) and
+    `status_code` decide transient vs permanent."""
+    if isinstance(exc, anthropic.APIConnectionError):
+        # Covers APITimeoutError too (it subclasses APIConnectionError).
+        # No HTTP status ever reached us — always transient.
+        raise ProviderTransientError(f"transient provider error: {exc}") from exc
+
+    if isinstance(exc, anthropic.APIStatusError):
+        if exc.status_code in _TRANSIENT_STATUS_CODES or exc.status_code >= 500:
+            raise ProviderTransientError(
+                f"transient provider error ({exc.status_code}): {exc}"
+            ) from exc
+        raise ProviderPermanentError(
+            f"permanent provider error ({exc.status_code}): {exc}"
+        ) from exc
+
+    # Anything else `anthropic.AnthropicError` covers that carries no
+    # status at all and is not a connection error either — fail permanent
+    # by design (A-16): "including any exception class this document does
+    # not name" is not silently retried on an assumption.
+    raise ProviderPermanentError(f"unclassified provider error: {exc}") from exc
 
 
 class AnthropicProvider:
@@ -59,6 +89,7 @@ class AnthropicProvider:
         self,
         *,
         api_key: SecretStr,
+        base_url: str,
         model_registry: ModelRegistry,
         client: Any | None = None,
     ) -> None:
@@ -75,6 +106,9 @@ class AnthropicProvider:
         # parsing) is provable with no network and no key.
         self._client = client or AsyncAnthropic(
             api_key=api_key.get_secret_value(),
+            # A-11/ADR-017: explicit, never left to the SDK's own
+            # ANTHROPIC_BASE_URL reading — see module docstring.
+            base_url=base_url,
             # SUNIL owns retry (ADR-003): each attempt is individually
             # persisted, so the SDK must never retry silently underneath us.
             max_retries=0,
@@ -122,17 +156,8 @@ class AnthropicProvider:
         started = time.monotonic()
         try:
             message = await self._client.messages.create(**kwargs)
-        except _TRANSIENT_EXCEPTIONS as exc:
-            raise ProviderTransientError(f"transient provider error: {exc}") from exc
-        except _PERMANENT_EXCEPTIONS as exc:
-            raise ProviderPermanentError(f"permanent provider error: {exc}") from exc
         except anthropic.AnthropicError as exc:
-            # Anything the SDK raises that is not on the two verified
-            # lists above (e.g. a future exception type, or a vendor-side
-            # error this architecture's verified surface does not name)
-            # is treated as permanent, not silently retried on an
-            # assumption `ARCHITECTURE_V1.md` §4.3 never made.
-            raise ProviderPermanentError(f"unclassified provider error: {exc}") from exc
+            _classify_and_raise(exc)  # A-16: status-code-keyed, never name-keyed
         latency_ms = int((time.monotonic() - started) * 1000)
 
         input_tokens = message.usage.input_tokens
@@ -188,4 +213,7 @@ class AnthropicProvider:
             stop_reason=message.stop_reason,
             provider_request_id=provider_request_id,
             latency_ms=latency_ms,
+            # This one call is attempt-agnostic — the Model Router
+            # overwrites this with the real attempt count (A-17).
+            attempts=1,
         )

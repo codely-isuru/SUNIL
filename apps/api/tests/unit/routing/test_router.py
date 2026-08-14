@@ -81,6 +81,7 @@ async def test_happy_path_records_exactly_one_attempt_and_returns_the_response()
     )
 
     assert response.text == "a reply"
+    assert response.attempts == 1  # A-17: the router, not the provider, knows this
     assert len(fake.calls) == 1
     assert len(recorder.recorded) == 1
     record = recorder.recorded[0]
@@ -122,6 +123,7 @@ async def test_transient_failure_then_success_records_two_attempts(
     )
 
     assert response.text == "a reply"
+    assert response.attempts == 2  # A-17: 1 failed + 1 succeeded
     assert len(fake.calls) == 2
     assert len(sleeps) == 1  # backoff before the second attempt only
     assert [r.attempt for r in recorder.recorded] == [1, 2]
