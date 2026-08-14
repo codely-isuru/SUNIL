@@ -1,7 +1,7 @@
 # SUNIL — M1 Chat Interface Specification
 
 **Author:** UI/UX Designer, Minions Team 18
-**Status:** Developer-ready. Build starts 2026-08-14; **M1 is due 2026-08-17**. Scope: **M1 chat only** — no
+**Status:** Developer-ready. Build starts 2026-08-14; **M1 is due 2026-08-18**. Scope: **M1 chat only** — no
 dashboard chrome, no conversation list/history, no approval UI, no settings. Those are M8/M5/M2
 and are explicitly out of scope here (see §9).
 **Traces to:** `docs/REQUIREMENTS_V1.md` FR-003, FR-020–022, FR-026, FR-060–067, FR-105, FR-107,

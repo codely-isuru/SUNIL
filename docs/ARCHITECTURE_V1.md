@@ -29,13 +29,14 @@ silent edit.
 | A-6 | **Training-data capture policy** added: `NONE / METADATA_ONLY / REDACTED_FULL / FULL_LOCAL_ONLY` plus `sensitivity`, `retention_class`, `training_eligible` on the five capture tables | review §10 | §7.3, §13, ADR-014 |
 | A-7 | **Config deployment policy** stated: `config/*.yaml` is mounted, never baked into an image, and a permissions change is change-controlled even though it needs no code deploy | review §12 | §14.5, ADR-016 |
 | A-8 | **Minimal CI lands in M1** (backend `ruff` + `pytest`, frontend typecheck + build, security import-boundary and critical security tests) and gates every merge | review §8 | §16 debt D-6, `M1_BUILD_PLAN.md` T21 |
-| A-9 | The M1 date is settled: **build starts 2026-08-14, M1 is due 2026-08-17.** No document may state otherwise | review §9 + owner ruling | throughout |
+| A-9 | The M1 date is settled: **build starts 2026-08-14, M1 is due 2026-08-18.** No document may state otherwise | review §9 + owner ruling | throughout |
+| A-10 | **The owner granted one extra day on 2026-08-14** (08-17 → 08-18) rather than descope, after `M1_BUILD_PLAN.md` §8.4 reported the MUST-HAVE set missing 08-17 in the expected case. Every 08-17 reference in this document, the threat model and ADR-001/009 was re-dated with it | DM, on the owner's decision | throughout |
 
 ---
 
 ## 0. How to read this
 
-This document describes **V1** and calls out **M1** — the §22 vertical slice due **2026-08-17** — as the
+This document describes **V1** and calls out **M1** — the §22 vertical slice due **2026-08-18** — as the
 first buildable slice. Anything marked **M1** is being built now. Anything marked **V1 (later)** is
 designed for but not built this week; where a later capability constrains an M1 decision, the seam
 is named so the later work is additive rather than a rewrite.
@@ -45,9 +46,9 @@ Three rules govern every decision below:
 1. **Deterministic code holds the privilege.** LLMs produce *proposals*; only validated, typed
    objects reach an executor, and only the permission engine decides whether a tool runs
    (§33 rules 2, 3, 5).
-2. **Buildable by a Sonnet engineer inside the window that closes on 2026-08-17** (build started
+2. **Buildable by a Sonnet engineer inside the window that closes on 2026-08-18** (build started
    2026-08-14). Where depth costs the M1 date, depth is deferred and the debt is recorded in §16.
-   Elegance that misses 2026-08-17 is the wrong call.
+   Elegance that misses 2026-08-18 is the wrong call.
 3. **Nothing is claimed that the code will not have.** Deferred controls live in the threat model
    with an owning milestone, never in prose that implies they exist.
 
@@ -1662,7 +1663,7 @@ the decision point, the enum and the column all exist; only the human-in-the-loo
 M5, which is a scope decision the owner already made, not an architectural contradiction. No ADR
 arguing against a §33 rule is therefore required.
 
-**Debt register** — every one of these is a knowing trade of depth for the 2026-08-17 date:
+**Debt register** — every one of these is a knowing trade of depth for the 2026-08-18 date:
 
 | ID | Debt | Owed by |
 |---|---|---|

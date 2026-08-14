@@ -2,7 +2,7 @@
 
 **Author:** Solution Architect, Minions Team 18 · **Status:** reviewed at Gate 2; updated 2026-08-14
 after the owner's architecture review · **Date:** 2026-08-14
-**Scope:** V1, with **M1** (build started 2026-08-14, **due 2026-08-17**) assessed as built.
+**Scope:** V1, with **M1** (build started 2026-08-14, **due 2026-08-18**) assessed as built.
 **Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) — see its amendment log A-1…A-9.
 
 **Changes from the first issue:** T-22 (training-corpus capture) and T-23 (config mount) added;

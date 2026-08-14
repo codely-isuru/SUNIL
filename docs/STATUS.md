@@ -9,7 +9,7 @@
 | **Plan of record** | [`docs/ROADMAP.md`](ROADMAP.md) — supersedes every earlier plan document |
 | **Branch** | `main` (single-branch rule; feature work lands via short-lived branches → `main`) |
 | **Delivery** | Minions Team 18 (portal `http://localhost:4317`) |
-| **Due** | 2026-08-17 (Milestone 1 vertical slice) · budget ~$150 |
+| **Due** | 2026-08-18 (Milestone 1 vertical slice) · budget ~$150 |
 | **Last updated** | 2026-08-14 |
 
 ---
@@ -38,17 +38,31 @@ prior plan document, and the previous TypeScript/NestJS build is retired.
 
 ## 2. Where we are now
 
-**Stage 3 — Architecture & Design: COMPLETE. GATE 2 OPEN — build is HELD.**
+**Stage 5 — Development. RUNNING since 2026-08-14.**
 
-⏸ **2026-08-14 — the owner is reviewing the architecture and will supply written
-recommendations before approving Gate 2.** No development starts until those are read
-and folded in. Two staffing/logistics decisions are already settled:
+**✅ GATE 2 CLOSED — 2026-08-14.** The owner reviewed the architecture (9/10) and build plan
+(7.5/10) and approved the direction subject to targeted corrections, all of which are applied
+(`f6f7c28`…`42062a8`). His review is committed at
+[`docs/reviews/2026-08-14-owner-architecture-review.md`](reviews/2026-08-14-owner-architecture-review.md).
 
-* **Secrets deferred.** T1–T10 build against fixtures and the frozen API contract in
-  `M1_BUILD_PLAN.md` §6. `ANTHROPIC_API_KEY` and the read-only GitHub PAT must land
-  before the exit tests run on Day 3 — ET-1 cannot be proven without them.
-* **T11 is paired.** Both backend engineers work the orchestrator turn from Day 2.
-  It is the sole enabler of seven of the eleven exit tests and had no slack as scoped.
+**M1 is now due 2026-08-18** — the owner granted one extra day rather than descope, after the
+recalculated critical path showed the MUST-HAVE set missing 08-17 in the expected case.
+
+**Lanes in flight** — each in its own worktree on its own task branch, per
+[`docs/GIT_WORKFLOW.md`](GIT_WORKFLOW.md). Nobody commits to `main`.
+
+| Lane | Worktree | Task | Status |
+|---|---|---|---|
+| BE-1 | `..\SUNIL-wte-core` | **T1** foundation + trace interface | running |
+| QA | `..\SUNIL-wt\qa` | **T18** red exit-test harness (ET-1…ET-12) | running |
+| FE | `..\SUNIL-wtrontend` | **T14** web scaffold + token contract | running |
+
+* **Secrets:** the owner creates them per [`docs/SECRETS_SETUP.md`](SECRETS_SETUP.md).
+  Needed by 2026-08-16; everything until then builds against fixtures.
+* **T11 is paired** across both backend engineers — it gates seven of the twelve exit
+  tests and had no slack as scoped.
+* **ET-12 added** (prompt injection via GitHub content) as a mandatory M1 control, from
+  the owner's review §16 step 13.
 
 **✅ GATE 1 APPROVED — 2026-08-14, by the owner.** Scope, requirements and all seven
 recommended defaults accepted as-is. Recorded in
@@ -72,9 +86,9 @@ Gate 2 approval.
 
 ## 3. What happens next
 
-1. **GATE 2 (human) — open, awaiting the owner's written recommendations on the
-   architecture.** On approval, Stage 4 starts: QA writes the red exit tests first,
-   then T1 onward per `docs/M1_BUILD_PLAN.md`.
+1. **Stage 5 build** per [`docs/M1_BUILD_PLAN.md`](M1_BUILD_PLAN.md) §8.2 — critical
+   path T1 → T2 → T4 → T8 → T10 → T11b → T20. Each task: green tests + CI (T21) +
+   independent review, then merged to `main` by the Delivery Manager.
 2. **Stage 4–6 — Build the Milestone 1 vertical slice**, per `ROADMAP.md` §22:
    chat → FastAPI → Conversation Gateway → Orchestrator → Claude provider →
    validated JSON plan → Project Manager Agent → GitHub read-only tool → result →

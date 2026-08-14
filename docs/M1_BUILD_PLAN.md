@@ -1,7 +1,7 @@
 # SUNIL M1 — Ordered Build Plan (T1 … T21)
 
 **Author:** Solution Architect, Minions Team 18 · **Status:** revised after the owner's review · **Date:** 2026-08-14
-**Milestone:** M1, the `ROADMAP.md` §22 vertical slice. **Build starts 2026-08-14. DUE 2026-08-17.**
+**Milestone:** M1, the `ROADMAP.md` §22 vertical slice. **Build starts 2026-08-14. DUE 2026-08-18.**
 **Builds from:** [`ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) (see its amendment log A-1…A-9) ·
 [`decisions/`](decisions/) ADR-000…016 · [`THREAT_MODEL.md`](THREAT_MODEL.md) ·
 [`REQUIREMENTS_V1.md`](REQUIREMENTS_V1.md) · [`design/M1_CHAT_SPEC.md`](design/M1_CHAT_SPEC.md) ·
@@ -648,15 +648,21 @@ lane are serial.
 | Two bounces, or one estimate miss on T8/T11b | +6 to +9 |
 | **Bad case** | **~36–38** |
 
-Against the calendar: build starts on the evening of 2026-08-14 and M1 is due end of 2026-08-17.
-That is roughly **4 h tonight + three working days**. At a sustainable **8 productive lane-hours per
-day** — and Team 18's own history says a review pass can stall on a session limit — that is
-**~28 available hours**. At an optimistic 10 h/day it is ~34.
+Against the calendar: build starts on the evening of 2026-08-14 and **M1 is due end of
+2026-08-18** — the owner granted one extra day on 2026-08-14, on the strength of this section's
+verdict, in preference to descoping. That is roughly **4 h tonight + four working days**. At a
+sustainable **8 productive lane-hours per day** — and Team 18's own history says a review pass can
+stall on a session limit — that is **~36 available hours**. At an optimistic 10 h/day it is ~44.
 
 ### 8.4 The verdict, stated plainly
 
-> **M1's MUST-HAVE set fits the 2026-08-17 date only in the best case, with about half an hour of
-> slack, and misses it in the expected case by roughly one working day.**
+> **M1's MUST-HAVE set fits the revised 2026-08-18 date in the expected case with ~5 h of slack,
+> and survives one bounce. It fails only in the bad case (~36–38 h), which is exactly the
+> scenario the extra day was bought to absorb.**
+>
+> *(Original verdict, against the superseded 2026-08-17 date, retained because the decision rests
+> on it: the MUST-HAVE set fitted that date only in the best case, with about half an hour of
+> slack, and missed it in the expected case by roughly one working day.)*
 
 I am not compressing the estimates to make the arithmetic close, because the brief told me not to and
 because a plan that only works if every task is a first-pass success is not a plan.
@@ -684,7 +690,7 @@ expected case and the date.
 **If that is not enough, this is what I recommend giving, in this order — and only in this order:**
 
 1. **T12, T13, T17** — already agreed (§9). Take them off the board now, not on Day 3.
-2. **Split the milestone at the exit tests.** Declare M1 on **2026-08-17** as *ET-1 … ET-11 green
+2. **Split the milestone at the exit tests.** Declare M1 on **2026-08-18** as *ET-1 … ET-11 green
    plus the chat happy path in the browser*, and take the frontend's polish — all four `ErrorCard`
    variants wired to live failures, `SuggestionChips`, `JumpToBottomPill`, the reduced-motion pass —
    into a short **08-18** tail. Nine of the eleven exit tests are backend-provable; the two with a UI
