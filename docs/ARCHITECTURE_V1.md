@@ -31,6 +31,14 @@ silent edit.
 | A-8 | **Minimal CI lands in M1** (backend `ruff` + `pytest`, frontend typecheck + build, security import-boundary and critical security tests) and gates every merge | review §8 | §16 debt D-6, `M1_BUILD_PLAN.md` T21 |
 | A-9 | The M1 date is settled: **build starts 2026-08-14, M1 is due 2026-08-18.** No document may state otherwise | review §9 + owner ruling | throughout |
 | A-10 | **The owner granted one extra day on 2026-08-14** (08-17 → 08-18) rather than descope, after `M1_BUILD_PLAN.md` §8.4 reported the MUST-HAVE set missing 08-17 in the expected case. Every 08-17 reference in this document, the threat model and ADR-001/009 was re-dated with it | DM, on the owner's decision | throughout |
+| A-11 | **Upstream base URLs are settings, passed explicitly.** `ANTHROPIC_BASE_URL` is confirmed as the supported test seam and `GITHUB_API_BASE_URL` is added; both are `Settings` fields, both are passed to their client explicitly, and a non-canonical value must be loopback or the app refuses to boot | QA rulings 1 + 2, 2026-08-14 | §4.3, §9.3, §9.7, §14.4, ADR-017 |
+| A-12 | **Settings and the engine are per-application, not process-global.** `create_app(settings=None)` builds a fresh `Settings()`, hangs it and the engine on `app.state`, and the module-level `app` object is replaced by `uvicorn --factory`. `get_settings()` stays cached for scripts and Alembic only | QA ruling 3, 2026-08-14 | §3.5, §14.1, ADR-018 |
+| A-13 | `TraceContext.emit()` is **async with a required keyword `summary`**, exactly as §8.1 has always shown it. §3.4's shorthand `emit(stage, detail=…)` was the inaccuracy and is corrected. §3.4 also now contracts the `detail` keys per stage, so the frontend stops guessing them | T4's refinement, confirmed | §3.4 |
+| A-14 | **`GET /api/v1/projects`** added — the configured project list, needed by the empty-state chips before any turn exists. The client's hard-coded `FALLBACK_KNOWN_PROJECTS` is deleted, and the empty state renders without chips if the fetch fails rather than showing a stale list | FE ruling 4, 2026-08-14 | §11.1, §11.5 |
+| A-15 | **`effort` is a field of `output_config`, not a top-level `messages.create()` kwarg**, and its permitted values are `low\|medium\|high\|xhigh\|max`. The old prose was wrong; BE-2 caught it by reading the installed package | T6, verified 2026-08-14 | §4.3, §4.4 |
+| A-16 | **Provider errors are classified by `status_code`, not by class name**: no-status connection/timeout and 408/429/≥500 are transient, everything else — **including any exception class this document does not name** — is permanent. A name-keyed list would have called `OverloadedError` (529) permanent, which is wrong | T6 + Architect, 2026-08-14 | §4.3 |
+| A-17 | **The Model Router does not emit trace stages; its callers do.** `run()` is invoked at least twice per turn, so emitting inside it would breach A-2's one-emission-per-stage rule. The router writes `llm_calls` rows and returns the attempt count | BE-2's design, confirmed | §4.5 |
+| A-18 | **One canonical capture vocabulary** in a new leaf module `sunil/capture.py`. `CaptureKind` is table-keyed (`message·plan·llm_call·tool_call·memory`); `CaptureRule` is the type that crosses; `core/registry/capture.py` owns the only string→enum conversion | ruling 5, 2026-08-14 | §13.2, ADR-014 Amendment 1 |
 
 ---
 
@@ -294,9 +302,53 @@ Everything is `async def` on a single event loop, single uvicorn worker.
 - **One worker only.** `uvicorn --workers 1`. The SSE trace bus (§8.4) is in-process; more than one
   worker silently breaks it. This is recorded as debt with its fix (Redis pub/sub) in §16.
 
-`httpx.AsyncClient` and `AsyncAnthropic` are created **once** at app startup (lifespan context) and
-reused. Creating a client per request leaks connections and adds TLS handshakes to the latency
-budget.
+`httpx.AsyncClient` and `AsyncAnthropic` are created **once per application** at startup (lifespan
+context) and reused. Creating a client per request leaks connections and adds TLS handshakes to the
+latency budget. *Per application, not per process* — see §3.5.
+
+### 3.2.1 Application and settings lifecycle (A-12, ADR-018)
+
+**Ruling: settings, the engine and the upstream clients are per-`FastAPI`-application state, not
+process-global singletons.** The unit of isolation is the app object, because that is the unit a
+test creates.
+
+```python
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings()          # a FRESH read, not get_settings()
+    ...
+    app.state.settings = settings
+    app.state.engine = get_engine(settings)    # T2 already exposes this uncached
+    app.state.sessionmaker = get_sessionmaker(app.state.engine)
+    return app
+```
+
+- **`create_app()` takes an optional `Settings`.** Passing one is the supported way to build an app
+  with explicit configuration; passing nothing constructs a fresh `Settings()`, which re-reads the
+  environment and `.env` every call. Re-reading costs microseconds and happens once per process in
+  production.
+- **Request-path code reads `request.app.state.*`.** `get_session()` takes its sessionmaker from
+  `request.app.state.sessionmaker`; it does not reach for a module-level engine.
+- **`get_settings()` and `get_app_engine()` keep their `lru_cache`, and their scope narrows to
+  non-application contexts only** — `scripts/seed-owner.py`, Alembic's `env.py`, and one-shot CLI
+  work. They are convenience accessors for code that has no `app`. They are **not** the way the API
+  reads configuration.
+- **The module-level `app = create_app()` is removed.** It executes at import time, which both pins
+  the settings cache for the whole process and gives `import sunil.main` a side effect. The dev and
+  container commands become `uvicorn sunil.main:create_app --factory` (§14.1). One flag, and
+  importing the module becomes free of consequence — which is what lets a test import it before
+  deciding what the environment should say.
+- **`redaction.register()` and `configure_logging()` stay process-global and idempotent.** The
+  redaction registry accumulating secrets across several apps in one test session is safe by
+  direction: it can only over-redact, never under-redact.
+
+Two consequences worth naming, because they are the reason for the ruling:
+
+1. **`SUNIL_TURN_DEADLINE_S` is re-read per app**, so ET-8's deadline test can build an app with a
+   2-second deadline without a process restart and without touching a global.
+2. **Alembic must construct `Settings()` fresh in `migrations/env.py`, not call `get_settings()`.**
+   As landed it uses the cached accessor, so a test that has already read settings in-process will
+   have `alembic upgrade head` migrate a *different* database than the one under test, silently. In
+   a subprocess it is harmless; in-process it is a trap, and the fix is one line.
 
 ### 3.3 Middleware order
 
@@ -339,9 +391,36 @@ and the SSE events.
 | 11 | `agent_result` | `agents/project_manager` — the *analysis* logical request | `llm_calls` (purpose=`analysis`) — one row per provider attempt, `audit_events` |
 | 12 | `final_response` | `core/orchestrator` — **no LLM call in M1** (ADR-015); the agent's summary is persisted as the assistant message | `messages` (assistant), `audit_events` |
 
-Every stage passes through **one** function, `TraceContext.emit(stage, detail=...)`, which writes a
+Every stage passes through **one** function —
+`await ctx.emit(stage, summary=..., detail=..., task_id=...)`, the signature in §8.1 — which writes a
 structured log line, an `audit_events` row, and an SSE event. That is why NFR-020/ET-6 is provable
 rather than aspirational: there is no second way to advance a stage.
+
+*(A-13: this line previously read `emit(stage, detail=...)`. That shorthand was wrong in two ways —
+the call is `async`, and `summary` is required because `audit_events.summary` is `NOT NULL`. §8.1
+was right and is unchanged; T4's implementation matches it. Corrected here rather than in §8.1.)*
+
+**`detail` keys, so the frontend can stop guessing.** `detail` stays an open JSON object, but these
+keys are **contracted**: a stage that has one emits it under this name. The client must still
+degrade to its generic per-stage label when a key is absent — that is correct defensive behaviour
+and it is what keeps this list additive.
+
+| Stage | Contracted `detail` keys |
+|---|---|
+| `model_selected` | `capability`, `provider`, `model` |
+| `llm_io` | `purpose`, `provider_attempts`, `input_tokens`, `output_tokens` |
+| `plan_created` | `project_key`, `project_display_name`, `agent`, `plan_attempts` |
+| `agent_started` | `agent`, `agent_display_name` |
+| `tool_requested` | `tool`, `operation` |
+| `permission_decision` | `decision`, `tool`, `operation` |
+| `tool_result` | `ok`, `duration_ms`, `error_kind` (null when `ok`) |
+| `agent_result` | `ok` |
+| `final_response` | `outcome`, `failure_kind` (null on success) |
+
+`project_display_name` and `agent_display_name` come from `config/*.yaml` — trusted, and the reason
+the Designer's *"Checking {Project}…"* line can be specific without the client owning a project list.
+**No untrusted content goes in `detail`** beyond a truncated, clearly-named excerpt field (T-32), and
+nothing in `detail` is ever rendered as raw HTML (T-02).
 
 **Each of the twelve stages is emitted at most once per turn.** Retries — provider attempts *and*
 whole re-planning attempts — do **not** emit extra stage events; they are recorded as `llm_calls`
@@ -383,7 +462,8 @@ class LLMRequest:
     max_tokens: int
     json_schema: dict | None = None    # None → free text; set → structured output demanded
     temperature: float | None = None
-    effort: str | None = None          # passed through verbatim when set
+    effort: str | None = None          # "low"|"medium"|"high"|"xhigh"|"max"; the adapter places it
+                                       # INSIDE output_config, not as a top-level kwarg (§4.3)
     stop_sequences: list[str] | None = None
 
 @dataclass(frozen=True)
@@ -425,9 +505,25 @@ that is not on this list.**
 
 - Package `anthropic` (PyPI, current 0.122.0; requires Python ≥3.9 — fine on 3.13).
 - `from anthropic import AsyncAnthropic`; constructed once at startup with
-  `api_key=settings.anthropic_api_key.get_secret_value()`, `max_retries=0`, `timeout=<per-capability>`.
+  `api_key=settings.anthropic_api_key.get_secret_value()`,
+  **`base_url=settings.anthropic_base_url`**, `max_retries=0`, `timeout=<per-capability>`.
   **`max_retries=0` is deliberate**: SUNIL owns retry so each attempt is individually persisted and
   countable (FR-045 requires the retry count to be visible).
+- **`base_url` must be passed explicitly. This is a ruling, not a preference (A-11, ADR-017).**
+  Read from the installed SDK's `_client.py` on 2026-08-14, the precedence is
+  **`base_url` kwarg → `ANTHROPIC_BASE_URL` env var → credentials/profile config →
+  `https://api.anthropic.com`**. Three consequences, in order of how much they would have cost us:
+  1. QA's entire exit harness drives a scripted local double through `ANTHROPIC_BASE_URL`. If this
+     adapter passes a hard-coded `base_url="https://api.anthropic.com"` — a perfectly reasonable
+     thing for an engineer to write — the kwarg **wins**, and every fixture test silently starts
+     talking to the real API with a real key. Passing `settings.anthropic_base_url`, whose default
+     *is* the canonical host and which pydantic-settings populates from `ANTHROPIC_BASE_URL`, gives
+     the same production behaviour and keeps the seam working.
+  2. Leaving it unpassed also works today, but only by relying on the SDK reading the environment
+     itself — behaviour SUNIL neither controls nor pins, and which `settings.py`'s own docstring
+     ("no other module should call `os.environ` directly") already forbids in spirit.
+  3. A `~/.anthropic` profile or credentials file can inject a base URL when none is explicit. An
+     explicit kwarg removes that surprise entirely.
 - `await client.messages.create(model=..., max_tokens=..., system=..., messages=[...])`.
 - **Structured output:** `output_config={"format": {"type": "json_schema", "schema": {...}}}`.
   No beta header is required. (The older `output_format` parameter and the
@@ -438,12 +534,38 @@ that is not on this list.**
   `.parsed_output`; M1 uses `create()` + explicit validation instead, because the fail-closed design
   needs its own validation step regardless and `create()` is the surface documented for the async
   client.
+- **`effort` goes INSIDE `output_config`, not as a top-level `messages.create()` kwarg.**
+  *(A-15 — this prose was wrong before 2026-08-14 and BE-2 caught it by reading the installed package
+  instead of trusting this document. Re-verified here from
+  `anthropic/types/output_config_param.py`.)* `OutputConfigParam` is
+  `{"effort": Optional[Literal["low","medium","high","xhigh","max"]], "format": Optional[JSONOutputFormatParam]}`,
+  so a planning call sets both — `output_config={"effort": "...", "format": {...}}` — and a free-text
+  analysis call may set `effort` alone. **The permitted values are those five, verified, not guessed.**
+  M1 sets no `effort`; the capability config may pass one through when §5's budget demands it.
+  **Do not "correct" working code back to a top-level `effort=` kwarg.**
 - **Usage:** `message.usage.input_tokens`, `message.usage.output_tokens`.
 - **Provider request id:** `message._request_id` (public despite the underscore).
-- **Errors:** `anthropic.APIConnectionError`, `anthropic.APITimeoutError`, `anthropic.RateLimitError`
-  (429), `anthropic.InternalServerError` (≥500) → `ProviderTransientError`.
-  `anthropic.BadRequestError` (400), `AuthenticationError` (401), `PermissionDeniedError` (403),
-  `NotFoundError` (404), `UnprocessableEntityError` (422) → `ProviderPermanentError`.
+- **Errors — classify by status code, not by class name (A-16).** The rule, in this order:
+
+  | Condition | Mapped to |
+  |---|---|
+  | `APIConnectionError` / `APITimeoutError` (no HTTP status) | `ProviderTransientError` |
+  | `status_code` is 408, 429, or **any ≥ 500** | `ProviderTransientError` |
+  | any other `APIStatusError` (400, 401, 403, 404, 409, 413, 422) | `ProviderPermanentError` |
+  | **anything else, including an exception class this document does not name** | `ProviderPermanentError` — **fail permanent by design** |
+
+  Verified exception classes in `anthropic==0.122.0` and the statuses they carry: `BadRequestError`
+  400, `AuthenticationError` 401, `PermissionDeniedError` 403, `NotFoundError` 404, `ConflictError`
+  409, `RequestTooLargeError` 413, `UnprocessableEntityError` 422, `RateLimitError` 429,
+  `InternalServerError` 500, `ServiceUnavailableError` 503, `OverloadedError` **529**,
+  `DeadlineExceededError` 504.
+
+  **This list is not exhaustive and must not be treated as such** — that is exactly why the rule is
+  keyed on `status_code`. A name-keyed mapping would have classified `OverloadedError` (529) as
+  permanent, which is wrong: 529 means "try again", and failing a turn on it is a self-inflicted
+  outage. A status-keyed rule absorbs it, and absorbs the next class Anthropic adds, without an edit.
+  `anthropic.RetryableError` exists but is a *caller-side opt-in* for middleware, not a
+  classification of API responses — do not key off it.
 
 **JSON Schema features usable with `output_config`** (verified): `object`/`array`/`string`/`integer`/
 `number`/`boolean`/`null`, `enum` (strings, numbers, bools, nulls), `const`, `anyOf`, `allOf`,
@@ -469,10 +591,13 @@ Model IDs are **pinned snapshots**, including the dateless ones — `claude-opus
 pointer. Pricing is copied into `config/models.yaml` with a `pricing_version` date so a future price
 change never silently rewrites historical cost records.
 
-`effort` exists as a request parameter and defaults to `high` on Opus 5 and Sonnet 5 on the Claude
-API. M1 does not set it. If §5's latency budget proves tight, the capability config may pass an
-`effort` value through verbatim — take the permitted values from the Effort documentation at that
-time; **do not guess them.**
+`effort` defaults to `high` on Opus 5 and Sonnet 5. M1 does not set it. If §5's latency budget proves
+tight, the capability config may pass one through — **the permitted values are
+`low | medium | high | xhigh | max`, read from `anthropic/types/output_config_param.py` in the
+installed 0.122.0 on 2026-08-14**, and it is carried **inside `output_config`** (§4.3), never as a
+top-level kwarg. That correction (A-15) came from BE-2 checking the package rather than trusting this
+paragraph, which is the §14.3 rule working as intended — and a reminder that a verified list decays,
+so re-verify rather than inherit.
 
 ### 4.5 Selection, retry and escalation
 
@@ -504,6 +629,22 @@ Retry (FR-045, NFR-070, ADR-000 Q6):
   and it is why cost and rate-limit arithmetic are done over attempts, never over stages (A-2).
 - On exhaustion, the router raises; the orchestrator produces the `provider_error` outcome (§11.3)
   and stage 12 still fires.
+
+**The router does not emit trace stages. Its callers do (A-17).** This follows directly from A-2's
+"each of the twelve stages is emitted at most once per turn": `ModelRouter.run()` is invoked at least
+twice in a turn — once for planning, once for analysis — so a stage emitted inside the router would
+fire twice and raise `DuplicateStageEmission` on the second call. Ownership is therefore:
+
+| Stage | Emitted by | Around |
+|---|---|---|
+| 4 `model_selected`, 5 `llm_io` | `core/orchestrator` (T9's planning path) | the planning `run()` |
+| 11 `agent_result` | `agents/project_manager` (T10) | the analysis `run()` |
+
+The router still *writes data* — one `llm_calls` row per provider attempt — and returns the attempt
+count so the caller can put it in `detail.provider_attempts`. Writing rows is not emitting stages.
+This is BE-2's design and it is correct; it is recorded here because the constraint that forces it
+lives in this document, not in `router.py`'s docstring, and the next person to "tidy up" by moving
+emission into the shared router will otherwise only find out at runtime.
 
 **Escalation** in M1 is capability-level, not automatic: an agent declares
 `preferred_capability: general_reasoning` and `escalation_capability: complex_reasoning`; the runner
@@ -1102,10 +1243,17 @@ each step is a requirement:
 
 **The GitHub adapter (M1's one tool)**
 
-- `GET https://api.github.com/repos/{owner}/{repo}/commits?per_page=20`,
+- `GET {settings.github_api_base_url}/repos/{owner}/{repo}/commits?per_page=20`,
   `.../pulls?state=open&per_page=20`, `.../issues?state=open&per_page=20` — three concurrent
   `httpx` GETs, 15 s timeout, `Authorization: Bearer <PAT>`, `Accept: application/vnd.github+json`,
   `X-GitHub-Api-Version: 2022-11-28`.
+- **`github_api_base_url` defaults to `https://api.github.com` and is the GitHub half of A-11**
+  (ADR-017, §9.7). It exists so the exit harness can point at a local double instead of reaching the
+  real GitHub with a placeholder token — which today produces a real 401, surfaces as `tool_failed`,
+  and makes a test that is passing for the wrong reason.
+- **`follow_redirects` stays `False`** (httpx's default — do not set it `True`). A redirect from a
+  base URL you do not control is a way to move an `Authorization: Bearer` header to a host you did
+  not choose.
 - Gotcha to encode, not to rediscover: **`/issues` returns pull requests too.** Filter out any item
   with a `pull_request` key or the PR count is double-counted.
 - **`owner`/`repo` never come from the model.** The operation's parameter is `project_key`, validated
@@ -1269,6 +1417,53 @@ Every mechanism named above appears in the env inventory (§14.4): `WEB_ORIGIN`,
 - Rejected: JWT in `localStorage` (XSS-readable, no revocation), OAuth/SSO (no IdP, absurd for one
   user), HTTP Basic (no logout, browser-controlled UI).
 
+### 9.7 Upstream base-URL overrides — the test seam, and the guard that makes it safe (A-11, ADR-017)
+
+Two settings name where SUNIL's two outbound integrations point:
+
+| Setting | Env var | Default | Consumed by |
+|---|---|---|---|
+| `anthropic_base_url` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | `providers/anthropic.py`, passed as `base_url=` |
+| `github_api_base_url` | `GITHUB_API_BASE_URL` | `https://api.github.com` | `tools/github/adapter.py`, prefixed onto every request path |
+
+They exist because the exit suite must be able to script upstream behaviour — a malformed plan
+(ET-7), a 429 then a success (ET-8), a commit message carrying an injected instruction (ET-12) —
+against the **real adapter code**, which is the code those tests are supposed to be exercising. A
+protocol-level fake cannot test the adapter that the fake replaces.
+
+**They are also, unguarded, an exfiltration surface, and the GitHub one is the worse of the two.**
+Redirect the Anthropic base URL and every prompt — conversation content, the projection, the plan —
+goes to a host of the attacker's choosing. Redirect the GitHub base URL and the request carries
+`Authorization: Bearer <PAT>` to that host: that is credential theft, not just disclosure. Anything
+able to set an environment variable in a deployed SUNIL could do it silently, and nothing in the
+audit trail would look wrong, because from SUNIL's point of view the call succeeded.
+
+**The guard: a non-canonical base URL must be loopback, or the application refuses to boot.**
+
+```python
+# sunil/settings.py — one validator, applied to both fields
+_CANONICAL = {"anthropic_base_url": "https://api.anthropic.com",
+              "github_api_base_url": "https://api.github.com"}
+# value == canonical                      → allowed
+# host in {localhost, 127.0.0.0/8, ::1}   → allowed  (a local test double)
+# anything else                            → ValidationError, the app does not start
+```
+
+Consequences, stated so nobody is surprised by them:
+
+- It is enforced by construction rather than by an environment flag. There is no `SUNIL_ENV=test`
+  to forget to unset, and no configuration in which a production instance quietly talks to an
+  arbitrary host. A misconfiguration is a startup failure, which is the same fail-loud posture as
+  §10.2's registry cross-validation.
+- **It forbids a forward proxy or an LLM gateway in V1.** That is a real limitation and it is
+  deliberate: nobody needs one today, and re-opening it later is an ADR plus an explicit allow-list,
+  which is exactly the review that granting SUNIL a new outbound destination deserves.
+- The residual is a hostile process on the owner's own machine listening on loopback and harvesting
+  the PAT. That process could already read `.env` (§10 of the threat model says so plainly), so the
+  override adds no meaningful exposure — recorded as **T-24**, accepted.
+- Neither value is a secret, so neither is registered with the redaction registry; both are logged
+  at startup, which is how a wrong one becomes visible immediately.
+
 ---
 
 ## 10. Agent framework and configuration
@@ -1330,6 +1525,7 @@ refuses to boot on a mismatch.
 | POST | `/api/v1/chat` | **the turn** (FR-001/020/022) | yes + `X-SUNIL-Client` |
 | GET | `/api/v1/chat/{request_id}/events` | SSE stage events | yes |
 | GET | `/api/v1/trace/{request_id}` | full trace (debug, NFR-021 seed) | yes |
+| **GET** | **`/api/v1/projects`** | **the configured project list (§11.5, A-14)** | **yes** |
 | GET | `/api/v1/health` | liveness + schema revision | no |
 
 Versioned `/api/v1/` rather than §24's bare `/api/…` — a one-character forward-compatibility cost.
@@ -1379,9 +1575,49 @@ The seam is built: `TraceContext.emit()` is already called at all twelve stage b
 cooperative cancellation by checking a flag inside that one method plus a `cancelled` status — a
 contained change, not a refactor. Recorded in §16 and in the threat model's deferred controls.
 
----
+### 11.5 The project list before the first turn (A-14) — the frontend's ruling
 
-## 12. Frontend architecture
+`failure.known_projects` only exists inside an `unknown_project` failure, so by construction it
+cannot answer "what projects are there?" before a message has been sent. The empty-state suggestion
+chips (`M1_CHAT_SPEC` §3) need exactly that, and the frontend's stopgap — a hard-coded
+`FALLBACK_KNOWN_PROJECTS` mirroring `config/projects.yaml` — is a copy of authoritative config that
+will drift the first time a project is added. In V1 that is a certainty, not a risk.
+
+**Decision: a small authenticated read endpoint.**
+
+```
+GET /api/v1/projects            (session required; 401 without)
+→ 200 {"projects": [{"key": "easy_clean_workforce", "display_name": "EasyClean Workforce"}]}
+```
+
+Three properties make this the right shape rather than merely a working one:
+
+1. **The element shape is byte-identical to `failure.known_projects[]`** — `{key, display_name}`.
+   One TypeScript type, one renderer, two producers reading the same registry. If they ever diverge
+   it is a bug with an obvious test, not two lists nobody compares.
+2. **It reads the registry, never a database table.** `config/projects.yaml` is authoritative
+   (ADR-000 Q7, FR-107), so this endpoint is a projection of config and inherits its cross-validation
+   at startup.
+3. **It is additive to the frozen §6 contract**, not a change to it. Nothing that exists moves.
+
+**`FALLBACK_KNOWN_PROJECTS` is deleted, and nothing replaces it.** If the fetch fails, the empty
+state renders **without chips** — the greeting and composer alone. A product whose entire claim is
+that it does not fabricate must not fabricate its own capability list; showing a stale chip for a
+project that no longer exists is exactly the failure mode ET-11 exists to prevent, moved to the
+front page.
+
+**Ownership:** `sunil/api/routes/projects.py`, BE-1 lane, folded into whichever of T5 or T11a is
+still open — the Delivery Manager decides which; it is ~20 lines and the registry loader already
+exists (T3).
+
+**Rejected alternatives**
+
+| Rejected | Why |
+|---|---|
+| **Keep the hard-coded client fallback for M1** | It is correct today and wrong the day a second project is configured, with no failing test to announce it. The whole point of ADR-000 Q7 was that the project list lives in exactly one place. |
+| **Add `projects` to `GET /api/v1/auth/session`** | Zero new endpoints, and it welds identity to catalogue: refreshing the project list would mean refetching the session, and a change to either payload perturbs the other. Session answers "who am I"; it should keep answering only that. |
+| **Return the list inside every chat response** | Sends a static list on every turn to serve one render before the first turn, and still leaves the empty state with nothing. |
+| **Have the frontend read `config/projects.yaml` at build time** | Bakes config into a client bundle, which contradicts ADR-016's "config is mounted, not baked" for the half of the system where it would be hardest to notice. |
 
 - **Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 3.4.19**, pnpm, in `apps/web`.
   **Tailwind is pinned to v3.4** deliberately: `DESIGN_SYSTEM.md` ships a v3
@@ -1457,9 +1693,34 @@ rows would be guesswork applied to data that has already been persisted under no
 
 ```python
 def resolve_capture(*, kind: CaptureKind, project_key: str | None,
-                    agent_id: str | None, source: ContentSource) -> CaptureDecision
+                    agent_id: str | None, source: ContentSource,
+                    overrides: Mapping[CaptureKind, CaptureRule] | None = None) -> CaptureDecision
 # → CaptureDecision(capture_policy, sensitivity, retention_class, training_eligible)
 ```
+
+**The vocabulary is canonical and lives in one leaf module (A-18, ADR-014 Amendment 1).** T2 and T3
+independently defined `CaptureKind` with two names differing and incompatible types, so T3's registry
+output did not fit the `overrides` parameter it was built to flow into. The ruling:
+
+| | Canonical |
+|---|---|
+| Module | **`sunil/capture.py`** — a top-level leaf beside `redaction.py`, importing nothing from `sunil`. It owns `CaptureKind`, `CapturePolicy`, `Sensitivity`, `RetentionClass`, `ContentSource`, `CaptureRule` (frozen), `CaptureDecision` |
+| `CaptureKind` | `message · plan · llm_call · tool_call · memory` — **one value per capture table**, T3's set |
+| Crossing type | **`CaptureRule`** from `sunil/capture.py`. `core/registry/capture.py` returns `dict[CaptureKind, CaptureRule]`; `db/capture.py` accepts exactly that |
+| Conversion | **`core/registry/capture.py` only** — YAML strings → typed enums at load, refusing to boot on an unknown value (§10.2). Nothing downstream ever sees a plain string |
+
+**Why table-keyed kinds and not T2's `tool_call_result` / `memory_short_term`.** The four capture
+columns live *on the row*, so a kind finer than a row cannot be honoured — `tool_call_result` implies
+that `tool_calls.parameters` and `tool_calls.result` can hold different policies, and they cannot.
+`memory_short_term` has a second problem: `memories.type` already carries that distinction, and
+encoding an M1-only value into a V1 vocabulary means M7 adds `memory_long_term`,
+`memory_structured`… — an enum growing along an axis that is not its own.
+
+**T2's underlying instinct was right, though, and it is preserved.** External tool *results* deserve
+a different default from SUNIL-generated parameters, and that is what the existing `source:
+ContentSource` parameter is for — `kind=tool_call, source=external_tool_result` versus
+`source=sunil_generated`. Where one row draws on several sources, **the row takes the most
+restrictive applicable policy.** Column-level granularity would need separate columns and is not V1.
 
 Defaults come from `config/capture.yaml` (a sixth registry file, cross-validated at startup like the
 others), keyed by content kind, with a per-project override — so `projects.yaml` can mark one
@@ -1515,7 +1776,7 @@ python -m venv .venv                       # note: `python`, never `python3` (br
 pip install -e ".[dev]"
 copy ..\..\.env.example ..\..\.env         # then fill in the two secrets
 alembic upgrade head                       # creates var\sunil.db
-uvicorn sunil.main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn sunil.main:create_app --factory --host 127.0.0.1 --port 8000 --reload   # A-12: factory, not a module-level app
 
 # frontend — terminal 2
 cd C:\repo\SUNIL\apps\web
@@ -1578,7 +1839,9 @@ ADR-005, ADR-009).
 | `LOG_LEVEL` | `INFO` | logging | no |
 | `SUNIL_PROGRESS_EVENTS` | `false` | SSE feature flag; **defaults false until T12 lands** (§8.4) | no |
 | `SUNIL_CONFIG_DIR` | `./config` | registry loaders (§14.5) | no |
-| `SUNIL_TURN_DEADLINE_S` | `40` | orchestrator turn deadline (§5.3) | no |
+| `SUNIL_TURN_DEADLINE_S` | `40` | orchestrator turn deadline (§5.3); re-read per app (§3.2.1) | no |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | `providers/anthropic` — passed as `base_url=`. **Non-canonical values must be loopback** (§9.7) | no |
+| `GITHUB_API_BASE_URL` | `https://api.github.com` | `tools/github` — request prefix. **Non-canonical values must be loopback** (§9.7) | no |
 | `OWNER_USERNAME` / `OWNER_PASSWORD` | `isuru` / `REPLACE_ME` | seed script only | **yes** |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | `apps/web` | no |
 

@@ -24,8 +24,14 @@ that supersedes it, or — where the decision survives and only part of it moves
 | [014](ADR-014-training-data-capture-policy.md) | **Training-data capture policy** — classify at capture time; `none / metadata_only / redacted_full / full_local_only` | **Accepted** (owner correction §10) |
 | [015](ADR-015-m1-two-logical-llm-stages.md) | **M1 has two logical LLM stages**; the PM agent's analysis is the user-facing response | **Accepted** (owner correction §11) |
 | [016](ADR-016-config-deployment-policy.md) | `config/*.yaml` is **mounted, never baked**; a change takes effect on restart | Proposed |
+| [017](ADR-017-test-seams-and-base-url-overrides.md) | Two test seams: `FakeProvider` for behaviour, **settings-driven base URLs** for the adapters; non-canonical must be loopback | **Accepted** (Architect ruling, 2026-08-14) |
+| [018](ADR-018-application-and-settings-lifecycle.md) | Settings/engine/clients are **per-application state**; `create_app(settings=None)`, `uvicorn --factory` | **Accepted** (Architect ruling, 2026-08-14) |
 
-ADR-001 … ADR-016 are the Solution Architect's. **ADR-001 … ADR-013 were approved by the owner's
+ADR-017 and ADR-018 answer questions raised by QA against the running build, not by a review. They
+are Architect rulings issued mid-flight because T5, T6 and T8 were still open and the cost of ruling
+late is rework.
+
+ADR-001 … ADR-018 are the Solution Architect's. **ADR-001 … ADR-013 were approved by the owner's
 architecture review on 2026-08-14** ("approve the architecture direction after targeted
 corrections"); the corrections are recorded as ADR-004 Amendment 1, the ADR-009 amendment, and the
 new ADR-014/015/016. ADR-001, ADR-005 and ADR-013 are the three that together keep Docker off M1's
@@ -39,4 +45,4 @@ contingency rather than a constraint.
 | ADR-004 | Amendment 1 — "unforgeable"/"no expressible code path" withdrawn; runtime guard + `ExecutionMetadata` added; stored-plan check deferred to M5 as DC-14 | 2026-08-14 |
 | ADR-005 | Context line re-stated: two logical LLM stages, 7.5–17.5 s nominal | 2026-08-14 |
 | ADR-009 | T12 pre-classified OPTIONAL / post-M1; `SUNIL_PROGRESS_EVENTS` defaults `false` | 2026-08-14 |
-| `ARCHITECTURE_V1.md` | Amendment log A-1 … A-9 at the head of the document | 2026-08-14 |
+| `ARCHITECTURE_V1.md` | Amendment log A-1 … A-14 at the head of the document | 2026-08-14 |
