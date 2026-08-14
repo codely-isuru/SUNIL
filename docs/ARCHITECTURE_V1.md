@@ -35,6 +35,10 @@ silent edit.
 | A-12 | **Settings and the engine are per-application, not process-global.** `create_app(settings=None)` builds a fresh `Settings()`, hangs it and the engine on `app.state`, and the module-level `app` object is replaced by `uvicorn --factory`. `get_settings()` stays cached for scripts and Alembic only | QA ruling 3, 2026-08-14 | §3.5, §14.1, ADR-018 |
 | A-13 | `TraceContext.emit()` is **async with a required keyword `summary`**, exactly as §8.1 has always shown it. §3.4's shorthand `emit(stage, detail=…)` was the inaccuracy and is corrected. §3.4 also now contracts the `detail` keys per stage, so the frontend stops guessing them | T4's refinement, confirmed | §3.4 |
 | A-14 | **`GET /api/v1/projects`** added — the configured project list, needed by the empty-state chips before any turn exists. The client's hard-coded `FALLBACK_KNOWN_PROJECTS` is deleted, and the empty state renders without chips if the fetch fails rather than showing a stale list | FE ruling 4, 2026-08-14 | §11.1, §11.5 |
+| A-15 | **`effort` is a field of `output_config`, not a top-level `messages.create()` kwarg**, and its permitted values are `low\|medium\|high\|xhigh\|max`. The old prose was wrong; BE-2 caught it by reading the installed package | T6, verified 2026-08-14 | §4.3, §4.4 |
+| A-16 | **Provider errors are classified by `status_code`, not by class name**: no-status connection/timeout and 408/429/≥500 are transient, everything else — **including any exception class this document does not name** — is permanent. A name-keyed list would have called `OverloadedError` (529) permanent, which is wrong | T6 + Architect, 2026-08-14 | §4.3 |
+| A-17 | **The Model Router does not emit trace stages; its callers do.** `run()` is invoked at least twice per turn, so emitting inside it would breach A-2's one-emission-per-stage rule. The router writes `llm_calls` rows and returns the attempt count | BE-2's design, confirmed | §4.5 |
+| A-18 | **One canonical capture vocabulary** in a new leaf module `sunil/capture.py`. `CaptureKind` is table-keyed (`message·plan·llm_call·tool_call·memory`); `CaptureRule` is the type that crosses; `core/registry/capture.py` owns the only string→enum conversion | ruling 5, 2026-08-14 | §13.2, ADR-014 Amendment 1 |
 
 ---
 
@@ -458,7 +462,8 @@ class LLMRequest:
     max_tokens: int
     json_schema: dict | None = None    # None → free text; set → structured output demanded
     temperature: float | None = None
-    effort: str | None = None          # passed through verbatim when set
+    effort: str | None = None          # "low"|"medium"|"high"|"xhigh"|"max"; the adapter places it
+                                       # INSIDE output_config, not as a top-level kwarg (§4.3)
     stop_sequences: list[str] | None = None
 
 @dataclass(frozen=True)
@@ -529,12 +534,38 @@ that is not on this list.**
   `.parsed_output`; M1 uses `create()` + explicit validation instead, because the fail-closed design
   needs its own validation step regardless and `create()` is the surface documented for the async
   client.
+- **`effort` goes INSIDE `output_config`, not as a top-level `messages.create()` kwarg.**
+  *(A-15 — this prose was wrong before 2026-08-14 and BE-2 caught it by reading the installed package
+  instead of trusting this document. Re-verified here from
+  `anthropic/types/output_config_param.py`.)* `OutputConfigParam` is
+  `{"effort": Optional[Literal["low","medium","high","xhigh","max"]], "format": Optional[JSONOutputFormatParam]}`,
+  so a planning call sets both — `output_config={"effort": "...", "format": {...}}` — and a free-text
+  analysis call may set `effort` alone. **The permitted values are those five, verified, not guessed.**
+  M1 sets no `effort`; the capability config may pass one through when §5's budget demands it.
+  **Do not "correct" working code back to a top-level `effort=` kwarg.**
 - **Usage:** `message.usage.input_tokens`, `message.usage.output_tokens`.
 - **Provider request id:** `message._request_id` (public despite the underscore).
-- **Errors:** `anthropic.APIConnectionError`, `anthropic.APITimeoutError`, `anthropic.RateLimitError`
-  (429), `anthropic.InternalServerError` (≥500) → `ProviderTransientError`.
-  `anthropic.BadRequestError` (400), `AuthenticationError` (401), `PermissionDeniedError` (403),
-  `NotFoundError` (404), `UnprocessableEntityError` (422) → `ProviderPermanentError`.
+- **Errors — classify by status code, not by class name (A-16).** The rule, in this order:
+
+  | Condition | Mapped to |
+  |---|---|
+  | `APIConnectionError` / `APITimeoutError` (no HTTP status) | `ProviderTransientError` |
+  | `status_code` is 408, 429, or **any ≥ 500** | `ProviderTransientError` |
+  | any other `APIStatusError` (400, 401, 403, 404, 409, 413, 422) | `ProviderPermanentError` |
+  | **anything else, including an exception class this document does not name** | `ProviderPermanentError` — **fail permanent by design** |
+
+  Verified exception classes in `anthropic==0.122.0` and the statuses they carry: `BadRequestError`
+  400, `AuthenticationError` 401, `PermissionDeniedError` 403, `NotFoundError` 404, `ConflictError`
+  409, `RequestTooLargeError` 413, `UnprocessableEntityError` 422, `RateLimitError` 429,
+  `InternalServerError` 500, `ServiceUnavailableError` 503, `OverloadedError` **529**,
+  `DeadlineExceededError` 504.
+
+  **This list is not exhaustive and must not be treated as such** — that is exactly why the rule is
+  keyed on `status_code`. A name-keyed mapping would have classified `OverloadedError` (529) as
+  permanent, which is wrong: 529 means "try again", and failing a turn on it is a self-inflicted
+  outage. A status-keyed rule absorbs it, and absorbs the next class Anthropic adds, without an edit.
+  `anthropic.RetryableError` exists but is a *caller-side opt-in* for middleware, not a
+  classification of API responses — do not key off it.
 
 **JSON Schema features usable with `output_config`** (verified): `object`/`array`/`string`/`integer`/
 `number`/`boolean`/`null`, `enum` (strings, numbers, bools, nulls), `const`, `anyOf`, `allOf`,
@@ -560,10 +591,13 @@ Model IDs are **pinned snapshots**, including the dateless ones — `claude-opus
 pointer. Pricing is copied into `config/models.yaml` with a `pricing_version` date so a future price
 change never silently rewrites historical cost records.
 
-`effort` exists as a request parameter and defaults to `high` on Opus 5 and Sonnet 5 on the Claude
-API. M1 does not set it. If §5's latency budget proves tight, the capability config may pass an
-`effort` value through verbatim — take the permitted values from the Effort documentation at that
-time; **do not guess them.**
+`effort` defaults to `high` on Opus 5 and Sonnet 5. M1 does not set it. If §5's latency budget proves
+tight, the capability config may pass one through — **the permitted values are
+`low | medium | high | xhigh | max`, read from `anthropic/types/output_config_param.py` in the
+installed 0.122.0 on 2026-08-14**, and it is carried **inside `output_config`** (§4.3), never as a
+top-level kwarg. That correction (A-15) came from BE-2 checking the package rather than trusting this
+paragraph, which is the §14.3 rule working as intended — and a reminder that a verified list decays,
+so re-verify rather than inherit.
 
 ### 4.5 Selection, retry and escalation
 
@@ -595,6 +629,22 @@ Retry (FR-045, NFR-070, ADR-000 Q6):
   and it is why cost and rate-limit arithmetic are done over attempts, never over stages (A-2).
 - On exhaustion, the router raises; the orchestrator produces the `provider_error` outcome (§11.3)
   and stage 12 still fires.
+
+**The router does not emit trace stages. Its callers do (A-17).** This follows directly from A-2's
+"each of the twelve stages is emitted at most once per turn": `ModelRouter.run()` is invoked at least
+twice in a turn — once for planning, once for analysis — so a stage emitted inside the router would
+fire twice and raise `DuplicateStageEmission` on the second call. Ownership is therefore:
+
+| Stage | Emitted by | Around |
+|---|---|---|
+| 4 `model_selected`, 5 `llm_io` | `core/orchestrator` (T9's planning path) | the planning `run()` |
+| 11 `agent_result` | `agents/project_manager` (T10) | the analysis `run()` |
+
+The router still *writes data* — one `llm_calls` row per provider attempt — and returns the attempt
+count so the caller can put it in `detail.provider_attempts`. Writing rows is not emitting stages.
+This is BE-2's design and it is correct; it is recorded here because the constraint that forces it
+lives in this document, not in `router.py`'s docstring, and the next person to "tidy up" by moving
+emission into the shared router will otherwise only find out at runtime.
 
 **Escalation** in M1 is capability-level, not automatic: an agent declares
 `preferred_capability: general_reasoning` and `escalation_capability: complex_reasoning`; the runner
@@ -1643,9 +1693,34 @@ rows would be guesswork applied to data that has already been persisted under no
 
 ```python
 def resolve_capture(*, kind: CaptureKind, project_key: str | None,
-                    agent_id: str | None, source: ContentSource) -> CaptureDecision
+                    agent_id: str | None, source: ContentSource,
+                    overrides: Mapping[CaptureKind, CaptureRule] | None = None) -> CaptureDecision
 # → CaptureDecision(capture_policy, sensitivity, retention_class, training_eligible)
 ```
+
+**The vocabulary is canonical and lives in one leaf module (A-18, ADR-014 Amendment 1).** T2 and T3
+independently defined `CaptureKind` with two names differing and incompatible types, so T3's registry
+output did not fit the `overrides` parameter it was built to flow into. The ruling:
+
+| | Canonical |
+|---|---|
+| Module | **`sunil/capture.py`** — a top-level leaf beside `redaction.py`, importing nothing from `sunil`. It owns `CaptureKind`, `CapturePolicy`, `Sensitivity`, `RetentionClass`, `ContentSource`, `CaptureRule` (frozen), `CaptureDecision` |
+| `CaptureKind` | `message · plan · llm_call · tool_call · memory` — **one value per capture table**, T3's set |
+| Crossing type | **`CaptureRule`** from `sunil/capture.py`. `core/registry/capture.py` returns `dict[CaptureKind, CaptureRule]`; `db/capture.py` accepts exactly that |
+| Conversion | **`core/registry/capture.py` only** — YAML strings → typed enums at load, refusing to boot on an unknown value (§10.2). Nothing downstream ever sees a plain string |
+
+**Why table-keyed kinds and not T2's `tool_call_result` / `memory_short_term`.** The four capture
+columns live *on the row*, so a kind finer than a row cannot be honoured — `tool_call_result` implies
+that `tool_calls.parameters` and `tool_calls.result` can hold different policies, and they cannot.
+`memory_short_term` has a second problem: `memories.type` already carries that distinction, and
+encoding an M1-only value into a V1 vocabulary means M7 adds `memory_long_term`,
+`memory_structured`… — an enum growing along an axis that is not its own.
+
+**T2's underlying instinct was right, though, and it is preserved.** External tool *results* deserve
+a different default from SUNIL-generated parameters, and that is what the existing `source:
+ContentSource` parameter is for — `kind=tool_call, source=external_tool_result` versus
+`source=sunil_generated`. Where one row draws on several sources, **the row takes the most
+restrictive applicable policy.** Column-level granularity would need separate columns and is not V1.
 
 Defaults come from `config/capture.yaml` (a sixth registry file, cross-validated at startup like the
 others), keyed by content kind, with a per-project override — so `projects.yaml` can mark one
