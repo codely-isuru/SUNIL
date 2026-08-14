@@ -33,6 +33,41 @@ available hours. M1 fits only if nothing goes wrong. §8.4 says what to do about
 
 ---
 
+## Rulings issued during the build — 2026-08-14, read this if your task is open
+
+Four questions came up from QA and the frontend lane against running code. The rulings are recorded
+in `ARCHITECTURE_V1.md` (A-11 … A-14) and ADR-017/018. **This table is the delta per task** — if your
+task is listed, this changes what you build.
+
+| Task | Delta | Authority |
+|---|---|---|
+| **T2** *(merged)* | `migrations/env.py` must construct `Settings()` **fresh**, not `get_settings()`. As landed, an in-process `alembic upgrade head` after settings have been read migrates a *different* database than the one under test, silently. One line | ADR-018 §5 |
+| **T5** *(in flight)* | `create_app(settings: Settings \| None = None)`; fresh `Settings()` when omitted; `app.state.{settings,engine,sessionmaker}`; `get_session()` reads `request.app.state.sessionmaker`; **delete the module-level `app = create_app()`** and run with `uvicorn sunil.main:create_app --factory`. Plus **`GET /api/v1/projects`** (~20 lines, `routes/projects.py`) if T5 is still open — otherwise it folds into T11a | ADR-018, A-14 |
+| **T6** *(in flight)* | `AsyncAnthropic(..., base_url=settings.anthropic_base_url)` — **passed explicitly.** A hard-coded canonical URL would beat `ANTHROPIC_BASE_URL` and silently point the entire exit suite at the real API with a real key | ADR-017 |
+| **T8** *(not started)* | Add `Settings.github_api_base_url` (default `https://api.github.com`) and prefix every request path with it. Keep `follow_redirects=False` | ADR-017 |
+| **T1/T5 settings** | Both base-URL fields carry the loopback validator: a non-canonical value must be `localhost` / `127.0.0.0/8` / `::1`, or `Settings` refuses to construct and the app does not boot | §9.7, T-24 |
+| **T16** *(merged)* | Delete `FALLBACK_KNOWN_PROJECTS`. Fetch `GET /api/v1/projects` for the empty-state chips; **if it fails, render the empty state with no chips** — never a stale hard-coded list | A-14, §11.5 |
+| **T4/T11a/T11b** | `detail` keys per stage are now contracted (`ARCHITECTURE_V1.md` §3.4) so the frontend stops guessing. Emit them; the client still degrades when one is absent | A-13 |
+| **T18/T19** | Two new security tests: `test_non_loopback_api_base_override_refuses_to_boot`, `test_anthropic_client_is_constructed_with_settings_base_url` | ADR-017 |
+| **T2 + T3 capture vocabulary** *(both merged — cross-lane mismatch)* | The vocabulary moves to a **new leaf module `sunil/capture.py`** (top-level, beside `redaction.py`, importing nothing from `sunil`): `CaptureKind`, `CapturePolicy`, `Sensitivity`, `RetentionClass`, `ContentSource`, `CaptureRule`, `CaptureDecision`. **Canonical `CaptureKind` = `message · plan · llm_call · tool_call · memory`** (T3's names — one per capture table). **`CaptureRule` is the crossing type.** **BE-2 owns the only string→enum conversion**, in `core/registry/capture.py`, refusing to boot on an unknown value; BE-1 deletes its duplicate definitions and types `overrides` as `Mapping[CaptureKind, CaptureRule]`. T2's `tool_call_result` distinction is preserved through the existing `source: ContentSource` argument, not through a second kind | ADR-014 Amendment 1, A-18 |
+| **T6** *(in flight)* | `effort` goes **inside `output_config`**, values `low\|medium\|high\|xhigh\|max` — the doc was wrong and is corrected; do not "fix" working code back to a top-level kwarg. Classify provider errors **by `status_code`** (no-status connection/timeout and 408/429/≥500 transient; everything else, **including unlisted classes**, permanent) — a name-keyed list gets `OverloadedError` (529) wrong. The router **does not** emit stages; T9/T10/T11b emit around their own `run()` calls | A-15, A-16, A-17 |
+
+**Confirmed without change** (asked, and the answer is "as already written"): `TraceContext.emit()`
+is `async` with a required `summary` — §8.1 always said so and T4's refinement matches it; §3.4's
+shorthand was the error and is corrected. And `SUNIL_PROGRESS_EVENTS` has **no** client-visible
+counterpart by design — `useTurn` always attempts the SSE connection and treats `onerror` exactly as
+it treats the flag being off (`ARCHITECTURE_V1.md` §12). With T12 optional and the flag shipping
+`false`, the endpoint simply will not exist and the fallback stepper is the normal path.
+
+**Seeding the owner row in fixtures by raw SQL is approved**, using §9.6's format verbatim:
+`scrypt$16384$8$1$<salt_b64>$<hash_b64>` — `n=2**14, r=8, p=1, dklen=32`, 16 random salt bytes,
+standard base64. It does leave `scripts/seed-owner.py` itself untested: **T18 owns one test** that
+calls the script's `hash_password()` / seeding function and then logs in through the API, which also
+closes §10's coverage gap on walkthrough steps 1 and 3. That requires the script's logic to be
+importable rather than living only under `if __name__ == "__main__"` — T2's lane, ten minutes.
+
+---
+
 ## 0. How to use this
 
 Twenty-one numbered tasks — twenty-two work items, since T11 splits into T11a and T11b — across seven
@@ -101,6 +136,15 @@ Everything else — no self-merges, no weakened tests, rebase not merge, push of
    merged by the Delivery Manager. Pushing is not done.
 8. **Logical LLM stages are not provider calls (A-2).** Anywhere you count, log, price or assert on
    model usage, count **provider attempts** — one `llm_calls` row each.
+9. **Verify from a clean state, not from your working tree.** Your tree has artefacts CI will not
+   have: a `.next/` directory, a generated type file, a migrated database, a warm cache. Before you
+   call a task done, run its commands the way CI will — fresh clone or `git clean -xdn` first, in
+   dependency order. This has now caught two traps in one week. The most recent: bare
+   `tsc --noEmit` depends on a Next 16 generated global that does not exist until a build or
+   `next typegen` has run, and T21's CI runs `pnpm typecheck` **before** `pnpm build` on a clean
+   checkout — so the first frontend merge would have failed CI, and it would have read as a code
+   defect rather than an ordering one. T16 fixed it by having `typecheck` run `next typegen` first.
+   A green test on a dirty tree is not evidence.
 
 ---
 
@@ -233,8 +277,15 @@ called before every `llm_calls` / `tool_calls` / `audit_events` insert.
 ### T5 — API skeleton: middleware, auth, health
 **Deps:** T1, T2, T4.
 **Owns:** `apps/api/sunil/api/{deps.py,schemas.py,middleware.py}`,
-`apps/api/sunil/api/routes/{auth.py,health.py}`.
-**Extends (same lane):** `sunil/main.py` — the middleware list and router registration.
+`apps/api/sunil/api/routes/{auth.py,health.py,projects.py}`.
+**Extends (same lane):** `sunil/main.py` — the middleware list, router registration **and the
+`create_app(settings=None)` lifecycle of ADR-018**: fresh `Settings()` when none is passed,
+`app.state.{settings,engine,sessionmaker}`, `get_session()` reading `request.app.state.sessionmaker`,
+and **the module-level `app = create_app()` deleted** in favour of
+`uvicorn sunil.main:create_app --factory`.
+**Also:** `GET /api/v1/projects` → `{projects:[{key,display_name}]}` from the T3 registry, session
+required (A-14, §11.5) — ~20 lines. If T5 has already merged, this folds into T11a instead; same lane,
+same directory.
 **Build:** middleware via the **explicit constructor list**, CORS outermost
 (`ARCHITECTURE_V1.md` §3.3); `RequestContextMiddleware` accepting/validating `X-Request-Id` as UUID4,
 binding it to contextvars **and starting the turn deadline clock**; `SessionMiddleware`;
@@ -310,7 +361,10 @@ in `projects.yaml` — refusing to boot on mismatch.
 `apps/api/sunil/core/routing/{router.py,capabilities.py,pricing.py,retry.py}`.
 **Build:** the protocol and dataclasses of `ARCHITECTURE_V1.md` §4.2 (`LLMPurpose` includes
 `FINAL_RESPONSE`, which **no M1 code path uses** — ADR-015); the Anthropic adapter against the
-verified surface in §4.3 — `AsyncAnthropic`, `max_retries=0`, `output_config={"format":
+verified surface in §4.3 — `AsyncAnthropic` **constructed with an explicit
+`base_url=settings.anthropic_base_url`** (ADR-017 — never a hard-coded literal, which would beat
+`ANTHROPIC_BASE_URL` and point QA's whole exit suite at the real API), `max_retries=0`,
+`output_config={"format":
 {"type":"json_schema","schema":…}}`, `usage.input_tokens`/`output_tokens`, `_request_id`, and the
 exception mapping to `ProviderTransientError`/`ProviderPermanentError`; router capability lookup,
 3-attempt backoff with jitter, **a turn-deadline check before each attempt** (§5.3 — an attempt whose
@@ -329,7 +383,9 @@ step 0**: reject any call not carrying `ExecutionMetadata` (`validated_plan_id`,
 `task_id`, `agent_id`) and run `require_validated_plan()` — ADR-004 Amendment 1. All four fields are
 written onto the `tool_calls` row. Pydantic `params_model` per operation; `tool_calls` row written
 before the adapter is reached; every adapter exception normalised, never propagated.
-GitHub: three concurrent `httpx` GETs (commits, open PRs, open issues), `Authorization: Bearer`,
+GitHub: three concurrent `httpx` GETs (commits, open PRs, open issues) against
+**`settings.github_api_base_url`** (ADR-017 — default `https://api.github.com`, non-canonical values
+must be loopback, `follow_redirects` stays `False`), `Authorization: Bearer`,
 `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, 15 s timeout;
 **`owner`/`repo` resolved from `config/projects.yaml`, never from the plan**; the allow-listed,
 length-capped projection of §9.4 control 3 with issue and PR **bodies excluded**.
@@ -559,6 +615,10 @@ GET  /api/v1/chat/{request_id}/events        (SSE, withCredentials)   [T12 — o
   : ping                                     (heartbeat, 15 s)
 
 GET  /api/v1/trace/{request_id}              → 200 {stages[], llm_calls[], tool_calls[]}   [T13 — optional]
+
+GET  /api/v1/projects                        (session required)                          [A-14, ruling 4]
+  → 200 {projects: [{key, display_name}]}     — same element shape as failure.known_projects
+  → 401 no session
 ```
 
 `failure.kind` ∈ `provider_error | tool_failed | plan_rejected | unknown_project` → the Designer's
@@ -572,8 +632,35 @@ agent_result, final_response`. **Each appears at most once per turn**; retries a
 
 `usage` sums **all provider attempts** in the turn, including failed ones that consumed input tokens.
 
+`trace[].detail` is an open object, but the keys in `ARCHITECTURE_V1.md` §3.4 are **contracted** —
+a stage that has one emits it under that name. The client still degrades to its generic per-stage
+label when a key is absent; that is correct and is what keeps the list additive.
+
 **The API sends enums and data. The web app owns every human-readable string** — labels, phase names
 and all failure copy (`ARCHITECTURE_V1.md` §11.2).
+
+### 6.1 Test seams — also frozen, for the same reason (A-11, A-12; ADR-017, ADR-018)
+
+QA and the backend lanes must use the **same** seams, or the suite tests something the application
+does not do. These are contract, not implementation detail:
+
+| Seam | Shape | Who uses it |
+|---|---|---|
+| **Protocol fake** | `FakeProvider` implementing `LLMProvider` | engineers' `tests/unit/**` for router/orchestrator/agent behaviour |
+| **Anthropic transport** | `ANTHROPIC_BASE_URL` → `Settings.anthropic_base_url`, **passed as `base_url=`** by the adapter | T18's exit harness, against a local scripted double |
+| **GitHub transport** | `GITHUB_API_BASE_URL` → `Settings.github_api_base_url`, prefixed onto every request path | same |
+| **Application** | `create_app(settings: Settings \| None = None)`; fresh `Settings()` when omitted; `app.state.{settings,engine,sessionmaker}` | any test needing its own DB path, port or deadline |
+
+Three rules that make them hold:
+
+1. **Never hard-code a base URL in an adapter.** The SDK's precedence is
+   *kwarg → env → profile → default*, so a literal `base_url="https://api.anthropic.com"` **wins**
+   over `ANTHROPIC_BASE_URL` and silently points the whole exit suite at the real API with a real
+   key. Pass the setting; its default is the canonical host.
+2. **A non-canonical base URL must be loopback**, or `Settings` refuses to construct and the app does
+   not boot (§9.7, T-24). This is why the seam is safe to ship.
+3. **Never read configuration from a process-global cache on the request path.** `get_settings()`
+   and `get_app_engine()` are for scripts and Alembic only.
 
 ---
 
@@ -817,3 +904,18 @@ Each of these has cost someone a day somewhere. They are here so they cost nobod
     four. Count `llm_calls` rows by `purpose`, or assert `>= 2` (A-2, ADR-015).
 13. **Do not commit to `main`.** If `git status` in your worktree says `On branch main`, stop and
     tell the Delivery Manager (`GIT_WORKFLOW.md` rule 1).
+14. **An SDK's `base_url` kwarg beats its environment variable.** Hard-code the canonical host in an
+    adapter and you have not written a no-op — you have disconnected the test seam and pointed the
+    suite at production, with a real key, and it will still be green (ADR-017).
+15. **`@lru_cache` on a settings accessor is a test-isolation bug waiting for the suite to go
+    green.** The first read in a process wins for the whole process. Configuration on the request
+    path comes from `request.app.state` (ADR-018).
+16. **`tsc --noEmit` needs Next's generated types.** `pnpm typecheck` must run `next typegen` first,
+    or it passes locally and fails on a clean CI checkout.
+17. **A verified list decays.** §4.3 and §14.3 were verified on 2026-08-14 and one entry was already
+    wrong — `effort` is inside `output_config`, not a top-level kwarg. Read the installed package
+    when the doc and the code disagree, then **tell the Architect so the doc is fixed**, because the
+    next reader will otherwise "correct" your working code back to the broken form.
+18. **If two lanes need the same vocabulary, neither owns it.** Shared enums and value types go in a
+    leaf module both import (`sunil/capture.py` is the precedent). Two lanes implementing one
+    under-specified sentence will implement it correctly and differently.
