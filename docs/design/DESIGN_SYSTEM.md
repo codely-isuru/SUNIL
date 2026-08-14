@@ -129,6 +129,56 @@ transitionDuration: { fast: "150ms", base: "250ms", slow: "600ms" },
 Root size is 16px; all values above are intended as rem-equivalent (e.g. 15px = 0.9375rem) —
 **use rem, not px**, so the system respects the user's browser text-size setting (§7).
 
+### Tailwind config (paste into `tailwind.config.ts` → `theme.extend`)
+
+**Confirmed against the T14 implementation** (`apps/web/tailwind.config.ts`,
+`35f6f2a`) — values verified line-for-line correct against the scale table above. Weight and
+`uppercase` are deliberately **not** baked into the size tokens; apply them as ordinary Tailwind
+utilities (`font-semibold`, `uppercase`) at the call site, per each row's Weight column above.
+`body`/`code` have no `letterSpacing` entry below because their spec value is "normal" —
+Tailwind's default, so no token is needed.
+
+```ts
+fontFamily: {
+  display: ["var(--font-display)", "ui-sans-serif", "system-ui", "sans-serif"],
+  "mono-ui": ["var(--font-mono-ui)", "ui-monospace", "monospace"],
+  "mono-body": [
+    "var(--font-mono-body)",
+    "ui-monospace",
+    "SFMono-Regular",
+    "Menlo",
+    "Consolas",
+    "monospace",
+  ],
+},
+// [fontSize, lineHeight] rem pairs — one entry per row of the scale table above.
+fontSize: {
+  display: ["2.125rem", "1.1"],   // 34px / 1.1
+  h1: ["1.5rem", "1.3"],          // 24px / 1.3
+  h2: ["0.75rem", "1.4"],         // 12px / 1.4
+  h3: ["0.8125rem", "1.4"],       // 13px / 1.4
+  body: ["0.9375rem", "1.6"],     // 15px / 1.6
+  small: ["0.75rem", "1.5"],      // 12px / 1.5
+  micro: ["0.625rem", "1.4"],     // 10px / 1.4
+  code: ["0.875rem", "1.5"],      // 14px / 1.5
+},
+letterSpacing: {
+  display: "0.3em",
+  h1: "0.15em",
+  h2: "0.2em",
+  h3: "0.05em",
+  small: "0.02em",
+  micro: "0.15em",
+},
+```
+
+`var(--font-display)` / `--font-mono-ui` / `--font-mono-body` are bound to actual font files via
+`next/font/google` in `apps/web/src/app/layout.tsx`: **Orbitron** (weights 400/600/700/800) →
+`--font-display`; **Share Tech Mono** (weight 400 only) → `--font-mono-ui`; **JetBrains Mono**
+(weights 400/600/700) → `--font-mono-body`. This is the correction from §0 actually landing in
+code, not just named correctly — JetBrains Mono carries the 600/700 weights Share Tech Mono
+can't, which is the entire reason it was substituted in for body prose.
+
 ---
 
 ## 3. Spacing
@@ -177,7 +227,34 @@ matching the prototypes' HUD language.
 | `duration-base` | 250ms | Panel/state transitions (matches prototype `transition:.25s`) |
 | `duration-slow` | 600ms | Message-enter, phase-change transitions |
 | `ease-standard` | `cubic-bezier(0.4,0,0.2,1)` | Default easing for all of the above |
-| `pulse` | 1100ms ease-in-out infinite, matches prototype `@keyframes btnpulse` | The "working" indicator's breathing glow **only** |
+| `pulse` | 1100ms, `ease-standard` easing, infinite — matches prototype `@keyframes btnpulse`'s peak value | The "working" indicator's breathing glow **only** |
+
+### Confirmed Tailwind implementation (§6)
+
+**Confirmed against T14** (`apps/web/tailwind.config.ts`, `35f6f2a`). The pulse token's easing
+was implemented as `ease-standard` rather than the generic `ease-in-out` keyword this document
+originally implied — that's a correct harmonisation (one easing curve system-wide instead of a
+one-off) and is adopted here as the confirmed value, not a deviation:
+
+```ts
+transitionTimingFunction: {
+  standard: "cubic-bezier(0.4,0,0.2,1)",
+},
+keyframes: {
+  "work-pulse": {
+    "0%, 100%": { boxShadow: "0 0 24px rgba(34,211,238,.35)" },   // = glow-active
+    "50%": { boxShadow: "0 0 44px rgba(34,211,238,.55)" },          // matches prototype btnpulse peak
+  },
+},
+animation: {
+  "work-pulse": "work-pulse 1100ms cubic-bezier(0.4,0,0.2,1) infinite",
+},
+```
+
+Class name in components: `animate-work-pulse`, applied to the `WorkIndicator` card only
+(`M1_CHAT_SPEC.md` §5.3) — disabled automatically under `prefers-reduced-motion: reduce` via the
+global kill-switch in `globals.css` (see confirmation below), not via a separate no-motion
+variant of the class.
 
 **Reduced motion:** under `prefers-reduced-motion: reduce`, the `pulse` loop and any
 message-enter slide/fade **must** be disabled or reduced to an instant/opacity-only change
@@ -213,9 +290,23 @@ shadow for the HUD feel. Never remove `outline` without supplying this replaceme
 clicks need not show the ring (`:focus-visible` handles this natively); keyboard users always
 get it.
 
+**Confirmed implementation (T14, `globals.css`, `35f6f2a`):** `:focus { outline: none }` paired
+with `:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; box-shadow:
+var(--glow-focus); }` — matches this spec exactly. Contrast checked against the **lightest**
+surface token in the palette (`surface-raised`, `#111B2E`, relative luminance ≈0.011, the
+harder case than `canvas`/`surface`): the accent ring computes to **≈9.5:1**, well clear of the
+3:1 non-text minimum. The ring remains legible against every surface in this system.
+
 **Reduced motion:** respect `prefers-reduced-motion: reduce` everywhere per §6. No experience may
 depend on animation to convey state — motion is always a reinforcement of a text/colour state
 change, never the sole carrier.
+
+**Confirmed implementation (T14, `globals.css`):** a global kill-switch —
+`*, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1
+!important; transition-duration: .01ms !important; scroll-behavior: auto !important; }` under
+the media query — collapses `animate-work-pulse` and every transition to effectively instant,
+exceeding the "≤150ms" floor this document sets. No per-component reduced-motion variant is
+needed as a result; the kill-switch is sufficient and should stay global.
 
 **Keyboard operability:** every control reachable via Tab in logical DOM order; actionable via
 Enter/Space; Escape closes any transient overlay (expanded trace panel, etc.); no keyboard traps;
