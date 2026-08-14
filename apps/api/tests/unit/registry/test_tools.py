@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import valid_config_files, write_config_dir
 from sunil.core.registry.errors import RegistrySchemaError, UnknownOperationError, UnknownToolError
 from sunil.core.registry.tools import load_tools
+
+from .conftest import valid_config_files, write_config_dir
 
 
 def test_loads_the_github_tool_and_its_operation(valid_config_dir: Path) -> None:
