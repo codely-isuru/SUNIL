@@ -17,16 +17,20 @@ from collections.abc import Sequence
 
 import structlog
 
+from sunil.redaction import redaction_processor
+
 # Processors every log line passes through, whether it originates from
 # structlog (`get_logger()`) or from stdlib `logging` (uvicorn's loggers,
-# routed through `ProcessorFormatter` below). Keep this a plain list — T4
-# appends its redaction processor here in one line.
+# routed through `ProcessorFormatter` below). `redaction_processor` (T4,
+# ADR-006/ET-10) runs on every line so a secret cannot reach a log by
+# construction, not by the discipline of every future caller remembering.
 shared_processors: list[structlog.types.Processor] = [
     structlog.contextvars.merge_contextvars,
     structlog.processors.add_log_level,
     structlog.processors.TimeStamper(fmt="iso", utc=True),
     structlog.processors.StackInfoRenderer(),
     structlog.processors.format_exc_info,
+    redaction_processor,
 ]
 
 
