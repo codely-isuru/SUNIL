@@ -1,0 +1,51 @@
+# Training-data capture defaults per content kind, with a per-project
+# override (A-6, ADR-014, ARCHITECTURE_V1.md §13.2).
+#
+# `training_eligible` is deliberately NOT set here — it is derived, never
+# hand-set (§13.2: `training_eligible = capture_policy in {redacted_full,
+# full_local_only} and sensitivity in {public, internal}`), by
+# `db/capture.py`'s `resolve_capture()` (T2), which reads this registry.
+#
+# `audit_events` deliberately has no entry here and never will — a capture
+# policy must never be able to suppress an audit row (§7.3.1).
+#
+# `project_overrides` is empty in M1: one project is configured
+# (config/projects.yaml) and it uses the defaults below unmodified. The
+# mechanism exists — keyed by project_key, cross-validated against
+# config/projects.yaml at startup — so a future client project can be
+# marked `confidential` / `metadata_only` with a config edit, not a code
+# change.
+version: 1
+
+defaults:
+  # The owner's chat message and the assistant's reply (`messages`).
+  message:
+    capture_policy: redacted_full
+    sensitivity: internal
+    retention_class: standard
+
+  # Every plan attempt, accepted and rejected (`plans`).
+  plan:
+    capture_policy: redacted_full
+    sensitivity: internal
+    retention_class: standard
+
+  # Full LLM prompt/response, already redacted of secrets (`llm_calls`).
+  llm_call:
+    capture_policy: redacted_full
+    sensitivity: internal
+    retention_class: standard
+
+  # Tool parameters and the projected result (`tool_calls`).
+  tool_call:
+    capture_policy: redacted_full
+    sensitivity: internal
+    retention_class: standard
+
+  # Short-term memory rows — same policy, shorter retention.
+  memory:
+    capture_policy: redacted_full
+    sensitivity: internal
+    retention_class: transient
+
+project_overrides: {}

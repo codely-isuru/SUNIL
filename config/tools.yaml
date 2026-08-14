@@ -1,0 +1,26 @@
+# The Tool Registry (FR-100): every tool and the operations it exposes, by
+# name. Used for (a) startup cross-validation of config/permissions.yaml
+# and config/agents.yaml's `tools:` grants, and (b) building the plan
+# schema's tool/action enums (T9, ARCHITECTURE_V1.md §6.1 Layer 1).
+#
+# The authoritative parameter *validation* is the Pydantic `params_model`
+# T8 attaches to each `ToolOperation` in code (§9.3, §26.8) — `params`
+# below is a cross-validated, human-readable inventory of what an
+# operation accepts, not a second enforcement mechanism.
+version: 1
+
+tools:
+  github:
+    display_name: "GitHub"
+    operations:
+      list_recent_activity:
+        read_only: true
+        description: >-
+          Recent commits, open pull requests and open issues for the
+          configured project — three concurrent read-only GitHub API calls
+          (ARCHITECTURE_V1.md §9.3).
+        timeout_s: 15
+        params:
+          project_key:
+            type: string
+            required: true
