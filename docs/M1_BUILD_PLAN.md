@@ -35,7 +35,8 @@ available hours. M1 fits only if nothing goes wrong. §8.4 says what to do about
 
 ## 0. How to use this
 
-Twenty-one tasks, six lanes. A task's **"Owns"** list is exclusive: no other task edits those paths.
+Twenty-one numbered tasks — twenty-two work items, since T11 splits into T11a and T11b — across seven
+lanes. A task's **"Owns"** list is exclusive: no other task edits those paths.
 That rule still holds — it is what stops two agents editing one file — but it is no longer the
 *only* protection, because file ownership never protected repository state.
 
@@ -284,6 +285,8 @@ terminal `event: done`, a `: ping` heartbeat every 15 s, close on terminal or 12
 `SUNIL_PROGRESS_EVENTS`, **which ships `false`.**
 **Exit tests:** none — it is cosmetic by construction. T16's fallback stepper carries the UI without it.
 
+---
+
 ## 3. Backend integrations lane (BE-2)
 
 ### T3 — Configuration registries
@@ -360,6 +363,8 @@ of defence before the owner reads it (ET-1).
 summaries. This is the NFR-050 verification query and the seed of M8's NFR-021 view.
 **Why it is safely optional:** the trace already ships inside the chat response (§6), so
 `TraceDisclosure` works without it. Only the debugging endpoint is lost.
+
+---
 
 ## 3.1 Backend support lane (BE-3)
 
