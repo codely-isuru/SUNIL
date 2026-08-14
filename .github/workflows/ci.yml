@@ -1,6 +1,7 @@
 name: CI
 
-# SUNIL M1 — T21 minimal CI (docs/M1_BUILD_PLAN.md §5 T21).
+# SUNIL M1 — T21 minimal CI (docs/M1_BUILD_PLAN.md §5 T21), hardened by T22
+# (docs/CI.md has the full incident writeups for both).
 # Gates every merge (docs/GIT_WORKFLOW.md rule 4): backend ruff+pytest,
 # frontend typecheck+build, security import-boundary + critical tests.
 #
@@ -13,31 +14,25 @@ name: CI
 # on both because `actions/setup-python` puts a `python` shim on PATH on
 # every OS it supports.
 #
-# No secrets are read from GitHub Actions secrets anywhere in this file.
-# The env block below supplies only obviously-fake literal placeholder
-# values so Settings() / create_app() can construct in a suite that hasn't
-# monkeypatched them itself — never a real credential (ET-10). Any test
-# needing a real credential is `@pytest.mark.live` and deselected here via
-# `-m "not live"` (docs/M1_BUILD_PLAN.md §5 T21).
+# No secrets are read from GitHub Actions secrets anywhere in this file —
+# this repository (codely-isuru/SUNIL) is PUBLIC, so a workflow log is
+# world-readable and any real credential dropped into one is published to
+# the internet, not merely logged. The fake-value env blocks below (scoped
+# to only the steps that need them — see T22) supply obviously-fake literal
+# placeholders so Settings() / create_app() can construct in a suite that
+# hasn't monkeypatched them itself — never a real credential (ET-10). Any
+# test needing a real credential is `@pytest.mark.live` and deselected here
+# via `-m "not live"` (docs/M1_BUILD_PLAN.md §5 T21).
 
 on:
   push:
   pull_request:
 
-# Fake, non-secret placeholder values only — never real credentials.
-# Required so any code path that constructs `sunil.settings.Settings()`
-# (e.g. importing `sunil.main`) can do so even in a test process that
-# hasn't monkeypatched its own environment. Mirrors
-# apps/api/tests/unit/test_settings.py's fixture values.
-env:
-  ANTHROPIC_API_KEY: sk-ant-fake-ci-value
-  GITHUB_TOKEN: github_pat_fake-ci-value
-  SESSION_SECRET: fake-ci-session-secret-value
-  OWNER_USERNAME: ci-owner
-  OWNER_PASSWORD: fake-ci-owner-password
-  DATABASE_URL: sqlite+aiosqlite:///./var/sunil-ci.db
-  WEB_ORIGIN: http://localhost:3000
-  SUNIL_CONFIG_DIR: ./config
+# Least-privilege default: this workflow only ever reads the checked-out
+# code. No job writes to the repo, comments on a PR, or touches packages/
+# deployments, so the default GITHUB_TOKEN needs nothing beyond read access.
+permissions:
+  contents: read
 
 jobs:
   backend:
@@ -54,6 +49,15 @@ jobs:
           cache: "pip"
           cache-dependency-path: apps/api/pyproject.toml
 
+      # Runs before install/lint/test: fast (stdlib only), and it is the
+      # single most useful signal for the exact defect class T22 exists for
+      # — two lanes shipping same-named test modules, invisible in either
+      # lane alone, only visible once merged. See docs/CI.md "Cross-lane
+      # test-collection collisions".
+      - name: Check for duplicate test-module basenames
+        working-directory: .
+        run: python scripts/check_test_basenames.py
+
       - name: Install sunil-api (editable, dev extras)
         run: python -m pip install -e ".[dev]"
 
@@ -64,38 +68,79 @@ jobs:
         run: python -m ruff format --check .
 
       - name: pytest -q
-        # pytest exits 5 when it collects zero tests — a silent pass if a
-        # job only checks for a nonzero/exit-1 failure. T1 shipped
-        # test_settings.py so this should never be hit for real, but the
-        # job still treats 5 as a failure explicitly rather than by
-        # accident (docs/M1_BUILD_PLAN.md §11 trap 11).
+        # Fake, non-secret placeholder values — scoped to only this step
+        # (not job- or workflow-wide) so a later step that shells out to
+        # `gh` or any other tool that reads GITHUB_TOKEN from the ambient
+        # environment is never shadowed by this fake one (T22 security
+        # review finding 1).
+        env:
+          ANTHROPIC_API_KEY: sk-ant-fake-ci-value
+          GITHUB_TOKEN: github_pat_fake-ci-value
+          SESSION_SECRET: fake-ci-session-secret-value
+          OWNER_USERNAME: ci-owner
+          OWNER_PASSWORD: fake-ci-owner-password
+          DATABASE_URL: sqlite+aiosqlite:///./var/sunil-ci.db
+          WEB_ORIGIN: http://localhost:3000
+          SUNIL_CONFIG_DIR: ./config
+        # `pytest` exit codes, and how this step treats each one — the
+        # "empty is not green" rule extended to the whole family, not just
+        # exit 5 (docs/M1_BUILD_PLAN.md §11 trap 11; T22 security review
+        # finding 3):
+        #   0 = all collected tests passed                -> step passes
+        #   1 = one or more tests failed                  -> loud failure
+        #   2 = collection/execution interrupted           -> loud failure
+        #       (this is what two lanes shipping the same test-module
+        #       basename produces — "import file mismatch" — a merged tree
+        #       that runs ZERO tests, same silent-pass shape as exit 5, a
+        #       different door)
+        #   3 = internal pytest error                      -> loud failure
+        #   4 = command-line usage error                   -> loud failure
+        #   5 = no tests collected                          -> loud failure
         run: |
           set +e
           python -m pytest -q -m "not live"
           code=$?
           set -e
+
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$code" -eq 1 ]; then
+            echo "::error::pytest reported one or more test failures (exit code 1)."
+            exit 1
+          fi
           if [ "$code" -eq 5 ]; then
             echo "::error::pytest collected zero tests (exit code 5). Empty is not green — treating as a failure. See docs/CI.md."
             exit 1
           fi
-          exit "$code"
+          echo "::error::pytest aborted abnormally (exit code $code) — the collection-error family (e.g. two lanes shipping same-named test modules -> exit 2; internal errors -> exit 3; usage errors -> exit 4). This is never a pass. See docs/CI.md."
+          exit 1
 
   frontend:
     runs-on: ubuntu-latest
+    # Flip to "true" the moment T14 (apps/web) merges to main. Before that,
+    # apps/web/package.json legitimately does not exist and the job must
+    # skip cleanly rather than fail red. AFTER that, this flag is what stops
+    # "absent" from silently meaning "green" forever — a later deletion or
+    # rename of apps/web must fail the job, not quietly skip it again (T22
+    # security review finding 3).
+    env:
+      FRONTEND_REQUIRED: "false"
     steps:
       - uses: actions/checkout@v4
 
-      # T14 (apps/web) lands in parallel on task/T14-web-scaffold. Until it
-      # merges, apps/web/package.json does not exist on main — this job
-      # must skip cleanly, not fail red, in that case. Checked as a step
-      # (after checkout) rather than via a job-level `if: hashFiles(...)`,
-      # because a job-level `if` is evaluated before any step — including
-      # checkout — runs, so it cannot see repository files reliably.
+      # Checked as a step (after checkout) rather than via a job-level
+      # `if: hashFiles(...)`, because a job-level `if` is evaluated before
+      # any step — including checkout — runs, so it cannot see repository
+      # files reliably.
       - name: Check apps/web is present
         id: web
         run: |
           if [ -f "apps/web/package.json" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FRONTEND_REQUIRED" = "true" ]; then
+            echo "::error::apps/web/package.json is missing, but FRONTEND_REQUIRED=true (T14 has landed on main). A merged tree without the frontend must not go green — treating as a failure."
+            exit 1
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::apps/web/package.json not found (T14 has not merged yet) — frontend job skips cleanly."
@@ -133,6 +178,10 @@ jobs:
     defaults:
       run:
         working-directory: apps/api
+    # Same mandatory-flip pattern as the frontend job, for the same reason:
+    # flip to "true" the moment T19 lands apps/api/tests/security on main.
+    env:
+      SECURITY_SUITE_REQUIRED: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -144,12 +193,17 @@ jobs:
 
       # T19 owns apps/api/tests/security (the DC-10 import-boundary tests
       # and the critical security tests). Until it merges, that directory
-      # does not exist — this job must skip cleanly, not fail red.
+      # does not exist — this job must skip cleanly, not fail red. Once
+      # SECURITY_SUITE_REQUIRED is flipped to "true", its absence (e.g. an
+      # accidental delete/rename) is a hard failure, not a skip.
       - name: Check apps/api/tests/security is present
         id: sec
         run: |
           if [ -d "tests/security" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "$SECURITY_SUITE_REQUIRED" = "true" ]; then
+            echo "::error::apps/api/tests/security is missing, but SECURITY_SUITE_REQUIRED=true (T19 has landed on main). A merged tree without the security suite must not go green — treating as a failure."
+            exit 1
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::apps/api/tests/security not found (T19 has not merged yet) — security job skips cleanly."
@@ -161,15 +215,35 @@ jobs:
 
       - name: pytest tests/security -q
         if: steps.sec.outputs.present == 'true'
-        # Same exit-5 trap as the backend job, applied here too — an empty
-        # security suite must not report green.
+        # Fake, non-secret placeholder values — scoped to only this step,
+        # same reasoning as the backend job's pytest step above.
+        env:
+          ANTHROPIC_API_KEY: sk-ant-fake-ci-value
+          GITHUB_TOKEN: github_pat_fake-ci-value
+          SESSION_SECRET: fake-ci-session-secret-value
+          OWNER_USERNAME: ci-owner
+          OWNER_PASSWORD: fake-ci-owner-password
+          DATABASE_URL: sqlite+aiosqlite:///./var/sunil-ci.db
+          WEB_ORIGIN: http://localhost:3000
+          SUNIL_CONFIG_DIR: ./config
+        # Same exit-code family handling as the backend job's pytest step —
+        # an empty or interrupted security suite must never report green.
         run: |
           set +e
           python -m pytest tests/security -q -m "not live"
           code=$?
           set -e
+
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$code" -eq 1 ]; then
+            echo "::error::security suite reported one or more test failures (exit code 1)."
+            exit 1
+          fi
           if [ "$code" -eq 5 ]; then
             echo "::error::security suite collected zero tests (exit code 5). Empty is not green — treating as a failure."
             exit 1
           fi
-          exit "$code"
+          echo "::error::security suite aborted abnormally (exit code $code) — the collection-error family, never a pass. See docs/CI.md."
+          exit 1
