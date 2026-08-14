@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import valid_config_files, write_config_dir
 from sunil.core.registry.agents import load_agents
 from sunil.core.registry.errors import RegistryFileError, RegistrySchemaError, UnknownAgentError
+
+from .conftest import valid_config_files, write_config_dir
 
 
 def test_loads_the_project_manager_agent_with_the_full_10_2_shape(valid_config_dir: Path) -> None:

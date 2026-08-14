@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import valid_config_files, write_config_dir
 from sunil.core.registry.errors import RegistrySchemaError
 from sunil.core.registry.permissions import PermissionRegistry, load_permissions
+
+from .conftest import valid_config_files, write_config_dir
 
 
 def test_grant_for_returns_the_configured_decision(valid_config_dir: Path) -> None:
