@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunil-api"
+version = "0.1.0"
+description = "SUNIL backend API — FastAPI orchestrator, agents, tools (M1)."
+requires-python = ">=3.13"
+# Pinned exactly to ARCHITECTURE_V1.md §14.3 — every entry there was checked
+# to exist for Python 3.13 on 2026-08-14. Adding a dependency not on that
+# list is an Architect escalation (M1_BUILD_PLAN.md §0.2 rule 3).
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.52.3",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy==2.0.52",
+    "alembic==1.19.1",
+    "aiosqlite==0.22.1",
+    "psycopg[binary]==3.3.4",
+    "greenlet==3.5.5",
+    "anthropic==0.122.0",
+    "httpx==0.28.1",
+    "structlog==26.1.0",
+    "itsdangerous==2.2.0",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+# Flat layout: pyproject.toml sits beside the `sunil` package, not under
+# src/. Restrict discovery to `sunil*` so `tests` is never installed as a
+# package.
+include = ["sunil*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = [
+    "live: hits a real external credential/network dependency; deselected in CI via `-m \"not live\"`",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["sunil", "tests"]
+extend-exclude = [".venv", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S"]
+# S101 (assert) is expected pytest/FastAPI style, not a defect.
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures use obviously-fake literal secret strings; S105/S106 would
+# otherwise flag every one of them as a possible hardcoded credential.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"
