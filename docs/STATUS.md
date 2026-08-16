@@ -10,7 +10,7 @@
 | **Branch** | `main` (single-branch rule; feature work lands via short-lived branches → `main`) |
 | **Delivery** | Minions Team 18 (portal `http://localhost:4317`) |
 | **Due** | 2026-08-18 (Milestone 1 vertical slice) · budget ~$150 |
-| **Last updated** | 2026-08-14 |
+| **Last updated** | 2026-08-16 |
 
 ---
 
@@ -94,6 +94,19 @@ Gate 2 approval.
    validated JSON plan → Project Manager Agent → GitHub read-only tool → result →
    chat, fully traced. QA writes the red exit tests first.
 3. **Stage 7 — Staging**, then **Gate 3 (human)** before anything reaches production.
+
+### 2026-08-16 — interrupted by a usage limit, recovered clean
+
+The session hit its usage limit and **all six lanes terminated mid-task**. No work was
+lost. Every worktree was audited; two dirty trees were committed as `wip(...)` and
+pushed (QA's harness rebase, OPS's conftest rule), two unpushed branches were pushed
+(T3's capture vocabulary, T11a's base). All nineteen task branches are on `origin`.
+
+**Schedule impact, stated plainly: the interruption cost roughly two calendar days.**
+M1 remains due 2026-08-18. The extra day the owner bought on 08-14 has been consumed
+by the outage rather than by the build.
+
+---
 
 ## 4. Known issues / open items
 
