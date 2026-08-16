@@ -37,3 +37,16 @@ class SessionResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     revision: str
+
+
+class ProjectSummary(BaseModel):
+    """`{key, display_name}` — the same element shape `failure.
+    known_projects` uses in the frozen §6 chat contract, so the frontend
+    renders both from one component."""
+
+    key: str
+    display_name: str
+
+
+class ProjectsResponse(BaseModel):
+    projects: list[ProjectSummary]

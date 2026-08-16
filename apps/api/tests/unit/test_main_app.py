@@ -396,3 +396,37 @@ def test_sunil_main_has_no_module_level_app_attribute() -> None:
     import sunil.main as main_module
 
     assert not hasattr(main_module, "app")
+
+
+def test_projects_endpoint_reads_the_real_committed_projects_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end, through the real `create_app()` + lifespan (which calls
+    `load_registries()` against the real, committed `config/` directory) —
+    not the fake stand-in `test_routes_projects.py` uses. Confirms
+    `app.state.registries` is actually what the route reads."""
+    db_path = tmp_path / "main_app_projects.db"
+    _set_required_env(monkeypatch, db_path)
+    _migrate_to_head(db_path)
+    import asyncio
+
+    asyncio.run(_seed_user(db_path, username="isuru", password="fake-password-for-projects"))
+
+    from sunil.main import create_app
+
+    app = create_app()
+
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "isuru", "password": "fake-password-for-projects"},
+            headers={"X-SUNIL-Client": "web"},
+        )
+        assert login.status_code == 200
+
+        response = client.get("/api/v1/projects")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "projects": [{"key": "easy_clean_workforce", "display_name": "EasyClean Workforce"}]
+    }

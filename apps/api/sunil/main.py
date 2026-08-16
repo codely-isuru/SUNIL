@@ -30,7 +30,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from sunil.api.middleware import RequestContextMiddleware
-from sunil.api.routes import auth, health
+from sunil.api.routes import auth, health, projects
 from sunil.core.registry.loader import load_registries
 from sunil.db.session import assert_alembic_head, get_engine, get_sessionmaker
 from sunil.logging import configure_logging
@@ -121,5 +121,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(health.router)
+    app.include_router(projects.router)
 
     return app
