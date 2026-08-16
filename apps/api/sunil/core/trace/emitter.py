@@ -41,8 +41,8 @@ async def emit_stage(
     summary: str,
     detail: dict[str, Any] | None,
 ) -> None:
-    # Sink 1: the structured log line. Redaction runs on this via the
-    # structlog processor chain (`sunil.logging.shared_processors`) — not
+    # Sink 1: the structured log line. Redaction runs on this via
+    # `sunil.logging`'s base processor chain (`scrub_processor`) — not
     # duplicated here.
     _logger.info(
         "stage_emitted",

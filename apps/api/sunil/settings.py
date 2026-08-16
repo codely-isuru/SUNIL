@@ -19,8 +19,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/api/sunil/settings.py -> sunil -> api -> apps -> repo root.
@@ -29,6 +30,41 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # the process's current working directory.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ENV_FILE = _REPO_ROOT / ".env"
+
+_REDACTED_INPUT_PLACEHOLDER = "<redacted — a failed Settings() load never exposes loaded values>"
+
+
+def _redact_validation_error(exc: ValidationError) -> ValidationError:
+    """Re-raise a `Settings` construction failure with every `input` value
+    stripped (ET-10, security review blocker 3).
+
+    On a *missing*-field error, pydantic reports `input` as the **entire
+    collected values dict so far** — and `SecretStr` coercion happens only
+    after validation succeeds, so at that moment every other secret that
+    *did* load is still a raw `str` inside that dict. It then rides inside
+    `.errors()`, `.json()`, `str(exc)`/`repr(exc)`, and a traceback. This is
+    the one path T4's redaction registry cannot rescue: on this path no
+    secret loaded successfully, so nothing was ever registered there
+    either.
+
+    `type` / `loc` / `ctx` are preserved so the human-readable message is
+    unchanged (`ctx` carries only constraint parameters — an `enum` list,
+    a `ge` bound — never a copy of the offending input); only `input` is
+    replaced. The result is still a real `pydantic.ValidationError`, so
+    `except ValidationError` at every existing call site keeps working
+    unchanged.
+    """
+    line_errors = []
+    for error in exc.errors():
+        line_error: dict[str, Any] = {
+            "type": error["type"],
+            "loc": error["loc"],
+            "input": _REDACTED_INPUT_PLACEHOLDER,
+        }
+        if "ctx" in error:
+            line_error["ctx"] = error["ctx"]
+        line_errors.append(line_error)
+    return ValidationError.from_exception_data(exc.title, line_errors, hide_input=True)
 
 
 class Settings(BaseSettings):
@@ -40,6 +76,27 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    def __init__(self, **values: Any) -> None:
+        """Sanitise a validation failure before it ever leaves this class.
+
+        The `raise` deliberately happens *outside* the `except` block: a
+        `raise` written inside an `except ValidationError as exc:` clause
+        implicitly chains the new exception's `__context__` to `exc`,
+        regardless of `from None` (which only suppresses *display* of the
+        chain — the original, secret-carrying exception object stays
+        reachable via `__context__` otherwise). Falling through the
+        `except` before raising means there is no exception being handled
+        at that point, so `__context__` is never set at all — not merely
+        hidden from a traceback.
+        """
+        sanitized: ValidationError | None = None
+        try:
+            super().__init__(**values)
+        except ValidationError as exc:
+            sanitized = _redact_validation_error(exc)
+        if sanitized is not None:
+            raise sanitized
 
     # -- Database ---------------------------------------------------------
     # `SecretStr` because a Postgres URL commonly carries embedded
