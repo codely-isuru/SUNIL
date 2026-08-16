@@ -29,11 +29,15 @@ discipline as `test_migrations.py`.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 from sunil.redaction import reset_registry_for_tests, scrub
 
@@ -221,3 +225,174 @@ def test_app_refuses_to_boot_against_a_broken_config_dir(
     with pytest.raises(Exception):  # noqa: B017 - RegistryFileError, wrapped by the ASGI lifespan
         with TestClient(app):
             pass
+
+
+# ---------------------------------------------------------------------------
+# ADR-018 — settings/engine/sessionmaker are per-application state, not
+# process-global caches. QA's harness builds one app per test, each with its
+# own DATABASE_URL; these tests prove that actually works, not just that the
+# signature accepts an argument.
+# ---------------------------------------------------------------------------
+
+
+def _hash_password(password: str) -> str:
+    salt = b"0123456789ABCDEF"
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32)
+    return f"scrypt$16384$8$1${base64.b64encode(salt).decode()}${base64.b64encode(digest).decode()}"
+
+
+async def _seed_user(db_path: Path, *, username: str, password: str) -> None:
+    """Insert one `users` row directly, against an already-migrated
+    database file — no app, no lifespan, just the table `alembic upgrade
+    head` created."""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path.as_posix()}")
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessionmaker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO users (id, name, username, password_hash, preferences, "
+                "security_settings, created_at) VALUES "
+                "(:id, :name, :username, :password_hash, '{}', '{}', :created_at)"
+            ),
+            {
+                "id": f"user-{username}",
+                "name": username,
+                "username": username,
+                "password_hash": _hash_password(password),
+                "created_at": "2026-08-14 00:00:00+00:00",
+            },
+        )
+        await session.commit()
+    await engine.dispose()
+
+
+def test_create_app_accepts_explicit_settings_and_stores_them_on_app_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "explicit_settings.db"
+    _set_required_env(monkeypatch, db_path)
+    _migrate_to_head(db_path)
+
+    from sunil.main import create_app
+    from sunil.settings import Settings
+
+    explicit_settings = Settings(
+        _env_file=None,
+        **_REQUIRED_ENV,
+        DATABASE_URL=f"sqlite+aiosqlite:///{db_path.as_posix()}",
+    )
+
+    app = create_app(explicit_settings)
+
+    assert app.state.settings is explicit_settings
+
+
+def test_create_app_with_no_argument_reads_settings_fresh_ignoring_a_stale_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact regression ADR-018 exists to prevent: `get_settings()` is
+    `@lru_cache`d process-wide. If `create_app()` used it, whichever test
+    (or whichever app) read settings *first* in this process would pin the
+    log level (and, more importantly, the database) for every app built
+    afterward — silently."""
+    from sunil.settings import get_settings
+
+    first_db = tmp_path / "first.db"
+    _set_required_env(monkeypatch, first_db)
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    get_settings()  # primes the process-wide cache with LOG_LEVEL=DEBUG
+
+    second_db = tmp_path / "second.db"
+    _set_required_env(monkeypatch, second_db)
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    _migrate_to_head(second_db)
+
+    from sunil.main import create_app
+
+    app = create_app()  # no argument — must not fall back to the stale cache
+
+    assert app.state.settings.log_level == "INFO"
+    assert "second.db" in app.state.settings.database_url.get_secret_value()
+
+
+def test_app_state_engine_and_sessionmaker_are_built_from_this_apps_own_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "engine_check.db"
+    _set_required_env(monkeypatch, db_path)
+    _migrate_to_head(db_path)
+
+    from sunil.main import create_app
+
+    app = create_app()
+
+    assert str(app.state.engine.url) == f"sqlite+aiosqlite:///{db_path.as_posix()}"
+    session = app.state.sessionmaker()
+    assert session.bind is app.state.engine
+
+
+def test_two_apps_with_different_databases_never_share_a_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The load-bearing proof: `get_session()` must take its sessionmaker
+    from *this request's* `app.state`, never from a module-level/cached
+    engine — otherwise two apps built with different `DATABASE_URL`s in
+    the same process would silently query the same database."""
+    import asyncio
+
+    db_a = tmp_path / "app_a.db"
+    _set_required_env(monkeypatch, db_a)
+    _migrate_to_head(db_a)
+    asyncio.run(_seed_user(db_a, username="user-a", password="pass-for-a"))
+
+    from sunil.main import create_app
+
+    app_a = create_app()
+
+    db_b = tmp_path / "app_b.db"
+    _set_required_env(monkeypatch, db_b)
+    _migrate_to_head(db_b)
+    asyncio.run(_seed_user(db_b, username="user-b", password="pass-for-b"))
+
+    app_b = create_app()
+
+    headers = {"X-SUNIL-Client": "web"}
+    with TestClient(app_a) as client_a, TestClient(app_b) as client_b:
+        # Each app authenticates its own seeded user...
+        resp_a_own = client_a.post(
+            "/api/v1/auth/login",
+            json={"username": "user-a", "password": "pass-for-a"},
+            headers=headers,
+        )
+        resp_b_own = client_b.post(
+            "/api/v1/auth/login",
+            json={"username": "user-b", "password": "pass-for-b"},
+            headers=headers,
+        )
+        # ...and neither can authenticate the other's user, because they
+        # are genuinely different databases, not one shared cached engine.
+        resp_a_foreign = client_a.post(
+            "/api/v1/auth/login",
+            json={"username": "user-b", "password": "pass-for-b"},
+            headers=headers,
+        )
+        resp_b_foreign = client_b.post(
+            "/api/v1/auth/login",
+            json={"username": "user-a", "password": "pass-for-a"},
+            headers=headers,
+        )
+
+    assert resp_a_own.status_code == 200
+    assert resp_b_own.status_code == 200
+    assert resp_a_foreign.status_code == 401
+    assert resp_b_foreign.status_code == 401
+
+
+def test_sunil_main_has_no_module_level_app_attribute() -> None:
+    """ADR-018: the module-level `app = create_app()` is deleted — importing
+    `sunil.main` must have no side effect, which is what lets a test import
+    it before deciding what the environment should say. The run command is
+    `uvicorn sunil.main:create_app --factory`."""
+    import sunil.main as main_module
+
+    assert not hasattr(main_module, "app")

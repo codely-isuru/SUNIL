@@ -1,9 +1,21 @@
 """Async engine, session factory, and the migration-head startup guard
-(ADR-001, ADR-002).
+(ADR-001, ADR-002, ADR-018).
 
-One engine per process, built from `Settings.database_url`.
-`get_session()` is a FastAPI-shaped async generator dependency; T5 wires it
-in as `Depends(get_session)` when the routes land.
+**Settings, engine and sessionmaker are per-application state, not a
+process-global cache** (ADR-018) — `create_app()` builds one engine/
+sessionmaker per app from whatever `Settings` it was given (or a fresh
+read), stores them on `app.state`, and `get_session()` reads them from
+`request.app.state`. Two apps built with different `DATABASE_URL`s in the
+same process (QA's harness does exactly this, one app per test) then
+never share a database — proven directly in `tests/unit/test_main_app.py`
+by logging into two apps seeded with two different users and confirming
+neither can authenticate the other's.
+
+`get_settings()` / `get_app_engine()` keep their process-wide `lru_cache`s
+(ADR-018 point 3), but their scope **narrows to contexts that have no
+`app`**: `scripts/seed-owner.py`, Alembic (`migrations/env.py`, which
+already builds a fresh `Settings()` rather than using the cache — see that
+module), one-shot CLI work. Nothing on the request path uses either.
 """
 
 from __future__ import annotations
@@ -19,6 +31,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from starlette.requests import Request
 
 from sunil.settings import Settings, get_settings
 
@@ -26,10 +39,10 @@ from sunil.settings import Settings, get_settings
 def get_engine(settings: Settings | None = None) -> AsyncEngine:
     """Build a new async engine from `Settings.database_url`.
 
-    Not cached — `get_app_engine()` below is the process-wide cached
-    accessor used by the running application. A bare, uncached
-    `get_engine()` is exposed separately so tests and `scripts/seed-owner.py`
-    can point at a different URL without disturbing that cache.
+    Not cached — `create_app()` calls this once per application and
+    stores the result on `app.state.engine` (ADR-018). `get_app_engine()`
+    below is the separate, process-wide cached accessor for contexts that
+    have no `app` at all (scripts, Alembic).
     """
     settings = settings or get_settings()
     return create_async_engine(settings.database_url.get_secret_value())
@@ -37,9 +50,12 @@ def get_engine(settings: Settings | None = None) -> AsyncEngine:
 
 @lru_cache
 def get_app_engine() -> AsyncEngine:
-    """The one engine the running application shares, so every caller in
-    the process reuses the same connection pool (§3.2 — a client/engine is
-    created once at startup and reused, never per request)."""
+    """The cached engine for **no-`app` contexts only** — scripts,
+    one-shot CLI work. Request-path code must never call this: it reads
+    `get_settings()`, which is itself process-wide-cached, so it would
+    silently pin whichever `DATABASE_URL` was configured when some earlier
+    part of the process first asked (ADR-018's own motivating bug).
+    """
     return get_engine()
 
 
@@ -47,9 +63,15 @@ def get_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def get_session() -> AsyncGenerator[AsyncSession]:
-    """FastAPI dependency: `session: AsyncSession = Depends(get_session)`."""
-    sessionmaker = get_sessionmaker(get_app_engine())
+async def get_session(request: Request) -> AsyncGenerator[AsyncSession]:
+    """FastAPI dependency: `session: AsyncSession = Depends(get_session)`.
+
+    Takes its sessionmaker from `request.app.state.sessionmaker` — never
+    from a module-level or cached engine (ADR-018) — so this always
+    queries the database *this* app was built with, even when more than
+    one app exists in the same process.
+    """
+    sessionmaker = request.app.state.sessionmaker
     async with sessionmaker() as session:
         yield session
 

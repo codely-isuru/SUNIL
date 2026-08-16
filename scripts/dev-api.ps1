@@ -45,7 +45,10 @@ try {
     Write-Host "Starting uvicorn on http://localhost:8000 ..."
     # --host localhost, not 127.0.0.1: avoids the localhost/127.0.0.1 cookie
     # trap noted in docs/ARCHITECTURE_V1.md §14.1 and M1_BUILD_PLAN.md §11.2.
-    & ".\.venv\Scripts\uvicorn.exe" sunil.main:app --host localhost --port 8000 --reload
+    # sunil.main:create_app --factory, not sunil.main:app (ADR-018): there is
+    # no module-level app object — create_app() is called by uvicorn itself,
+    # so settings are read at server start, never at import time.
+    & ".\.venv\Scripts\uvicorn.exe" sunil.main:create_app --factory --host localhost --port 8000 --reload
 }
 finally {
     Pop-Location
