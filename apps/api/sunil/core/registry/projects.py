@@ -1,11 +1,14 @@
 """`config/projects.yaml` — the static project-name-to-repository mapping
 (FR-107, ADR-000 Q7).
 
-`codely-isuru/easy_clean_workforce` lives here and only here — no other
-module may name a GitHub owner/repo as a literal
-(`docs/M1_BUILD_PLAN.md` T3 "Watch"; `THREAT_MODEL.md` T-16). The tool
-adapter (T8) resolves a plan's `project_key` through `ProjectRegistry.get`
-and never accepts owner/repo from the model.
+The M1 target repository's owner/repo coordinates live in that YAML file
+and only there — no `.py` module anywhere in this package may name them
+as a literal (`docs/M1_BUILD_PLAN.md` T3 "Watch"; `THREAT_MODEL.md` T-16;
+Security's `test_the_target_repository_is_never_hard_coded` greps this
+whole package for exactly that string, so this docstring deliberately
+does not repeat it either). The tool adapter (T8) resolves a plan's
+`project_key` through `ProjectRegistry.get` and never accepts owner/repo
+from the model.
 """
 
 from __future__ import annotations

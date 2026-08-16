@@ -15,8 +15,9 @@ wrong".
 
 from __future__ import annotations
 
+from sunil.capture import CaptureKind, CaptureRule
 from sunil.core.registry.agents import AgentDefinition, AgentRegistry
-from sunil.core.registry.capture import CaptureDefaults, CaptureKind, CaptureRegistry
+from sunil.core.registry.capture import CaptureRegistry
 from sunil.core.registry.errors import (
     RegistryCrossValidationError,
     RegistryError,
@@ -49,9 +50,9 @@ __all__ = [
     "AgentDefinition",
     "AgentRegistry",
     "CapabilityDefinition",
-    "CaptureDefaults",
     "CaptureKind",
     "CaptureRegistry",
+    "CaptureRule",
     "GithubCoordinates",
     "ModelDefinition",
     "ModelRegistry",
