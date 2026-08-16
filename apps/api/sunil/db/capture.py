@@ -40,6 +40,7 @@ is a call-site change, not a contract change.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 from sunil.capture import (
     CaptureDecision,
@@ -129,7 +130,7 @@ def resolve_capture(
     )
 
 
-def apply_capture_to_content(decision: CaptureDecision, content: str | None) -> str | None:
+def apply_capture_to_content(decision: CaptureDecision, content: Any) -> Any:
     """The writer-side enforcement half of ADR-014.
 
     Returns `None` (so the column is written `NULL`) when the resolved
@@ -137,6 +138,19 @@ def apply_capture_to_content(decision: CaptureDecision, content: str | None) -> 
     other policy passes `content` through unchanged; redaction of secrets
     (§8.3, T4) is a separate step the persistence layer applies regardless
     of capture policy.
+
+    **`content` is deliberately untyped beyond `Any`.** Four of the five
+    capture tables store their content in a JSON column, not text —
+    `plans.raw_json`, `llm_calls.request_messages`/`response_json`,
+    `tool_calls.parameters`/`result` — only `messages.content` and
+    `memories.content` are plain `str`. This function never inspects
+    `content`'s shape, only the resolved `decision`, so one code path is
+    correct for both already; a narrower `str | None` annotation here
+    previously caused a caller to conclude it *couldn't* be used for a
+    dict/list column and hand-roll the same nulling branch itself,
+    stringly-typed, outside this module — which is exactly the drift a
+    shared helper exists to prevent. Call this for every capture-table
+    write, whatever the column's shape.
     """
     if decision.capture_policy in (CapturePolicy.NONE, CapturePolicy.METADATA_ONLY):
         return None
