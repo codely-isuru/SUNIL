@@ -49,9 +49,19 @@ class PermissionResult:
 _DEFAULT_DENY_REASON = "no explicit grant"
 _DEFAULT_DENY_SOURCE = "default-deny"
 
+# The registry `decide()` falls back to when no explicit one is supplied.
+# Empty by construction, so an omitted registry denies everything for
+# exactly the same reason a genuinely empty `permissions.yaml` would —
+# never a silent allow. This is what lets `decide(agent_id=..., tool=...,
+# operation=...)` (no registry at all) be a legal call, added for T19's
+# security suite (`test_empty_permission_config_denies_everything`),
+# without weakening or changing the behaviour of every existing call that
+# passes a registry positionally.
+_EMPTY_REGISTRY = PermissionRegistry({})
+
 
 def decide(
-    registry: PermissionRegistry,
+    registry: PermissionRegistry | None = None,
     *,
     agent_id: str,
     tool: str,
@@ -67,8 +77,13 @@ def decide(
     correctly-spelled entry in `config/permissions.yaml` — an unknown
     agent, an unknown tool, an unknown operation and a known-but-ungranted
     operation all fall through to exactly the same `None` branch below.
+
+    `registry` defaults to an empty (structurally default-deny) one — see
+    `_EMPTY_REGISTRY` — so calling this with no registry at all is legal
+    and still denies everything, rather than raising or guessing.
     """
-    grant = registry.grant_for(agent_id, tool, operation)
+    active_registry = registry if registry is not None else _EMPTY_REGISTRY
+    grant = active_registry.grant_for(agent_id, tool, operation)
     if grant is None:
         return PermissionResult(
             decision=Decision.DENY,
@@ -80,3 +95,20 @@ def decide(
         reason="explicit grant",
         source=f"config:{agent_id}.{tool}.{operation}",
     )
+
+
+def decide_with(
+    config: dict[str, dict[str, dict[str, str]]],
+    *,
+    agent_id: str,
+    tool: str,
+    operation: str,
+) -> PermissionResult:
+    """Convenience wrapper for a caller holding a raw grants mapping —
+    the same shape `permissions.yaml` parses to — rather than a
+    constructed `PermissionRegistry`. Added for T19's security suite,
+    which asserts default-deny against a literal `{}` without importing
+    the registry type; delegates to `decide()` so there is exactly one
+    decision function, not two implementations to keep in sync.
+    """
+    return decide(PermissionRegistry(config), agent_id=agent_id, tool=tool, operation=operation)
