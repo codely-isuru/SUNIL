@@ -259,7 +259,12 @@ CREDENTIAL_PATTERNS = (
 )
 PLACEHOLDER = re.compile(
     r"^(|REPLACE_ME.*|.*REPLACE_ME|sqlite\+aiosqlite:.*|https?://localhost:\d+|"
-    r"127\.0\.0\.1|INFO|false|true|\d+|\./config|sunil_session|isuru)$"
+    r"127\.0\.0\.1|INFO|false|true|\d+|\./config|sunil_session|isuru|"
+    # A-11/ADR-017: the canonical upstream base URLs are not secrets — they
+    # are the public, well-known API hosts, and showing the real default
+    # (rather than a placeholder) is normal `.env.example` practice for a
+    # non-secret operational default, exactly like WEB_ORIGIN above.
+    r"https://api\.anthropic\.com|https://api\.github\.com)$"
 )
 
 
