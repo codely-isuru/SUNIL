@@ -1,0 +1,68 @@
+# The model catalogue and capability map the Model Router (T6) reads
+# (ARCHITECTURE_V1.md §4.4, §4.5).
+#
+# `models` is the pinned price/context table verified against the live
+# Anthropic documentation on 2026-08-14 (§4.4) — model ids are pinned
+# snapshots, not evergreen pointers. `pricing_version` is stamped onto
+# every `llm_calls` row at the time of the call so a future price edit here
+# never silently rewrites the cost of a historical call (§4.4, §13.1).
+#
+# `capabilities` is the `capability -> {provider, model, max_tokens,
+# timeout_s}` lookup an agent's `preferred_capability` /
+# `escalation_capability` (config/agents.yaml) and the orchestrator's own
+# plan-generation call resolve against (§4.5). `claude-sonnet-5` is the M1
+# default for both live capabilities (§5.3); `complex_reasoning` is wired
+# to Opus 5 for M6's escalation path and is not on the M1 hot path.
+version: 1
+pricing_version: "2026-08-14"
+
+models:
+  claude-opus-5:
+    provider: anthropic
+    context_window: 1000000
+    max_output: 128000
+    input_usd_per_mtok: "5"
+    output_usd_per_mtok: "25"
+    supports_structured_output: true
+
+  claude-sonnet-5:
+    provider: anthropic
+    context_window: 1000000
+    max_output: 128000
+    input_usd_per_mtok: "2"
+    output_usd_per_mtok: "10"
+    supports_structured_output: true
+
+  claude-fable-5:
+    provider: anthropic
+    context_window: 1000000
+    max_output: 128000
+    input_usd_per_mtok: "10"
+    output_usd_per_mtok: "50"
+    supports_structured_output: true
+
+  claude-haiku-4-5-20251001:
+    provider: anthropic
+    context_window: 200000
+    max_output: 64000
+    input_usd_per_mtok: "1"
+    output_usd_per_mtok: "5"
+    supports_structured_output: true
+
+capabilities:
+  # Used by both the orchestrator's plan-generation call (purpose=plan) and
+  # the Project Manager agent's analysis call (purpose=analysis) — M1's
+  # nominal-path model for both (§5.1, §5.3).
+  general_reasoning:
+    provider: anthropic
+    model: claude-sonnet-5
+    max_tokens: 1024
+    timeout_s: 20
+
+  # M6's escalation capability (ARCHITECTURE_V1.md §4.5). No M1 agent logic
+  # requests it yet; defined now so escalation is additive later.
+  complex_reasoning:
+    provider: anthropic
+    model: claude-opus-5
+    max_tokens: 2048
+    timeout_s: 25
