@@ -3,7 +3,20 @@
 Every field here corresponds to a row in `docs/ARCHITECTURE_V1.md` §14.4,
 including the three variables added by the owner's review:
 `SUNIL_CONFIG_DIR`, `SUNIL_TURN_DEADLINE_S` (default 40) and
-`SUNIL_PROGRESS_EVENTS` (default `false`).
+`SUNIL_PROGRESS_EVENTS` (default `false`); and `anthropic_base_url` /
+`github_api_base_url`, added by the Architect's ADR-017 ruling (A-11) —
+see that field's own comment for why passing them explicitly is a ruling,
+not a style preference.
+
+**Cross-lane note (BE-2, 2026-08-14):** this file is owned by T1/T5. The
+two `*_base_url` fields and their shared loopback validator below were
+added here — ahead of T1/T5 picking up the ADR-017 delta — because T6's
+own fix (`providers/anthropic.py` passing `base_url=` explicitly) cannot
+exist without the setting to pass, and the Delivery Manager asked for the
+base-URL fix specifically not to wait behind other work. This is a small,
+fully-specified, additive change (two fields + one validator, nothing
+existing touched) so it should rebase cleanly whichever lane finishes
+next; flagged in the T6 report rather than merged from the shadows.
 
 No other module should call `os.environ` / `os.getenv` directly — go
 through `get_settings()` so there is exactly one place configuration is
@@ -18,10 +31,12 @@ keeps a secret leak a deliberate act rather than an accident.
 from __future__ import annotations
 
 from functools import lru_cache
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, ValidationError
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/api/sunil/settings.py -> sunil -> api -> apps -> repo root.
@@ -30,6 +45,45 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # the process's current working directory.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ENV_FILE = _REPO_ROOT / ".env"
+
+# ADR-017 §9.7 / A-11: the one canonical value per upstream base URL.
+# A non-canonical value must be loopback, checked by `_validate_base_url`
+# below, or `Settings` refuses to construct and the app does not boot —
+# "enforced by construction rather than by an environment flag" (ADR-017).
+_CANONICAL_BASE_URLS: dict[str, str] = {
+    "anthropic_base_url": "https://api.anthropic.com",
+    "github_api_base_url": "https://api.github.com",
+}
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False  # not an IP literal and not "localhost" — not loopback
+
+
+def _validate_base_url(field_name: str, value: str) -> str:
+    """Shared by both `*_base_url` fields (ADR-017 §9.7): the value equals
+    the canonical host, or its host is loopback (`localhost`,
+    `127.0.0.0/8`, `::1` — a local test double), or `Settings` construction
+    fails. There is no third case: an env-settable, unguarded API base is
+    an exfiltration channel (a redirected GitHub URL carries
+    `Authorization: Bearer <PAT>` to whatever host is named)."""
+    canonical = _CANONICAL_BASE_URLS[field_name]
+    if value == canonical:
+        return value
+    host = urlparse(value).hostname
+    if host and _is_loopback_host(host):
+        return value
+    raise ValueError(
+        f"{field_name} must be the canonical host ({canonical!r}) or a loopback "
+        f"address (localhost / 127.0.0.0/8 / ::1) for local testing — got {value!r} "
+        "(ADR-017 §9.7)"
+    )
+
 
 _REDACTED_INPUT_PLACEHOLDER = "<redacted — a failed Settings() load never exposes loaded values>"
 
@@ -115,22 +169,39 @@ class Settings(BaseSettings):
     github_token: SecretStr = Field(
         description="Read-only GitHub PAT, used only by sunil/tools/github."
     )
-    # Added on T8: QA's fixture tests were hitting the real GitHub API with
-    # a placeholder token and getting a real 401 -- the host was hard-coded
-    # in prose with no override. Mirrors ANTHROPIC_BASE_URL's pattern for
-    # the Anthropic SDK. **Flagged, not settled:** an env-settable API base
-    # is also an exfiltration surface in a deployed environment (a
-    # compromised process could point this at an attacker-controlled host
-    # that echoes back attacker-chosen content). Built per the Delivery
-    # Manager's direction; the Architect's ruling on how it should be
-    # gated (e.g. restricted to non-production, or dropped once tests can
-    # inject a client directly) is pending -- do not treat this default-only
-    # shape as final.
+
+    # -- Upstream base URLs (A-11, ADR-017) ---------------------------------
+    # `github_api_base_url` started life on T8 as an unvalidated field (QA's
+    # fixture tests were hitting the real GitHub API with a placeholder
+    # token and getting a real 401). The Architect's ADR-017 ruling has
+    # since landed and settled exactly how it must be gated -- the shared
+    # loopback validator below, not a second field. Superseded here rather
+    # than duplicated.
+    # Passed **explicitly** to each client/adapter — never left to the SDK's
+    # own environment reading. Read from the installed anthropic SDK's
+    # `_client.py`, precedence is kwarg -> ANTHROPIC_BASE_URL -> profile ->
+    # default; a hard-coded canonical kwarg would outrank the env var and
+    # silently point the whole exit suite at the real API with a real key.
+    anthropic_base_url: str = Field(
+        default="https://api.anthropic.com",
+        description="providers/anthropic — passed as base_url= explicitly. Non-canonical "
+        "values must be loopback (§9.7).",
+    )
     github_api_base_url: str = Field(
         default="https://api.github.com",
-        description="GitHub API host. Override for tests/fixtures only; production must not "
-        "override this (Architect ruling pending on how that is enforced).",
+        description="tools/github — prefixed onto every request path. Non-canonical values "
+        "must be loopback (§9.7).",
     )
+
+    @field_validator("anthropic_base_url")
+    @classmethod
+    def _check_anthropic_base_url(cls, value: str) -> str:
+        return _validate_base_url("anthropic_base_url", value)
+
+    @field_validator("github_api_base_url")
+    @classmethod
+    def _check_github_api_base_url(cls, value: str) -> str:
+        return _validate_base_url("github_api_base_url", value)
 
     # -- Session ------------------------------------------------------------
     session_secret: SecretStr = Field(description="Signing key for SessionMiddleware's cookie.")
