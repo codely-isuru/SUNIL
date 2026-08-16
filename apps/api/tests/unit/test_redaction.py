@@ -9,13 +9,15 @@ and insert), so tests must scope themselves explicitly.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sunil.redaction import (
-    redaction_processor,
     register,
     register_secrets_from_settings,
     reset_registry_for_tests,
     scrub,
+    scrub_processor,
 )
 from sunil.settings import Settings
 
@@ -119,14 +121,143 @@ def test_register_ignores_values_shorter_than_four_characters() -> None:
     assert scrub("that's ok, thanks") == "that's ok, thanks"
 
 
-def test_redaction_processor_scrubs_a_full_structlog_event_dict() -> None:
+def test_scrub_processor_scrubs_a_full_structlog_event_dict() -> None:
     register("event-dict-fake-secret", name="fake")
     event_dict = {"event": "something happened", "detail": "contains event-dict-fake-secret here"}
 
-    result = redaction_processor(None, "info", event_dict)
+    result = scrub_processor(None, "info", event_dict)
 
     assert "event-dict-fake-secret" not in result["detail"]
     assert "«redacted:fake»" in result["detail"]
+
+
+# -- Fail-safe fallback: QA's review bounce (T4 blockers 1 and 2) ------------
+#
+# LESSON (backend_engineer memory): a redaction function that dispatches on
+# a fixed list of types must treat the unmatched case as unsafe, not as a
+# passthrough. `scrub()`'s original isinstance chain (str/dict/list/tuple)
+# returned every other type unchanged — an exception instance, a NamedTuple,
+# any custom object — which is exactly where a secret survived. These tests
+# are QA's exact reproduction, kept as a permanent regression suite.
+
+
+class _BoomError(Exception):
+    """Stands in for any exception whose message happens to carry a
+    secret — completely ordinary structlog usage is `log.error(...,
+    error=exc)` rather than `exc_info=`."""
+
+
+class _SecretBearingRepr:
+    """A custom object whose `__repr__` embeds a secret — standing in for
+    a Pydantic model or dataclass logged directly rather than as a dict."""
+
+    def __init__(self, secret: str) -> None:
+        self._secret = secret
+
+    def __repr__(self) -> str:
+        return f"SecretBearingRepr(secret={self._secret!r})"
+
+
+def test_scrub_redacts_a_registered_secret_inside_an_exception_object() -> None:
+    register("sk-ant-THISISASECRETVALUE1234567890", name="anthropic_api_key")
+    exc = _BoomError("bad key sk-ant-THISISASECRETVALUE1234567890")
+
+    result = scrub(exc)
+
+    assert isinstance(result, str)
+    assert "sk-ant-THISISASECRETVALUE1234567890" not in result
+    assert "«redacted:anthropic_api_key»" in result
+
+
+def test_scrub_redacts_an_exception_nested_inside_a_dict_value() -> None:
+    """The `detail={"error": exc}` shape QA demonstrated against the real
+    `shared_processors` chain."""
+    register("sk-ant-THISISASECRETVALUE1234567890", name="anthropic_api_key")
+    payload = {"error": _BoomError("bad key sk-ant-THISISASECRETVALUE1234567890")}
+
+    result = scrub(payload)
+
+    assert isinstance(result["error"], str)
+    assert "sk-ant-THISISASECRETVALUE1234567890" not in result["error"]
+
+
+def test_scrub_redacts_a_custom_objects_secret_bearing_repr() -> None:
+    register("a-registered-fake-secret-value", name="fake")
+    obj = _SecretBearingRepr("a-registered-fake-secret-value")
+
+    result = scrub(obj)
+
+    assert isinstance(result, str)
+    assert "a-registered-fake-secret-value" not in result
+    assert "«redacted:fake»" in result
+
+
+def test_scrub_falls_back_safely_when_repr_itself_raises() -> None:
+    class _HostileRepr:
+        def __repr__(self) -> str:
+            raise RuntimeError("boom")
+
+    result = scrub(_HostileRepr())
+
+    assert result == "<unrepresentable _HostileRepr>"
+
+
+def test_scrub_preserves_safe_scalar_types_exactly() -> None:
+    assert scrub(42) == 42
+    assert scrub(3.14) == 3.14
+    assert scrub(True) is True
+    assert scrub(None) is None
+
+
+def test_scrub_treats_a_named_tuple_as_unsafe_for_positional_iteration() -> None:
+    """A `NamedTuple` often has its own privacy-aware `__repr__`
+    (`sqlalchemy.engine.URL` masks its password this way) that naive
+    positional-tuple iteration would bypass entirely — proven directly
+    against the real SQLAlchemy type, not a stand-in."""
+    from sqlalchemy.engine import make_url
+
+    url = make_url("postgresql+psycopg://sunil:DbPassw0rdLeak@db:5432/sunil")
+
+    result = scrub(url)
+
+    assert isinstance(result, str)
+    assert "DbPassw0rdLeak" not in result
+    assert "***" in result  # SQLAlchemy's own masking, now what scrub() preserved
+
+
+def test_scrub_through_the_real_structlog_chain_redacts_an_exception_value() -> None:
+    """QA's exact end-to-end reproduction: log a caught exception object as
+    a field value through the real, wired `configure_logging()` chain, and
+    confirm the rendered JSON line never carries the secret."""
+    import io
+    import logging as stdlib_logging
+
+    from sunil.logging import configure_logging, get_logger
+
+    register("sk-ant-THISISASECRETVALUE1234567890", name="anthropic_api_key")
+    configure_logging(log_level="DEBUG", json_output=True)
+
+    root = stdlib_logging.getLogger()
+    original_handlers = list(root.handlers)
+    buffer = io.StringIO()
+    handler = stdlib_logging.StreamHandler(buffer)
+    handler.setFormatter(original_handlers[0].formatter)
+    root.handlers = [handler]
+    try:
+        get_logger("t").info(
+            "bound_exception_case",
+            error=_BoomError("bad key sk-ant-THISISASECRETVALUE1234567890"),
+        )
+    finally:
+        root.handlers = original_handlers
+
+    output = buffer.getvalue()
+    assert "sk-ant-THISISASECRETVALUE1234567890" not in output
+    # The JSON renderer escapes non-ASCII (ensure_ascii, the json module's
+    # default) so «» becomes «/» in the raw text — decode before
+    # asserting on the marker rather than string-matching the raw bytes.
+    decoded = json.loads(output)
+    assert "«redacted:anthropic_api_key»" in decoded["error"]
 
 
 def test_register_secrets_from_settings_registers_every_m1_secret() -> None:

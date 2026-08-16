@@ -17,6 +17,28 @@
   Pre-existing rows are never evidence. Treat any restart/durability test that passes first time
   as suspect until you have shown it can fail.
 
+- [L-003 | 2026-08-14 | SUNIL M1 T4, review bounce] **LESSON:** `sunil.redaction.scrub()`'s
+  original `isinstance` chain (`str`/`dict`/`list`/`tuple`, else `return obj` unchanged) let an
+  exception instance, a SQLAlchemy `URL` `NamedTuple`, or any custom object pass through a
+  logged/persisted field **completely unredacted**. QA demonstrated it live against the real wired
+  `shared_processors` chain — `log.error("call failed", error=exc)` is ordinary structlog usage, not
+  a contrived case, and the secret inside `exc`'s message reached the rendered JSON line and would
+  have reached the persisted `audit_events.detail` the same way.
+  **ROOT CAUSE:** A redaction/sanitisation function that dispatches on a fixed list of types treated
+  the unmatched case as a passthrough default rather than as unsafe. An `isinstance` allowlist with
+  a silent `else: return obj` is not a mechanism; it is a convention with extra steps, and the gap is
+  exactly where a real secret survives, not an edge case.
+  **RULE:** Any function whose job is "make sure X never appears in Y" must fail *closed* on a type
+  it doesn't recognise — coerce the unknown shape through a safe, guaranteed-not-to-raise string
+  representation and run the same scrubbing pass over that, never return it unchanged. Structural
+  types that carry their own privacy-aware `__repr__` (a `NamedTuple` like `sqlalchemy.engine.URL`)
+  are a second trap inside the first: recursing into them positionally (because `isinstance(x,
+  tuple)` is true) bypasses that masking `__repr__` entirely by serialising the raw fields instead of
+  calling it. Detect that shape (`hasattr(x, "_fields")`) and route it through the same fail-safe
+  string path rather than through generic container recursion. Prove the fix the same way the
+  original claim was proved: through the real configured chain and the real persistence write path,
+  with an exception, a nested object, and a secret-bearing `__repr__` — not a mocked `scrub()` call.
+
 ## Principles — stack-independent, carried into V1
 
 - **Prove fences, don't trust them.** When you build a structural guarantee (a default-deny

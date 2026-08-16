@@ -251,3 +251,49 @@ async def test_a_registered_secret_in_detail_never_reaches_the_persisted_row(
     assert "sk-ant-persisted-fake-secret" not in row.summary
     assert "sk-ant-persisted-fake-secret" not in row.detail["note"]
     assert "«redacted:anthropic_api_key»" in row.detail["note"]
+
+
+@pytest.mark.asyncio
+async def test_a_secret_bearing_object_in_detail_never_reaches_the_persisted_row(
+    sessionmaker: async_sessionmaker,
+) -> None:
+    """T4's review bounce (blocker 2): a raw exception or a custom object in
+    a stage's `detail` — entirely plausible on `tool_result`, `agent_result`
+    and failure paths once T6/T8/T9/T10 exist — must not leak the secret it
+    carries into the persisted `audit_events` table. QA's exact class of
+    reproduction, run against the real write path rather than a mock.
+    """
+
+    class _ToolFailure(Exception):
+        pass
+
+    register("sk-ant-object-in-detail-fake-secret", name="anthropic_api_key")
+
+    ctx = LiveTraceContext(
+        request_id="req-et10-object",
+        user_id=None,
+        conversation_id=None,
+        sessionmaker=sessionmaker,
+        turn_deadline_s=40.0,
+    )
+
+    await ctx.emit(
+        TraceStage.TOOL_RESULT,
+        summary="tool call failed",
+        detail={
+            "error": _ToolFailure("auth failed with sk-ant-object-in-detail-fake-secret"),
+            "nested": {"cause": _ToolFailure("sk-ant-object-in-detail-fake-secret")},
+        },
+    )
+
+    async with sessionmaker() as session:
+        row = (
+            await session.scalars(
+                select(AuditEvent).where(AuditEvent.request_id == "req-et10-object")
+            )
+        ).one()
+
+    serialised = str(row.detail)
+    assert "sk-ant-object-in-detail-fake-secret" not in serialised
+    assert isinstance(row.detail["error"], str)
+    assert isinstance(row.detail["nested"]["cause"], str)
