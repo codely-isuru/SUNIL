@@ -6,14 +6,43 @@ which is exactly the moment nobody is re-reading either lane's diff. Neither
 is hypothetical: both were hit for real during M1's build (T22, 2026-08-14),
 by two different lane pairs, one commit apart.
 
-CHECK 1 -- duplicate `test_*.py` basenames (the original T22 incident).
-    Two lanes each ship a test module with the same basename (T2's
+CHECK 1 -- duplicate test modules THAT PYTEST WOULD ACTUALLY COLLIDE ON (the
+    original T22 incident, corrected after a false positive found the same
+    day). Two lanes each ship a `test_*.py` with the same basename (T2's
     `tests/unit/test_capture.py`, T3's `tests/unit/registry/test_capture.py`).
-    Neither directory is a package (no `__init__.py`), so pytest's default
-    ("prepend") import mode imports test files by their bare filename. The
-    second file collides with the first at import time and pytest ABORTS
-    COLLECTION FOR THE ENTIRE SUITE ("import file mismatch", exit code 2) --
-    a merged tree that runs zero tests, not just the two colliding files.
+    Neither directory was a package (no `__init__.py`) at the time, so
+    pytest's default ("prepend") import mode imported both test files by
+    their bare filename. The second file collided with the first at import
+    time and pytest ABORTED COLLECTION FOR THE ENTIRE SUITE ("import file
+    mismatch", exit code 2) -- a merged tree that runs zero tests, not just
+    the two colliding files.
+
+    THE FALSE POSITIVE (found by a lane, reported honestly instead of worked
+    around): a bare-basename check flags ANY two `test_*.py` files sharing a
+    name, but pytest does not actually collide on a shared basename when
+    package structure (an `__init__.py` chain) disambiguates them --
+    `tests/unit/providers/test_base.py` and
+    `tests/unit/tool_framework/test_base.py` both have an `__init__.py` in
+    their own directory, so pytest imports them as `providers.test_base` and
+    `tool_framework.test_base` respectively: two distinct module objects,
+    never a collision. A check that ignores this flags a real, working
+    pairing as broken -- worse than missing a real collision, because it
+    tells someone to rename a file that was never wrong.
+
+    THE RULE: duplicate basenames matter only where package structure does
+    not disambiguate them. This is checkable, not decaying, because it is a
+    property of the tree (does an `__init__.py` chain exist above this file,
+    all the way up from its own directory?) rather than of an invocation or
+    a headcount. `_pytest_module_name()` below reconstructs the same dotted
+    module name pytest's own prepend-mode import machinery would compute --
+    walk up from the file through every ancestor directory that has an
+    `__init__.py`, stop at the first one that does not, and join what was
+    collected. Two files collide if and only if that computed name is
+    identical. `test_capture.py`/`test_capture.py` with no `__init__.py`
+    anywhere both reduce to the bare name `test_capture` -- collision, as
+    before. `providers/test_base.py` and `tool_framework/test_base.py`, each
+    packaged, reduce to `providers.test_base` and `tool_framework.test_base`
+    -- distinct, no collision.
 
 CHECK 2 -- a bare `from conftest import ...` / `import conftest` statement
     (the second T22 incident, one commit later). `conftest.py` is the ONE
@@ -86,12 +115,36 @@ _BARE_CONFTEST_IMPORT_RE = re.compile(
 )
 
 
+def _pytest_module_name(path: Path, repo_root: Path) -> str:
+    """Reconstruct the dotted module name pytest's default ("prepend")
+    import mode would assign `path`: the file's own stem, prefixed by every
+    ancestor directory name for as long as that ancestor has an
+    `__init__.py` (making it a package pytest folds into the qualified
+    name), stopping at the first ancestor that does not (which is where
+    pytest inserts the "rootpath" onto `sys.path` instead of climbing
+    further). Bounded at `repo_root` as a safety stop -- it will never have
+    an `__init__.py` in this repo, so the loop always terminates there at
+    the latest.
+    """
+    components = [path.stem]
+    current = path.parent
+    while current != repo_root and (current / "__init__.py").exists():
+        components.append(current.name)
+        current = current.parent
+    return ".".join(reversed(components))
+
+
 def find_duplicate_basenames(tests_root: Path) -> dict[str, list[Path]]:
-    """Check 1: any `test_*.py` basename appearing more than once."""
-    by_basename: dict[str, list[Path]] = defaultdict(list)
+    """Check 1: any `test_*.py` file whose pytest-resolved dotted module
+    name collides with another's. A shared basename alone (e.g. two
+    `test_base.py`) is NOT reported if package structure (an `__init__.py`
+    chain on one or both sides) already gives them distinct qualified
+    names -- that is a normal, working pytest layout, not a defect."""
+    by_module_name: dict[str, list[Path]] = defaultdict(list)
     for path in tests_root.rglob("test_*.py"):
-        by_basename[path.name].append(path)
-    return {name: paths for name, paths in by_basename.items() if len(paths) > 1}
+        module_name = _pytest_module_name(path, REPO_ROOT)
+        by_module_name[module_name].append(path)
+    return {name: paths for name, paths in by_module_name.items() if len(paths) > 1}
 
 
 def find_bare_conftest_imports(tests_root: Path) -> dict[Path, list[str]]:
@@ -125,12 +178,14 @@ def main() -> int:
     duplicates = find_duplicate_basenames(TESTS_ROOT)
     if duplicates:
         ok = False
-        print("FAIL: duplicate test-module basenames found under apps/api/tests/.")
+        print("FAIL: colliding test-module names found under apps/api/tests/.")
         print(
-            "Two files sharing a basename can abort pytest's entire collection\n"
-            "(exit code 2, 'import file mismatch') the moment both land on the\n"
-            "same branch, even though each passed in its own lane. Fix options,\n"
-            "in order of preference:\n"
+            "These files resolve to the SAME pytest module name, not merely the same\n"
+            "basename -- package structure (__init__.py) does not already tell them\n"
+            "apart, so pytest's default import mode will collide on them at import\n"
+            "time and ABORT COLLECTION FOR THE ENTIRE SUITE (exit code 2, 'import file\n"
+            "mismatch') the moment both land on the same branch, even though each\n"
+            "passed in its own lane. Fix options, in order of preference:\n"
             "  1. Rename the file -- but ONLY within a lane/task you own\n"
             "     (docs/M1_BUILD_PLAN.md file-ownership rule). Never rename\n"
             "     another lane's file to work around your own collision.\n"
@@ -148,7 +203,8 @@ def main() -> int:
     else:
         collected = sum(1 for _ in TESTS_ROOT.rglob("test_*.py"))
         print(
-            f"OK: no duplicate test-module basenames ({collected} test files scanned)."
+            f"OK: no colliding test-module names ({collected} test files scanned; "
+            f"shared basenames disambiguated by package structure are not a defect)."
         )
 
     bare_imports = find_bare_conftest_imports(TESTS_ROOT)

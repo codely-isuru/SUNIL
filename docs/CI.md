@@ -18,7 +18,7 @@ that would work either way, but this machine's `python3` is a broken Microsoft S
 
 | Job | Runs | Skips cleanly when | Becomes mandatory when |
 |---|---|---|---|
-| `backend` | duplicate-basename check → `pip install -e ".[dev]"` → `ruff check .` → `ruff format --check .` → `pytest -q -m "not live"` | never — `apps/api` exists from T1 | always mandatory |
+| `backend` | cross-lane test-collection collision check → `pip install -e ".[dev]"` → `ruff check .` → `ruff format --check .` → `pytest -q -m "not live"` | never — `apps/api` exists from T1 | always mandatory |
 | `frontend` | `pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm build` | `apps/web/package.json` absent | `FRONTEND_REQUIRED: "true"` is set (flip the moment T14 merges to `main`) |
 | `security` | `pytest apps/api/tests/security -q -m "not live"` | `apps/api/tests/security/` absent | `SECURITY_SUITE_REQUIRED: "true"` is set (flip the moment T19 merges to `main`) |
 
@@ -149,7 +149,8 @@ switching modes for everyone.
 **What T22 added so the *class* is caught, not just this one instance:**
 
 1. **`scripts/check_test_basenames.py`** — a fast, dependency-free static check (no pip install
-   needed) that walks `apps/api/tests/` for any `test_*.py` basename appearing more than once,
+   needed) that walks `apps/api/tests/` for any `test_*.py` file whose pytest-resolved dotted module
+   name (not just its bare basename — see "The false positive" below) collides with another's,
    prints every colliding path, and exits 1. It runs as the **first** step of the `backend` job,
    before install or lint, so a colliding merge fails at the cheapest possible point with a message
    that names the exact files, rather than pytest's "import file mismatch" (which is correct but
@@ -250,6 +251,69 @@ workaround bypasses. `check_test_basenames.py` never runs pytest at all — it r
 directly off disk — so it fires the same way regardless of whether anyone is currently running the
 full suite, a subset by path, or nothing at all. It runs once, in CI, against the merged tree,
 which is the one invocation shape a per-lane workaround cannot opt out of.
+
+## The false positive: check 1 didn't know about package structure
+
+**What happened.** Check 1 flagged `tests/unit/providers/test_base.py` (T6) and
+`tests/unit/tool_framework/test_base.py` (T8) as a colliding basename. **BE-3 proved it was not a
+collision, and did the work before touching anything:**
+
+- both directories already carry their own `__init__.py`, so pytest imports them under distinct
+  dotted names — `providers.test_base` versus `tool_framework.test_base`;
+- confirmed by importing both in one interpreter session and getting two distinct module objects;
+- confirmed again by collecting both directories together: **57 passed, no `import file mismatch`**
+  (independently re-verified for this writeup against `origin/task/T10-agent-framework`, which
+  carries both directories — same result, 57 passed).
+
+BE-3 refused to rename a file that was not broken and reported the false positive instead — exactly
+the behaviour this whole check exists to encourage in others, now aimed correctly at itself.
+
+**The bug: check 1 grouped files by bare basename, the same shape as check 2's problem, applied to
+the wrong check.** A basename match is *necessary but not sufficient* for an actual pytest
+collision — pytest only collides on the basename when neither file's directory (nor any ancestor,
+up to the first that lacks one) has an `__init__.py`. Once package structure disambiguates two
+files, sharing a name is exactly as harmless as two classes in different modules sharing a method
+name. The check was checking the wrong condition.
+
+**The fix: `_pytest_module_name()` reconstructs pytest's own answer instead of approximating it.**
+For a given test file, walk up from its directory through every ancestor that has an `__init__.py`,
+collecting each ancestor's name, and stop at the first ancestor that does not — the same rule
+pytest's default ("prepend") import mode uses to decide how much of the path becomes part of the
+dotted module name versus where the bare `sys.path` insertion point sits. Two files collide if and
+only if this computed name is identical:
+
+```python
+def _pytest_module_name(path: Path, repo_root: Path) -> str:
+    components = [path.stem]
+    current = path.parent
+    while current != repo_root and (current / "__init__.py").exists():
+        components.append(current.name)
+        current = current.parent
+    return ".".join(reversed(components))
+```
+
+`tests/unit/test_capture.py` with no `__init__.py` anywhere on the path reduces to the bare name
+`test_capture`; `tests/unit/registry/test_capture.py`, also unpackaged at the time of the original
+incident, reduces to the same bare name — collision, correctly still caught. `providers/test_base.py`
+and `tool_framework/test_base.py`, each packaged in its own directory, reduce to
+`providers.test_base` and `tool_framework.test_base` — distinct, correctly no longer flagged.
+
+**Why this is the right shape of rule, not a decaying one:** "duplicate basenames matter only where
+package structure does not disambiguate them" is a property of the tree — computable, deterministic,
+and true or false the same way on every run — not a property of an invocation (like the "run by
+path" workaround) or a headcount that needs recalibrating (like a hardcoded minimum test count,
+already rejected above). It needed no threshold, no counting, and no new configuration; it needed
+the check to ask the same question pytest itself asks.
+
+**Proof, against real trees, both directions required:**
+
+| Tree | Real commits | Check 1 result |
+|---|---|---|
+| `59a1d37` (T4) merged with `a86db9d` (T7) — pre-package-fix, no `__init__.py` in either colliding directory | reconstructed from the original incident's exact commits | **FAIL** — `test_capture` collision correctly still detected |
+| `origin/task/T10-agent-framework` (`0b18870`) — carries both `tests/unit/providers/` and `tests/unit/tool_framework/`, each packaged | current, real branch tip | **OK** — 42 test files scanned, no collision reported; independently confirmed at the `pytest` level too: `pytest tests/unit/providers tests/unit/tool_framework -q` → **57 passed**, matching BE-3's own figure exactly |
+
+Both held, so the rule is right: check 1 now agrees with pytest's own import mechanics instead of
+approximating them with a bare filename comparison.
 
 ## "Absent is green" — the other half of "empty is not green"
 
