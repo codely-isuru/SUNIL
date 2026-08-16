@@ -16,8 +16,12 @@ pip install -e ".[dev]"
 
 copy ..\..\.env.example ..\..\.env         # then fill in the secrets
 alembic upgrade head                       # once migrations exist (T2)
-uvicorn sunil.main:app --host localhost --port 8000 --reload
+uvicorn sunil.main:create_app --factory --host localhost --port 8000 --reload
 ```
+
+`--factory`, not `sunil.main:app`: there is no module-level `app` object
+(ADR-018) — `create_app()` is called by uvicorn itself, at server start,
+so settings are never read at import time.
 
 Or run the whole sequence via `..\..\scripts\dev-api.ps1` from the repo root.
 

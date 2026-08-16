@@ -76,10 +76,11 @@ class ChatTaskOut(BaseModel):
     assigned_agent: str
 
 
-class KnownProjectOut(BaseModel):
-    """`{key, display_name}` — byte-identical shape to `GET
-    /api/v1/projects`'s own elements (§11.5 A-14), so the frontend has
-    one type for both producers."""
+class ProjectSummary(BaseModel):
+    """`{key, display_name}` — the same element shape `failure.
+    known_projects` uses in the frozen §6 chat contract, so the frontend
+    renders both from one component (§11.5 A-14 — one type, two
+    producers reading the same registry)."""
 
     key: str
     display_name: str
@@ -91,7 +92,7 @@ class ChatFailure(BaseModel):
     `unknown_project` and is `None` for the other three kinds."""
 
     kind: Literal["provider_error", "tool_failed", "plan_rejected", "unknown_project"]
-    known_projects: list[KnownProjectOut] | None = None
+    known_projects: list[ProjectSummary] | None = None
 
 
 class TraceEntryOut(BaseModel):
@@ -132,3 +133,11 @@ class ChatResponse(BaseModel):
     failure: ChatFailure | None
     trace: list[TraceEntryOut]
     usage: ChatUsage
+
+
+class ProjectsResponse(BaseModel):
+    """`GET /api/v1/projects` → `{projects: [{key, display_name}]}` —
+    the same `ProjectSummary` element used in `ChatFailure.known_projects`
+    (§11.5 A-14)."""
+
+    projects: list[ProjectSummary]
