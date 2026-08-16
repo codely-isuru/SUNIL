@@ -124,6 +124,13 @@ by the outage rather than by the build.
   trying `--import-mode=importlib` and reverting it, because T3's registry tests depend
   on prepend-mode's `sys.path` insertion. OPS retains the harder half: making CI fail
   loudly on a collection *error* (exit 2), and on the wider "absent is green" family.
+* **DEBT (ruled 2026-08-16, DM):** the frontend has **no test runner** — vitest/jest/
+  testing-library are not in `ARCHITECTURE_V1.md` §14.3's approved list, and the engineer
+  correctly refused to add one on a bugfix rather than smuggling in a dependency. Timing
+  and race logic like `useTurn`'s is exactly what benefits from fake timers. **Deferred to
+  M11 hardening** — choosing a test library is not a decision to take in the last two days
+  of a milestone. Consequence carried knowingly: `T16c` ships verified by review and
+  reasoning, not by a regression test.
 * Docker is still needed before Gate 3: the Alembic migration must be verified once
   against real PostgreSQL (architecture debt D-2).
 * No LLM provider credentials configured in this shell. The Model Router needs
