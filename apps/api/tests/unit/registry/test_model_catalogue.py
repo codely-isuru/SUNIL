@@ -14,7 +14,7 @@ from sunil.core.registry.errors import (
 )
 from sunil.core.registry.model_catalogue import load_models
 
-from .conftest import valid_config_files, write_config_dir
+from .registry_helpers import valid_config_files, write_config_dir
 
 
 def test_loads_the_pinned_price_table(valid_config_dir: Path) -> None:

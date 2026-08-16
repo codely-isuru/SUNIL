@@ -10,7 +10,7 @@ import pytest
 from sunil.core.registry.errors import RegistryCrossValidationError
 from sunil.core.registry.loader import load_registries
 
-from .conftest import valid_config_files, write_config_dir
+from .registry_helpers import valid_config_files, write_config_dir
 
 
 def test_a_consistent_config_set_loads_with_no_error(valid_config_dir: Path) -> None:
