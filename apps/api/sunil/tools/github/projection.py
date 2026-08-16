@@ -61,6 +61,46 @@ def _neutralise_delimiter(text: str) -> str:
     return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _neutralise_strings_in(value: Any) -> Any:
+    """Recursively apply `_neutralise_delimiter` to every string value in
+    `value` — the generic form of the field-by-field escaping above,
+    applied once as a final pass over a whole projected structure rather
+    than to one named field at a time.
+
+    T8 review 2's finding: escaping only `message`/`title` left seven
+    other string fields (`author_login`, `committed_at`/`created_at`/
+    `updated_at`) carrying a literal delimiter unescaped — no live
+    breakout today only because `wrap_untrusted_tool_result()` also
+    escapes the whole serialised payload, which does not help a caller
+    that reads a projected field directly. Escaping every string here
+    means a newly allow-listed field is covered automatically, without
+    anyone having to remember to add a call for it.
+    """
+    if isinstance(value, str):
+        return _neutralise_delimiter(value)
+    if isinstance(value, dict):
+        return {key: _neutralise_strings_in(v) for key, v in value.items()}
+    if isinstance(value, list):
+        return [_neutralise_strings_in(v) for v in value]
+    return value
+
+
+class _ProjectionInvariantViolated(AssertionError):
+    """Raised by `_ensure_allow_listed()` — a real `raise`, not a bare
+    `assert`, so the allow-list check survives `python -O` (which strips
+    `assert` statements) and is not silently disabled by
+    `pyproject.toml`'s project-wide `ruff` `S101` ignore, which governs
+    lint noise, not runtime behaviour."""
+
+
+def _ensure_allow_listed(projected: dict[str, Any], allowed: frozenset[str], *, kind: str) -> None:
+    if set(projected) != allowed:
+        raise _ProjectionInvariantViolated(
+            f"{kind} projection produced {sorted(projected)}, expected exactly {sorted(allowed)} "
+            "-- a projector's own allow-list invariant was violated"
+        )
+
+
 def project_commit(raw: dict[str, Any]) -> dict[str, Any]:
     """`{sha[:7], message[:300], author_login, committed_at}` — no other
     key. `sha` is truncated to 7 characters (a short hash, not a secret,
@@ -77,8 +117,8 @@ def project_commit(raw: dict[str, Any]) -> dict[str, Any]:
         "author_login": author_login,
         "committed_at": committed_at,
     }
-    assert set(projected) == COMMIT_ALLOWED_FIELDS
-    return projected
+    _ensure_allow_listed(projected, COMMIT_ALLOWED_FIELDS, kind="commit")
+    return _neutralise_strings_in(projected)
 
 
 def project_pull_request(raw: dict[str, Any]) -> dict[str, Any]:
@@ -95,8 +135,8 @@ def project_pull_request(raw: dict[str, Any]) -> dict[str, Any]:
         "updated_at": raw.get("updated_at"),
         "draft": raw.get("draft", False),
     }
-    assert set(projected) == PULL_REQUEST_ALLOWED_FIELDS
-    return projected
+    _ensure_allow_listed(projected, PULL_REQUEST_ALLOWED_FIELDS, kind="pull_request")
+    return _neutralise_strings_in(projected)
 
 
 def project_issue(raw: dict[str, Any]) -> dict[str, Any] | None:
@@ -113,8 +153,8 @@ def project_issue(raw: dict[str, Any]) -> dict[str, Any] | None:
         "created_at": raw.get("created_at"),
         "comments": raw.get("comments", 0),
     }
-    assert set(projected) == ISSUE_ALLOWED_FIELDS
-    return projected
+    _ensure_allow_listed(projected, ISSUE_ALLOWED_FIELDS, kind="issue")
+    return _neutralise_strings_in(projected)
 
 
 def project_recent_activity(payload: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -151,7 +191,11 @@ def wrap_untrusted_tool_result(*, tool: str, operation: str, projected: dict[str
     """
     serialised = json.dumps(projected, ensure_ascii=False, default=str)
     escaped = serialised.replace("<", "&lt;").replace(">", "&gt;")
-    assert _CLOSING_DELIMITER not in escaped
+    if _CLOSING_DELIMITER in escaped:
+        raise _ProjectionInvariantViolated(
+            "escaping failed to remove the closing delimiter -- refusing to build a "
+            "forgeable untrusted_tool_result envelope"
+        )
     return (
         f'{_OPENING_DELIMITER_PREFIX} tool="{tool}" operation="{operation}">'
         f"{escaped}"

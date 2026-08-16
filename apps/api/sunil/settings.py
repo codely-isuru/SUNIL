@@ -171,12 +171,13 @@ class Settings(BaseSettings):
     )
 
     # -- Upstream base URLs (A-11, ADR-017) ---------------------------------
-    # `github_api_base_url` started life as a T8 ad hoc addition (QA's
-    # fixture tests were hitting the real GitHub API with a placeholder
+    # `github_api_base_url` started life as a T8 ad hoc, unvalidated addition
+    # (QA's fixture tests were hitting the real GitHub API with a placeholder
     # token and getting a real 401 — the host was hard-coded with no
-    # override) and was independently formalised here under ADR-017 with
-    # `anthropic_base_url`'s same loopback-or-canonical validator. Both
-    # branches defined the field; this merge keeps the one below (with
+    # override), and was independently formalised here under ADR-017 with
+    # `anthropic_base_url`'s same loopback-or-canonical validator. More than
+    # one branch carried a T8-era copy of the field; every merge keeps the
+    # single ADR-017-validated definition below (with
     # `_check_github_api_base_url` coverage) and drops the earlier
     # unvalidated duplicate — a class body redefining the same field name
     # twice is exactly the kind of drift a single canonical definition

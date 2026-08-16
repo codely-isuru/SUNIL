@@ -52,7 +52,7 @@ from sunil.core.registry.loader import Registries
 from sunil.core.tool_framework.base import ToolAdapter, ToolResult
 from sunil.core.trace.context import NullTraceContext, TraceContext
 from sunil.core.trace.stages import TraceStage
-from sunil.db.capture import resolve_capture
+from sunil.db.capture import apply_capture_to_content, resolve_capture
 from sunil.db.models import ToolCall
 from sunil.redaction import scrub
 
@@ -305,6 +305,16 @@ class ToolManager:
         runs on both `parameters` and `result` before insert — this
         module's own responsibility per `sunil/redaction.py`'s docstring
         ("T6 and T8 must call scrub() themselves").
+
+        The NONE/METADATA_ONLY nulling itself goes through
+        `db.capture.apply_capture_to_content()` directly rather than a
+        second, stringly-typed comparison here — its `str | None`
+        annotation reads narrower than what it actually does (it never
+        inspects `content`'s type, only branches on `capture_policy`), so
+        it works identically for `tool_calls.result`'s JSON object as for
+        a string column, and this module no longer hand-rolls a branch
+        that would silently drift if a `CapturePolicy` value were ever
+        renamed again.
         """
         decision = resolve_capture(
             kind=CaptureKind.TOOL_CALL,
@@ -312,15 +322,7 @@ class ToolManager:
             agent_id=meta.agent_id,
             source=ContentSource.EXTERNAL_TOOL_RESULT,
         )
-        # `apply_capture_to_content()` is typed for a single `str` column;
-        # `tool_calls.result` is a JSON object, so the NONE/METADATA_ONLY
-        # nulling is applied to the whole dict here rather than misusing
-        # that helper on a value it was not shaped for.
-        stored_result = (
-            None
-            if decision.capture_policy.value in ("none", "metadata_only")
-            else (scrub(result) if result is not None else None)
-        )
+        stored_result = apply_capture_to_content(decision, scrub(result))
 
         row = ToolCall(
             request_id=meta.request_id,

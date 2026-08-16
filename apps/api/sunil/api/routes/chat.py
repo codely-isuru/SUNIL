@@ -73,6 +73,27 @@ class TurnExecutor(Protocol):
     executor is wired once, by trusted code, at construction time. Unlike
     those two, making this Protocol duck-typeable costs nothing, so it is
     left on for testability.
+
+    **Verified against what T10 actually shipped** (`core/agent_framework
+    /runner.run_agent()`), not against the build plan's description of it,
+    per `tests/unit/api_routes/test_chat_turn_executor_fits_t10.py`:
+    `run_agent()` needs a real `Task` (already created), an
+    `AgentRegistry`, a `ModelRouter`, a `ToolManager` and an `agents`
+    mapping — none of which `run_turn()`'s four parameters carry. The
+    seam still fits, proven concretely with T10's real runner, but only
+    because a concrete `TurnExecutor` holds those as **constructor**
+    dependencies (this Protocol's four call-time parameters are enough to
+    drive it) and internally does the planning + Task/Workflow creation +
+    `run_agent()` call + `AgentResult -> TurnResult` mapping.
+
+    **The one place that mapping needs care:** `AgentResult.error_kind`
+    is an open string (e.g. `"agent_crashed"`); `ChatFailure.kind` is a
+    `Literal` of exactly the four §6 values. Whatever builds the real
+    `TurnResult` must canonicalise every `AgentResult.error_kind` onto
+    `provider_error|tool_failed|plan_rejected|unknown_project` before
+    returning it — an uncanonicalised value fails as a Pydantic
+    `ValidationError` inside `handle_chat_turn()`, not as a clean `failed`
+    outcome.
     """
 
     async def run_turn(
@@ -92,8 +113,11 @@ class StubTurnExecutor:
     This is what lets `POST /api/v1/chat` exist, be routed, be
     authenticated and be integration-tested *before* T9's validator and
     T10's agent runner are wired into a real pipeline (T11b). Replacing
-    this with the real executor is T11b's entire job — nothing else in
-    this file should need to change.
+    `_TURN_EXECUTOR` below with a real, constructor-injected
+    `TurnExecutor` is what T11b needs to do in *this* file; the adapter
+    class itself — wrapping `run_agent()` plus planning and Task/Workflow
+    creation — is new code T11b writes, not a one-line swap (see
+    `TurnExecutor`'s own docstring for the verified shape it needs).
     """
 
     async def run_turn(
