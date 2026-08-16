@@ -10,14 +10,16 @@ it must never depend on a real value to do it.
 from __future__ import annotations
 
 import ast
+import inspect
 import json
+import pathlib
 import re
 import subprocess
 import traceback
 
 import pytest
-from conftest import FAKE_ENV, REPO_ROOT, SUNIL_PKG, require
 from pydantic import SecretStr, ValidationError
+from security_helpers import FAKE_ENV, REPO_ROOT, SUNIL_PKG, require
 
 # Obvious fakes, deliberately shaped so some match ADR-006 high-signal
 # patterns and some do not — a control that only catches sk-ant-... is not a
@@ -212,21 +214,79 @@ def test_redaction_processor_is_registered_in_both_structlog_chains() -> None:
     )
 
 
-def test_registered_secret_never_appears_in_a_persisted_llm_call() -> None:
-    """ET-10 test 2 — the persistence half (ADR-006: scrub() runs on
-    llm_calls.request_* / response_* before insert)."""
-    require("sunil.redaction", "T4")
-    require("sunil.db.models", "T2 (data layer)")
-    capture = require("sunil.db.capture", "T2 (data layer)")
+def test_every_capture_table_writer_scrubs_its_content_columns() -> None:
+    """ET-10's persistence half, mechanised.
 
-    row = capture.build_llm_call_row(
-        request_messages=[
-            {"role": "user", "content": f"please use key {NEEDLE_PATTERNED} to continue"}
-        ],
-        response_text="ok",
+    This file previously called a central `build_llm_call_row()`. That was the
+    wrong assumption, and the right answer is now explicit in
+    `sunil/redaction.py`'s own docstring: "**T6 and T8 must call scrub()
+    themselves** ... this module provides the mechanism; it does not, and
+    structurally cannot, reach into another lane's insert call site."
+
+    That is a defensible design, but as written it makes ET-10's persistence
+    guarantee a convention repeated across N lanes — the exact shape ADR-006
+    says it rejects ("a control with no mechanism behind it is a claim"). So
+    the mechanism is here instead: any module that constructs a row for one of
+    the five capture tables must pass its content columns through `scrub()`.
+
+    T8's `manager.py` does this correctly today (`parameters=scrub(params)`),
+    which is what makes this test green rather than theoretical — it is a
+    regression lock on a convention, not a wish.
+    """
+    require("sunil.redaction", "T4")
+    models = require("sunil.db.models", "T2")
+
+    content_columns = {
+        "Message": {"content"},
+        "Plan": {"plan_json", "validation_errors"},
+        "LLMCall": {"request_messages", "response_text", "response_json"},
+        "ToolCall": {"parameters", "result"},
+        "Memory": {"content"},
+    }
+    known = {
+        name: {c.name for c in getattr(models, name).__table__.columns} for name in content_columns
+    }
+    unscrubbed: list[str] = []
+
+    for path in sorted(SUNIL_PKG.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        # Names bound to an expression that already went through scrub(), so a
+        # module that scrubs into a local and passes the local is not flagged.
+        # (T8 does exactly this: `stored_result = ... scrub(result) ...`.)
+        scrubbed_locals = {
+            target.id
+            for assign in ast.walk(tree)
+            if isinstance(assign, ast.Assign) and "scrub(" in ast.unparse(assign.value)
+            for target in assign.targets
+            if isinstance(target, ast.Name)
+        }
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                continue
+            model_name = node.func.id
+            if model_name not in content_columns:
+                continue
+            for keyword in node.keywords:
+                if keyword.arg is None or keyword.arg not in known[model_name]:
+                    continue
+                if keyword.arg not in content_columns[model_name]:
+                    continue
+                if isinstance(keyword.value, ast.Constant) and keyword.value.value is None:
+                    continue  # explicit NULL is already safe
+                source = ast.unparse(keyword.value)
+                if "scrub(" not in source and source not in scrubbed_locals:
+                    rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+                    unscrubbed.append(
+                        f"{rel}:{node.lineno} {model_name}(...{keyword.arg}={source[:60]}) "
+                        "is written without scrub()"
+                    )
+    assert not unscrubbed, (
+        "a capture-table content column is persisted without ADR-006 redaction:"
+        + "\n  "
+        + ("\n  ").join(unscrubbed)
     )
-    serialised = json.dumps(row, default=str)
-    assert NEEDLE_PATTERNED not in serialised, f"secret persisted into llm_calls: {serialised}"
 
 
 def test_a_sqlalchemy_url_object_never_reaches_a_log_line(log_capture) -> None:
@@ -251,20 +311,32 @@ def test_a_sqlalchemy_url_object_never_reaches_a_log_line(log_capture) -> None:
 # Green today.
 # ---------------------------------------------------------------------------
 
-CREDENTIAL_PATTERNS = (
+# Two tiers, deliberately. Production code must contain nothing that even
+# *looks* like a credential. Test files legitimately contain credential-shaped
+# fixtures, so they are matched against the real issued shapes only — an
+# Anthropic key is `sk-ant-api03-` + ~95 chars, a fine-grained PAT is
+# `github_pat_` + 22 + `_` + 59. Excluding tests/ wholesale would be the wrong
+# fix: pasting a real key into a test while debugging is a realistic leak path,
+# and that is exactly what the strict tier still catches.
+_BROAD_PATTERNS = (
     re.compile(r"sk-ant-(?!fake|REPLACE)[A-Za-z0-9_-]{16,}"),
     re.compile(r"gh[pousr]_(?!fake|REPLACE)[A-Za-z0-9]{20,}"),
     re.compile(r"github_pat_(?!fake|REPLACE)[A-Za-z0-9_]{30,}"),
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 )
+_REAL_SHAPE_PATTERNS = (
+    re.compile(r"sk-ant-api\d{2}-[A-Za-z0-9_-]{60,}"),
+    re.compile(r"ghp_[A-Za-z0-9]{36}"),
+    re.compile(r"github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}"),
+)
+_ALWAYS_PATTERNS = (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),)
+
+# Non-secret values that are legitimately real in `.env.example`: the SQLite
+# default and the two canonical upstream API hosts (ADR-017 — an override must
+# be the canonical host or loopback, so the canonical value IS the placeholder).
 PLACEHOLDER = re.compile(
     r"^(|REPLACE_ME.*|.*REPLACE_ME|sqlite\+aiosqlite:.*|https?://localhost:\d+|"
-    r"127\.0\.0\.1|INFO|false|true|\d+|\./config|sunil_session|isuru|"
-    # A-11/ADR-017: the canonical upstream base URLs are not secrets — they
-    # are the public, well-known API hosts, and showing the real default
-    # (rather than a placeholder) is normal `.env.example` practice for a
-    # non-secret operational default, exactly like WEB_ORIGIN above.
-    r"https://api\.anthropic\.com|https://api\.github\.com)$"
+    r"https://api\.github\.com|https://api\.anthropic\.com|"
+    r"127\.0\.0\.1|INFO|false|true|\d+|\./config|sunil_session|isuru)$"
 )
 
 
@@ -319,7 +391,9 @@ def test_no_tracked_file_contains_a_credential() -> None:
             content = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        for pattern in CREDENTIAL_PATTERNS:
+        is_test = "/tests/" in name.replace("\\", "/") or name.startswith("tests/")
+        patterns = _ALWAYS_PATTERNS + (_REAL_SHAPE_PATTERNS if is_test else _BROAD_PATTERNS)
+        for pattern in patterns:
             for match in pattern.finditer(content):
                 line = content[: match.start()].count("\n") + 1
                 offenders.append(f"{name}:{line} {match.group(0)[:24]}...")
@@ -383,3 +457,113 @@ def test_no_module_logs_a_settings_object_wholesale() -> None:
                     rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
                     offenders.append(f"{rel}:{node.lineno} logs `{keyword.value.id}` wholesale")
     assert not offenders, "\n  ".join(offenders)
+
+
+# ---------------------------------------------------------------------------
+# Part 4 — egress. ADR-017 section 3: the guard that makes the base-URL test
+# seam safe. This is credential *theft*, not disclosure, so it gets its own
+# section rather than sitting among the redaction tests.
+# ---------------------------------------------------------------------------
+
+CANONICAL_BASE_URLS = {
+    "anthropic_base_url": "https://api.anthropic.com",
+    "github_api_base_url": "https://api.github.com",
+}
+HOSTILE_BASE_URLS = (
+    "https://attacker.example.com",
+    "http://169.254.169.254",  # cloud instance metadata
+    "https://api.github.com.evil.test",  # canonical host as a prefix
+    "https://localhost.evil.test",  # canonical loopback name as a prefix
+    "http://127.0.0.1.evil.test",
+)
+LOOPBACK_BASE_URLS = ("http://localhost:8099", "http://127.0.0.1:8099", "http://[::1]:8099")
+
+
+def test_a_hostile_api_base_url_refuses_to_construct_settings(
+    fake_env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-017 section 3, verbatim: "Value equals the canonical host -> allowed.
+    Host is localhost, 127.0.0.0/8 or ::1 -> allowed. Anything else ->
+    ValidationError at construction, so the application refuses to boot. **This
+    is not optional hardening.**"
+
+    ADR-017 states the threat itself: "redirect the GitHub URL and the request
+    carries `Authorization: Bearer <PAT>` to the attacker's host — credential
+    theft, not just disclosure. And nothing in the audit trail would look wrong,
+    because from SUNIL's side the call succeeded."
+
+    The GitHub adapter puts the PAT in an `Authorization` header on every one of
+    its three requests and prefixes `settings.github_api_base_url` onto the
+    path, so an unguarded field is a one-environment-variable exfiltration
+    primitive for a read token on a private business repository.
+    """
+    from sunil.settings import Settings
+
+    for field_name in CANONICAL_BASE_URLS:
+        if field_name not in Settings.model_fields:
+            pytest.fail(
+                f"RED — control absent, test intact: `Settings.{field_name}` does not exist on "
+                "this branch (owed by T6 for anthropic_base_url / T8 for github_api_base_url). "
+                "ADR-017 section 2 requires both."
+            )
+
+    unguarded: list[str] = []
+    for field_name, env_var in (
+        ("anthropic_base_url", "ANTHROPIC_BASE_URL"),
+        ("github_api_base_url", "GITHUB_API_BASE_URL"),
+    ):
+        for hostile in HOSTILE_BASE_URLS:
+            monkeypatch.setenv(env_var, hostile)
+            try:
+                Settings(_env_file=None)
+            except ValidationError:
+                continue
+            unguarded.append(f"{field_name}={hostile} was accepted")
+        monkeypatch.delenv(env_var, raising=False)
+
+    assert not unguarded, (
+        "ADR-017 section 3's loopback guard is missing — these are accepted where the ADR "
+        "requires the application to refuse to boot:" + "\n  " + ("\n  ").join(unguarded)
+    )
+
+
+def test_the_canonical_and_loopback_base_urls_are_still_accepted(
+    fake_env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of ADR-017 section 3: the guard must not break the test
+    seam it exists to protect. A guard that rejected loopback would push QA
+    back to hitting the real API with a real key — the failure ADR-017 was
+    written to prevent."""
+    from sunil.settings import Settings
+
+    for field_name, env_var in (
+        ("anthropic_base_url", "ANTHROPIC_BASE_URL"),
+        ("github_api_base_url", "GITHUB_API_BASE_URL"),
+    ):
+        if field_name not in Settings.model_fields:
+            pytest.fail(
+                f"RED — control absent, test intact: `Settings.{field_name}` does not exist "
+                "(owed by T6 / T8, ADR-017 section 2)."
+            )
+        for allowed in (CANONICAL_BASE_URLS[field_name], *LOOPBACK_BASE_URLS):
+            monkeypatch.setenv(env_var, allowed)
+            Settings(_env_file=None)  # must not raise
+        monkeypatch.delenv(env_var, raising=False)
+
+
+def test_the_github_client_never_follows_a_redirect() -> None:
+    """ADR-017 consequences: "`follow_redirects` stays `False` on the GitHub
+    client, so a local double cannot bounce the PAT onward with a 302."
+
+    httpx defaults to `False`, so this is currently satisfied by accident
+    rather than by statement — and a later engineer adding
+    `follow_redirects=True` to chase a GitHub 301 would silently re-open the
+    exfiltration path the loopback guard closes.
+    """
+    adapter_mod = require("sunil.tools.github.adapter", "T8")
+
+    source = pathlib.Path(inspect.getfile(adapter_mod)).read_text(encoding="utf-8")
+    assert "follow_redirects=False" in source, (
+        "the GitHub client does not state `follow_redirects=False`. httpx's default happens to be "
+        "False, so the PAT is safe today by coincidence rather than by decision (ADR-017)."
+    )
