@@ -227,7 +227,7 @@ async def test_a_registered_secret_in_detail_never_reaches_the_persisted_row(
     """ET-10, exercised against the real write path: register a secret,
     put it in `detail`, emit, then read the row back and confirm the raw
     value is not there."""
-    register("sk-ant-persisted-fake-secret", name="anthropic_api_key")
+    register("sk-ant-fake-persisted-secret", name="anthropic_api_key")
 
     ctx = LiveTraceContext(
         request_id="req-et10",
@@ -239,8 +239,8 @@ async def test_a_registered_secret_in_detail_never_reaches_the_persisted_row(
 
     await ctx.emit(
         TraceStage.LLM_IO,
-        summary="called the model with sk-ant-persisted-fake-secret",
-        detail={"note": "used key sk-ant-persisted-fake-secret"},
+        summary="called the model with sk-ant-fake-persisted-secret",
+        detail={"note": "used key sk-ant-fake-persisted-secret"},
     )
 
     async with sessionmaker() as session:
@@ -248,8 +248,8 @@ async def test_a_registered_secret_in_detail_never_reaches_the_persisted_row(
             await session.scalars(select(AuditEvent).where(AuditEvent.request_id == "req-et10"))
         ).one()
 
-    assert "sk-ant-persisted-fake-secret" not in row.summary
-    assert "sk-ant-persisted-fake-secret" not in row.detail["note"]
+    assert "sk-ant-fake-persisted-secret" not in row.summary
+    assert "sk-ant-fake-persisted-secret" not in row.detail["note"]
     assert "«redacted:anthropic_api_key»" in row.detail["note"]
 
 
@@ -267,7 +267,7 @@ async def test_a_secret_bearing_object_in_detail_never_reaches_the_persisted_row
     class _ToolFailure(Exception):
         pass
 
-    register("sk-ant-object-in-detail-fake-secret", name="anthropic_api_key")
+    register("sk-ant-fake-object-in-detail-secret", name="anthropic_api_key")
 
     ctx = LiveTraceContext(
         request_id="req-et10-object",
@@ -281,8 +281,8 @@ async def test_a_secret_bearing_object_in_detail_never_reaches_the_persisted_row
         TraceStage.TOOL_RESULT,
         summary="tool call failed",
         detail={
-            "error": _ToolFailure("auth failed with sk-ant-object-in-detail-fake-secret"),
-            "nested": {"cause": _ToolFailure("sk-ant-object-in-detail-fake-secret")},
+            "error": _ToolFailure("auth failed with sk-ant-fake-object-in-detail-secret"),
+            "nested": {"cause": _ToolFailure("sk-ant-fake-object-in-detail-secret")},
         },
     )
 
@@ -294,6 +294,6 @@ async def test_a_secret_bearing_object_in_detail_never_reaches_the_persisted_row
         ).one()
 
     serialised = str(row.detail)
-    assert "sk-ant-object-in-detail-fake-secret" not in serialised
+    assert "sk-ant-fake-object-in-detail-secret" not in serialised
     assert isinstance(row.detail["error"], str)
     assert isinstance(row.detail["nested"]["cause"], str)
