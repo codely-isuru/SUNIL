@@ -30,11 +30,11 @@ def _clean_registry():
 
 
 def test_scrub_redacts_a_registered_value_wherever_it_appears_in_a_string() -> None:
-    register("sk-ant-a-fake-registered-secret", name="anthropic_api_key")
+    register("sk-ant-fake-registered-secret", name="anthropic_api_key")
 
-    result = scrub("the key is sk-ant-a-fake-registered-secret, don't share it")
+    result = scrub("the key is sk-ant-fake-registered-secret, don't share it")
 
-    assert "sk-ant-a-fake-registered-secret" not in result
+    assert "sk-ant-fake-registered-secret" not in result
     assert "«redacted:anthropic_api_key»" in result
 
 
@@ -50,15 +50,15 @@ def test_scrub_redacts_high_signal_patterns_even_when_never_registered() -> None
     """A stray token that was never explicitly `register()`-ed is still
     caught by shape (ADR-006's second, independent layer)."""
     text = (
-        "leaked: sk-ant-abcdefghijklmnopqrstuvwxyz and "
-        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 and "
+        "leaked: sk-ant-fakeabcdefghijklmnopqrstuvwxyz and "
+        "ghp_fakeABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 and "
         "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789"
     )
 
     result = scrub(text)
 
-    assert "sk-ant-abcdefghijklmnopqrstuvwxyz" not in result
-    assert "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" not in result
+    assert "sk-ant-fakeabcdefghijklmnopqrstuvwxyz" not in result
+    assert "ghp_fakeABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" not in result
     assert "Bearer abcdefghijklmnopqrstuvwxyz0123456789" not in result
     assert "«redacted»" in result
 
@@ -159,26 +159,26 @@ class _SecretBearingRepr:
 
 
 def test_scrub_redacts_a_registered_secret_inside_an_exception_object() -> None:
-    register("sk-ant-THISISASECRETVALUE1234567890", name="anthropic_api_key")
-    exc = _BoomError("bad key sk-ant-THISISASECRETVALUE1234567890")
+    register("sk-ant-fakeTHISISASECRETVALUE1234567890", name="anthropic_api_key")
+    exc = _BoomError("bad key sk-ant-fakeTHISISASECRETVALUE1234567890")
 
     result = scrub(exc)
 
     assert isinstance(result, str)
-    assert "sk-ant-THISISASECRETVALUE1234567890" not in result
+    assert "sk-ant-fakeTHISISASECRETVALUE1234567890" not in result
     assert "«redacted:anthropic_api_key»" in result
 
 
 def test_scrub_redacts_an_exception_nested_inside_a_dict_value() -> None:
     """The `detail={"error": exc}` shape QA demonstrated against the real
     `shared_processors` chain."""
-    register("sk-ant-THISISASECRETVALUE1234567890", name="anthropic_api_key")
-    payload = {"error": _BoomError("bad key sk-ant-THISISASECRETVALUE1234567890")}
+    register("sk-ant-fakeTHISISASECRETVALUE1234567890", name="anthropic_api_key")
+    payload = {"error": _BoomError("bad key sk-ant-fakeTHISISASECRETVALUE1234567890")}
 
     result = scrub(payload)
 
     assert isinstance(result["error"], str)
-    assert "sk-ant-THISISASECRETVALUE1234567890" not in result["error"]
+    assert "sk-ant-fakeTHISISASECRETVALUE1234567890" not in result["error"]
 
 
 def test_scrub_redacts_a_custom_objects_secret_bearing_repr() -> None:
@@ -234,7 +234,7 @@ def test_scrub_through_the_real_structlog_chain_redacts_an_exception_value() -> 
 
     from sunil.logging import configure_logging, get_logger
 
-    register("sk-ant-THISISASECRETVALUE1234567890", name="anthropic_api_key")
+    register("sk-ant-fakeTHISISASECRETVALUE1234567890", name="anthropic_api_key")
     configure_logging(log_level="DEBUG", json_output=True)
 
     root = stdlib_logging.getLogger()
@@ -246,13 +246,13 @@ def test_scrub_through_the_real_structlog_chain_redacts_an_exception_value() -> 
     try:
         get_logger("t").info(
             "bound_exception_case",
-            error=_BoomError("bad key sk-ant-THISISASECRETVALUE1234567890"),
+            error=_BoomError("bad key sk-ant-fakeTHISISASECRETVALUE1234567890"),
         )
     finally:
         root.handlers = original_handlers
 
     output = buffer.getvalue()
-    assert "sk-ant-THISISASECRETVALUE1234567890" not in output
+    assert "sk-ant-fakeTHISISASECRETVALUE1234567890" not in output
     # The JSON renderer escapes non-ASCII (ensure_ascii, the json module's
     # default) so «» becomes «/» in the raw text — decode before
     # asserting on the marker rather than string-matching the raw bytes.
