@@ -12,13 +12,25 @@ non-executing representation, so the model is never forced to invent an identifi
 The fixture test scripts that sentinel directly; the live test asks about a genuinely
 unconfigured project name against the real, schema-constrained model and expects the
 same structural outcome with zero fault injection needed at all.
+
+Also checks the `GET /api/v1/projects` endpoint the frozen contract added (A-14):
+"same element shape as failure.known_projects" — cheap to verify here since both are
+already in scope for this test.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from tests.exit._client import app_client, login, post_chat, run_migrations, seed_owner
+from tests.exit._client import (
+    app_client,
+    build_live_settings,
+    build_settings,
+    login,
+    post_chat,
+    run_migrations,
+    seed_owner_directly,
+)
 from tests.exit._contract import FAILURE_KINDS
 from tests.exit._db import count_for_request
 from tests.exit._mock_upstreams import anthropic_success
@@ -29,24 +41,28 @@ def test_et11_unknown_project_plan_sentinel_yields_graceful_failure(
     db_path, database_url, qa_config_dir, monkeypatch, mock_server, request_id
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     mock_server.script(
         "POST", "/v1/messages", anthropic_success(text=unknown_project_plan_json())
     )
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client,
             message="Check project some-totally-unconfigured-project-xyz",
             request_id=request_id,
         )
+
+        # Bonus: GET /api/v1/projects (A-14) should describe the same project(s) with
+        # the same {key, display_name} shape as failure.known_projects below.
+        projects_resp = client.get("/api/v1/projects")
 
     assert resp.status_code == 200, (
         f"unexpected status {resp.status_code}: {resp.text[:500]}"
@@ -77,6 +93,16 @@ def test_et11_unknown_project_plan_sentinel_yields_graceful_failure(
         "an unknown project must never reach the tool -- no garbage-identifier call (FR-107)"
     )
 
+    assert projects_resp.status_code == 200, (
+        f"GET /api/v1/projects (session required, A-14) unexpected status "
+        f"{projects_resp.status_code}: {projects_resp.text[:300]}"
+    )
+    projects_body = projects_resp.json()
+    assert {p["key"] for p in projects_body["projects"]} == keys, (
+        "GET /api/v1/projects must describe the same projects, same shape, as "
+        f"failure.known_projects -- got {projects_body['projects']!r} vs {known!r}"
+    )
+
 
 @pytest.mark.live
 def test_et11_live_unconfigured_project_is_graceful_no_fault_injection_needed(
@@ -86,14 +112,15 @@ def test_et11_live_unconfigured_project_is_graceful_no_fault_injection_needed(
 
     creds = require_live_credentials(live_env)
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
 
-    with app_client(
+    settings = build_live_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
-        extra_env=creds,
-    ) as client:
+        anthropic_api_key=creds["ANTHROPIC_API_KEY"],
+        github_token=creds["GITHUB_TOKEN"],
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client,

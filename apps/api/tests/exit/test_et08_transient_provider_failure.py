@@ -10,11 +10,11 @@ Three scenarios, matching docs/M1_BUILD_PLAN.md T18's own list ("transient-then-
   1. recovers via retry
   2. exhausts all 3 attempts (ADR-000 Q6) and fails cleanly as `provider_error`
   3. the §5.3 turn deadline is breached and *also* maps to `provider_error` (no new
-     failure kind) -- ASSUMPTION flagged inline: forcing this deterministically means
-     overriding `SUNIL_TURN_DEADLINE_S` to ~0 via env var and trusting Settings is read
-     fresh per `create_app()` call (see `_client.py`'s module docstring, assumption 1).
-     If that assumption is wrong this scenario will need rework once T1/T6 exist; it
-     does not affect scenarios 1-2.
+     failure kind) -- forced via `build_settings(turn_deadline_s=0, ...)`. This is now
+     a RULED mechanism, not an assumption: ADR-018 makes the application the unit of
+     configuration isolation, `SUNIL_TURN_DEADLINE_S` is per-app state
+     (`app.state.settings.sunil_turn_deadline_s`), and the Delivery Manager confirmed
+     "SUNIL_TURN_DEADLINE_S is now per-app, which your ET-8 test needs."
 
 500 is used as the transient status throughout (verified: real anthropic SDK 0.122.0
 raises `InternalServerError` for it, which ARCHITECTURE_V1.md §4.3 maps to
@@ -24,7 +24,14 @@ verification transcript).
 
 from __future__ import annotations
 
-from tests.exit._client import app_client, login, post_chat, run_migrations, seed_owner
+from tests.exit._client import (
+    app_client,
+    build_settings,
+    login,
+    post_chat,
+    run_migrations,
+    seed_owner_directly,
+)
 from tests.exit._db import (
     audit_stages_for_request,
     count_for_request,
@@ -40,7 +47,7 @@ def test_et8_recovers_via_retry_and_completes_the_turn(
     db_path, database_url, qa_config_dir, monkeypatch, mock_server, request_id
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
     # attempt 1 (plan): transient failure; attempt 2 (plan): success; then analysis.
     mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
@@ -53,13 +60,13 @@ def test_et8_recovers_via_retry_and_completes_the_turn(
         anthropic_success(text="All quiet on EasyClean Workforce."),
     )
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client, message="Check on EasyClean Workforce", request_id=request_id
@@ -86,19 +93,19 @@ def test_et8_exhausted_retries_fail_cleanly_with_terminal_failed_state(
     db_path, database_url, qa_config_dir, monkeypatch, mock_server, request_id
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     # Every attempt fails the same way (ScriptedHTTPServer holds a single scripted
     # response constant when only one is queued) -- exercises full exhaustion, not a
     # lucky recovery.
     mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client, message="Check on EasyClean Workforce", request_id=request_id
@@ -143,23 +150,23 @@ def test_et8_exhausted_retries_fail_cleanly_with_terminal_failed_state(
 def test_et8_turn_deadline_breach_also_maps_to_provider_error(
     db_path, database_url, qa_config_dir, monkeypatch, mock_server, request_id
 ):
-    """ASSUMPTION (flagged in the T18 report): forcing the §5.3 deadline path
-    deterministically requires `SUNIL_TURN_DEADLINE_S` to be re-read per `create_app()`
-    call, which is not guaranteed by anything in the frozen contract. If wrong, this one
-    test needs rework once T1/T6 land -- it is isolated to this function only.
+    """Ruled, not assumed (ADR-018): `SUNIL_TURN_DEADLINE_S` is per-app state, built via
+    `build_settings(turn_deadline_s=0, ...)` -- a deadline of 0 means the Model Router's
+    "refuse to start an attempt that cannot finish inside the remaining budget" check
+    (§5.3) rejects the very first attempt.
     """
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-        extra_env={"SUNIL_TURN_DEADLINE_S": "0"},
-    ) as client:
+        turn_deadline_s=0,
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client, message="Check on EasyClean Workforce", request_id=request_id

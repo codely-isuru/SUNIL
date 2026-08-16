@@ -10,7 +10,14 @@ from typing import Any
 
 import pytest
 
-from tests.exit._client import app_client, build_settings, login, post_chat, run_migrations, seed_owner_directly
+from tests.exit._client import (
+    app_client,
+    build_settings,
+    login,
+    post_chat,
+    run_migrations,
+    seed_owner_directly,
+)
 from tests.exit._mock_upstreams import ScriptedHTTPServer, anthropic_success
 from tests.exit._plans import valid_plan_json
 from tests.exit.conftest import script_clean_github_activity
@@ -47,7 +54,11 @@ def run_completed_turn(
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json(project_key=project_key)))
+    mock_server.script(
+        "POST",
+        "/v1/messages",
+        anthropic_success(text=valid_plan_json(project_key=project_key)),
+    )
     mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
 
     settings = build_settings(
@@ -59,4 +70,9 @@ def run_completed_turn(
     )
     with app_client(settings=settings) as client:
         login(client)
-        return post_chat(client, message=message, request_id=request_id, conversation_id=conversation_id)
+        return post_chat(
+            client,
+            message=message,
+            request_id=request_id,
+            conversation_id=conversation_id,
+        )
