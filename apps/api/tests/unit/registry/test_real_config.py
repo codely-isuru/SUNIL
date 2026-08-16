@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sunil.core.registry.capture import CaptureKind
+from sunil.capture import CaptureKind, CapturePolicy
 from sunil.core.registry.loader import load_registries
 from sunil.core.registry.paths import repo_root
 
-_VALID_CAPTURE_POLICIES = {"none", "metadata_only", "redacted_full", "full_local_only"}
+_VALID_CAPTURE_POLICIES = set(CapturePolicy)
 
 
 def test_the_real_config_directory_loads_and_cross_validates() -> None:

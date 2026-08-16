@@ -20,7 +20,7 @@ from __future__ import annotations
 import typing
 
 import pytest
-from conftest import require
+from security_helpers import require
 
 
 def test_validated_plan_cannot_be_constructed_directly() -> None:

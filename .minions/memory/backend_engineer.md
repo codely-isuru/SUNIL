@@ -39,6 +39,30 @@
   original claim was proved: through the real configured chain and the real persistence write path,
   with an exception, a nested object, and a secret-bearing `__repr__` — not a mocked `scrub()` call.
 
+- [L-004 | 2026-08-17 | SUNIL M1 T11b, merge integration] **LESSON:** A test proving the "real
+  structlog chain" redacts a secret (`test_scrub_through_the_real_structlog_chain_redacts_an_exception_value`)
+  passed alone and passed in every small combination tried, but failed deterministically in the full
+  suite. Root cause, found by bisection rather than guessed: `structlog.configure(...,
+  cache_logger_on_first_use=True)` caches a bound logger's behaviour **per logger name**, the first
+  time that name is used, and does not invalidate it on a later `structlog.configure()` call. Another
+  test file (owned by a different lane) called `get_logger("t")` first; my test also used
+  `get_logger("t")`, later, after its own fresh `configure_logging()` call — and got back the
+  *stale* binding from the first use, writing to a handler/buffer that no longer existed. Two
+  independent, correct-in-isolation tests collided purely because they reused the same generic
+  logger name against a global, process-wide cache neither of them owns.
+  **ROOT CAUSE:** Treated a full-suite-only failure as something to explain away ("must be a fluke")
+  rather than bisect. It reproduced 100% of the time in the full run and 0% of the time in every
+  subset I tried first — that is the signature of state accumulated across many prior tests, not
+  flakiness, and it is worth bisecting file-pairs deliberately (`pytest fileA fileB -q`) rather than
+  reasoning about it from the stack trace alone.
+  **RULE:** Never use a short, generic name (`"t"`, `"test"`, `"logger"`) for a structlog/stdlib
+  logger obtained via `get_logger()` in a test — it is process-wide, cached state, and a second test
+  anywhere in the suite using the same name can make the first test's fix look like it regressed. Use
+  a name unique to the test. When a test passes alone but fails only in the full suite, suspect
+  shared global state (loggers, caches, `lru_cache`d singletons, module-level registries) before
+  anything else, and confirm by bisecting which other file's presence flips it, not by reasoning about
+  the code from the stack trace alone.
+
 ## Principles — stack-independent, carried into V1
 
 - **Prove fences, don't trust them.** When you build a structural guarantee (a default-deny

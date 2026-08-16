@@ -9,7 +9,7 @@ import pytest
 from sunil.core.registry.errors import RegistrySchemaError, UnknownProjectError
 from sunil.core.registry.projects import UNKNOWN_PROJECT_KEY, load_projects
 
-from .conftest import valid_config_files, write_config_dir
+from .registry_helpers import valid_config_files, write_config_dir
 
 
 def test_loads_easy_clean_workforce_from_config_only(valid_config_dir: Path) -> None:
