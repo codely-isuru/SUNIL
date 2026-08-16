@@ -49,12 +49,21 @@ jobs:
           cache: "pip"
           cache-dependency-path: apps/api/pyproject.toml
 
-      # Runs before install/lint/test: fast (stdlib only), and it is the
-      # single most useful signal for the exact defect class T22 exists for
-      # — two lanes shipping same-named test modules, invisible in either
-      # lane alone, only visible once merged. See docs/CI.md "Cross-lane
-      # test-collection collisions".
-      - name: Check for duplicate test-module basenames
+      # Runs before install/lint/test: fast (stdlib only, no pytest
+      # invocation at all), and it is the single most useful signal for the
+      # cross-lane test-collection collision family T22 exists for — two
+      # lanes shipping same-named test modules (check 1), or a test file
+      # bypassing pytest's fixture mechanism with a bare `from conftest
+      # import ...` (check 2). Both are invisible in either lane alone and
+      # both were hit for real, one commit apart, only once merged — see
+      # docs/CI.md "Cross-lane test-collection collisions". This check is
+      # deliberately independent of how pytest is invoked (it never runs
+      # pytest itself): the second incident reached a lane that was running
+      # its own tests "by path" as a workaround for collection being
+      # fragile, and a check that only fired inside a specific pytest
+      # invocation would have been exactly the check that workaround
+      # bypassed.
+      - name: Check for cross-lane test-collection collisions
         working-directory: .
         run: python scripts/check_test_basenames.py
 

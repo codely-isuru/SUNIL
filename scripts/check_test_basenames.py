@@ -105,7 +105,11 @@ def find_bare_conftest_imports(tests_root: Path) -> dict[Path, list[str]]:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        matches = [line.strip() for line in text.splitlines() if _BARE_CONFTEST_IMPORT_RE.match(line)]
+        matches = [
+            line.strip()
+            for line in text.splitlines()
+            if _BARE_CONFTEST_IMPORT_RE.match(line)
+        ]
         if matches:
             offenders[path] = matches
     return offenders
@@ -143,7 +147,9 @@ def main() -> int:
                 print(f"    - {p.relative_to(REPO_ROOT)}")
     else:
         collected = sum(1 for _ in TESTS_ROOT.rglob("test_*.py"))
-        print(f"OK: no duplicate test-module basenames ({collected} test files scanned).")
+        print(
+            f"OK: no duplicate test-module basenames ({collected} test files scanned)."
+        )
 
     bare_imports = find_bare_conftest_imports(TESTS_ROOT)
     if bare_imports:

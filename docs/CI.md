@@ -149,11 +149,12 @@ switching modes for everyone.
 **What T22 added so the *class* is caught, not just this one instance:**
 
 1. **`scripts/check_test_basenames.py`** — a fast, dependency-free static check (no pip install
-   needed) that walks `apps/api/tests/` for any basename appearing more than once, prints every
-   colliding path, and exits 1. It runs as the **first** step of the `backend` job, before install
-   or lint, so a colliding merge fails at the cheapest possible point with a message that names the
-   exact files, rather than pytest's "import file mismatch" (which is correct but does not, by
-   itself, say "two lanes collided").
+   needed) that walks `apps/api/tests/` for any `test_*.py` basename appearing more than once,
+   prints every colliding path, and exits 1. It runs as the **first** step of the `backend` job,
+   before install or lint, so a colliding merge fails at the cheapest possible point with a message
+   that names the exact files, rather than pytest's "import file mismatch" (which is correct but
+   does not, by itself, say "two lanes collided"). It also runs a second, related check for a bare
+   `conftest.py` import — added after a second, related incident; see "The second instance" below.
 2. **The exit-code-family handling above** — the general safety net. Even without the static
    check, exit code 2 now produces an explicit `::error::` naming the collection-error family, not
    a bare nonzero exit a reader has to go dig pytest's docs for.
@@ -165,6 +166,90 @@ to today's count and it false-fails the next legitimate smaller merge (e.g. a ho
 lane still mid-task); keep raising it by hand and it becomes a number nobody trusts or bothers to
 update. A duplicate-basename scan has no such decay — it is exactly as correct on day one as on the
 last day of the milestone, and it fails on the actual defect rather than on an arbitrary threshold.
+
+## The second instance: a bare `conftest.py` import, one commit later
+
+**What happened.** The same defect class recurred immediately, from a different lane pair, in a
+different shape:
+
+```
+tests/unit/tool_framework/conftest.py   collides with   tests/security/conftest.py
+→ ImportError: cannot import name 'FAKE_ENV' (or, in an independent re-run below: 'REPO_ROOT')
+```
+
+**Reproduced against the real, current tree**, per the standard set on the first incident: checked
+out `origin/task/T8-github-tool` (`cd92706`, which carries `tests/unit/tool_framework/conftest.py`
+and, via its own earlier merge of `origin/task/T19-security`, `tests/security/conftest.py`), then
+merged in the latest `origin/task/T5-api-skeleton` tip (which itself already carries T1/T2/T4's
+review fixes, including the first incident's rename fix) — a clean, conflict-free merge. Full
+suite:
+
+```
+E       ImportError: cannot import name 'REPO_ROOT' from 'conftest'
+        (...\tests\unit\tool_framework\conftest.py)
+tests\security\test_prompt_injection.py:219: ImportError
+```
+
+`apps/api/tests/security/test_prompt_injection.py` (and four sibling files in the same suite,
+including `test_secret_exposure.py`) do `from conftest import REPO_ROOT, SUNIL_PKG` /
+`from conftest import FAKE_ENV, ...` — a **bare, non-relative import**. Neither `tests/security/`
+nor `tests/unit/tool_framework/` is a package (no `__init__.py`), so this is resolved by plain
+Python's `sys.modules` cache, not by pytest's own directory-scoped fixture lookup. Whichever
+`conftest.py` pytest happens to import *first* while walking the whole tree wins the bare name
+`"conftest"` in `sys.modules`; every later bare `from conftest import X` silently gets *that*
+module, and fails with `ImportError` for whatever name it doesn't define. Confirmed independently
+by also running each directory **by path** in isolation
+(`pytest tests/security -q`, `pytest tests/unit/tool_framework -q`): **zero `ImportError`s in
+either isolated run** — the collision only exists once both are collected in the same invocation,
+exactly matching the reported shape.
+
+**Is `conftest.py` a special case in the scan? Yes — but not by ignoring it, and not by flagging
+every duplicate.**
+
+`conftest.py` is the one basename that appears in every test directory *by design*: pytest finds
+and scopes fixtures from every `conftest.py` on the path to a test file automatically, with no
+import statement at all, and that is completely normal and never a collision risk by itself.
+Extending check 1's "flag any duplicate basename" rule to `conftest.py` would fire on every lane,
+every day, for a shape that is never actually a problem — pure noise, and noisy checks get muted or
+ignored, which is worse than not having the check.
+
+The Delivery Manager's own framing was: *"duplicate `conftest.py` files are fine until two of them
+define the same importable names and both directories are collected in one invocation."* That is
+the precisely correct physical description of when it breaks — but **it is the wrong thing to
+detect statically**, for the same reason a hardcoded test count is the wrong thing to detect
+statically: proving "these two `conftest.py`s define overlapping names" requires parsing every
+`conftest.py`'s top-level bindings (including anything built dynamically, `*`-imported, or
+assigned outside a simple `NAME = ...` line) and cross-referencing it against every bare import
+elsewhere in the tree, on every run, forever. Get that analysis even slightly wrong — a name built
+in a loop, an `__all__` re-export, a `from x import *` inside a `conftest.py` — and it produces a
+**false negative** on exactly the case that matters, which is worse than the noise it was avoiding.
+
+**The rule actually implemented (`find_bare_conftest_imports` in `check_test_basenames.py`) is
+narrower and does not depend on counting `conftest.py` files or their contents at all: flag a bare
+`from conftest import ...` / `import conftest` statement, anywhere under `apps/api/tests/`,
+unconditionally.** The argument: pytest already provides the correct, collision-proof mechanism for
+sharing a `conftest.py`'s contents — declare a fixture parameter, and pytest injects it by
+directory scope, no import required. The moment a test file reaches for a plain Python import of
+`conftest` instead, it has opted out of that mechanism and into the flat, package-free
+`sys.modules` cache that check 1's `test_*.py` collision already lives in — and it is *already*
+fragile the instant a second `conftest.py` exists **anywhere** in the tree that will ever be
+collected alongside it, which on a CI run of the whole suite is every `conftest.py` there is. There
+is no safe count of `conftest.py` files below which this pattern is fine; it is a defect in the
+import statement itself, present in the diff that wrote it, independent of what anything else in
+the tree happens to look like that day. Flagging the pattern rather than counting collisions has
+the same "no expiry, no recalibration" property as check 1's basename scan, and — unlike parsing
+for actual name overlaps — cannot produce a false negative: if the import is bare, it is wrong,
+full stop, regardless of whether today's tree happens to get away with it.
+
+**This is also, independently, why the check has to be static rather than pytest-invocation-based**
+(the Delivery Manager's other point): the lane that hit this was running its own suite **by path**
+as the workaround in force while collection is fragile — precisely the invocation shape that never
+triggers the collision (proven above: zero `ImportError`s when each directory runs alone). A check
+that only fires by observing a specific `pytest` invocation's behaviour is exactly the check that
+workaround bypasses. `check_test_basenames.py` never runs pytest at all — it reads source files
+directly off disk — so it fires the same way regardless of whether anyone is currently running the
+full suite, a subset by path, or nothing at all. It runs once, in CI, against the merged tree,
+which is the one invocation shape a per-lane workaround cannot opt out of.
 
 ## "Absent is green" — the other half of "empty is not green"
 
