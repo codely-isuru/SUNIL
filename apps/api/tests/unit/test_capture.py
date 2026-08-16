@@ -1,6 +1,12 @@
 """Unit tests for `sunil.db.capture` — the ADR-014 training-data capture
 resolver (T2). No database is needed: `resolve_capture()` and
 `apply_capture_to_content()` are pure functions.
+
+`CaptureKind`/`CapturePolicy`/etc. are imported from `sunil.db.capture`
+(which itself imports them from the canonical top-level `sunil.capture`,
+per ADR-014 Amendment 1) rather than from `sunil.capture` directly, so
+this suite also proves the re-export keeps working for any caller that
+imports the vocabulary from the persistence module by habit.
 """
 
 from __future__ import annotations
@@ -18,13 +24,13 @@ from sunil.db.capture import (
 
 
 def test_m1_defaults_match_architecture_v1_section_13_2() -> None:
-    """§13.2's table, verbatim, for every content kind except short-term
-    memory (which differs only in retention_class)."""
+    """§13.2's table, verbatim, for every content kind except memory
+    (which differs only in retention_class)."""
     for kind in (
         CaptureKind.MESSAGE,
         CaptureKind.PLAN,
         CaptureKind.LLM_CALL,
-        CaptureKind.TOOL_CALL_RESULT,
+        CaptureKind.TOOL_CALL,
     ):
         decision = resolve_capture(kind=kind)
         assert decision.capture_policy is CapturePolicy.REDACTED_FULL
@@ -33,8 +39,8 @@ def test_m1_defaults_match_architecture_v1_section_13_2() -> None:
         assert decision.training_eligible is True
 
 
-def test_short_term_memory_default_is_transient_not_standard() -> None:
-    decision = resolve_capture(kind=CaptureKind.MEMORY_SHORT_TERM)
+def test_memory_default_is_transient_not_standard() -> None:
+    decision = resolve_capture(kind=CaptureKind.MEMORY)
 
     assert decision.capture_policy is CapturePolicy.REDACTED_FULL
     assert decision.retention_class is RetentionClass.TRANSIENT
@@ -87,6 +93,56 @@ def test_overrides_take_precedence_over_the_builtin_m1_defaults() -> None:
 
     assert decision.capture_policy is CapturePolicy.METADATA_ONLY
     assert decision.retention_class is RetentionClass.LONG
+
+
+def test_capture_kind_is_the_canonical_table_keyed_five_values() -> None:
+    """ADR-014 Amendment 1: exactly the five values named there, one per
+    capture table — not this module's earlier `tool_call_result` /
+    `memory_short_term` split."""
+    assert {member.value for member in CaptureKind} == {
+        "message",
+        "plan",
+        "llm_call",
+        "tool_call",
+        "memory",
+    }
+
+
+def test_content_source_expresses_the_sub_case_the_old_second_kind_did() -> None:
+    """Amendment 1: "T2's instinct was right and is preserved by the
+    parameter that already existed for it" — `source`, not a sixth
+    `CaptureKind`. `resolve_capture()` still accepts it (M1's own
+    defaults do not vary by source yet, so the outcome is identical
+    either way, but the call must not raise)."""
+    from sunil.capture import ContentSource
+
+    external = resolve_capture(
+        kind=CaptureKind.TOOL_CALL, source=ContentSource.EXTERNAL_TOOL_RESULT
+    )
+    generated = resolve_capture(kind=CaptureKind.TOOL_CALL, source=ContentSource.SUNIL_GENERATED)
+
+    assert external.capture_policy is CapturePolicy.REDACTED_FULL
+    assert generated.capture_policy is CapturePolicy.REDACTED_FULL
+
+
+def test_capture_rule_accepted_from_overrides_is_the_canonical_top_level_type() -> None:
+    """The type that crosses the registry/persistence boundary is
+    `sunil.capture.CaptureRule` — proven by importing it from there
+    directly (not via `sunil.db.capture`'s re-export) and using it as an
+    override, exactly the shape `core/registry/capture.py` (T3) will
+    produce."""
+    from sunil.capture import CaptureRule as TopLevelCaptureRule
+
+    override = {
+        CaptureKind.LLM_CALL: TopLevelCaptureRule(
+            CapturePolicy.NONE, Sensitivity.RESTRICTED, RetentionClass.TRANSIENT
+        )
+    }
+
+    decision = resolve_capture(kind=CaptureKind.LLM_CALL, overrides=override)
+
+    assert decision.capture_policy is CapturePolicy.NONE
+    assert decision.training_eligible is False
     assert decision.training_eligible is False
 
 
@@ -129,3 +185,25 @@ def test_apply_capture_to_content_handles_none_content_gracefully() -> None:
         training_eligible=True,
     )
     assert apply_capture_to_content(decision, None) is None
+
+
+def test_sunil_capture_imports_nothing_from_sunil() -> None:
+    """ADR-014 Amendment 1: `sunil.capture` is a top-level leaf module,
+    same status as `sunil.redaction` — vocabulary is domain language, not
+    a persistence or registry detail, so it must not depend on either."""
+    import ast
+    from pathlib import Path
+
+    import sunil.capture as capture_module
+
+    source = Path(capture_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("sunil"):
+            offenders.append(node.module)
+        if isinstance(node, ast.Import):
+            offenders.extend(alias.name for alias in node.names if alias.name.startswith("sunil"))
+
+    assert not offenders, f"sunil.capture imports from sunil: {offenders}"

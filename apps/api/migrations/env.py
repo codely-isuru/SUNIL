@@ -1,9 +1,19 @@
 """Alembic environment — async (ADR-002).
 
 The database URL is never hard-coded here or in `alembic.ini`; it comes
-from the same `Settings.database_url` the running application uses
-(`sunil.settings.get_settings()`), so `alembic upgrade head` always targets
-the database the app will actually connect to.
+from a `Settings.database_url` read the same way the running application
+reads it, so `alembic upgrade head` always targets the database the app
+will actually connect to.
+
+**A fresh `Settings()`, deliberately, not the cached `get_settings()`**
+(ADR-018 §5). `get_settings()` is `@lru_cache`d process-wide; if anything
+in an in-process test run had already read settings before this script
+ran (QA's harness calls `create_app()` once per test, each with its own
+`DATABASE_URL`), `get_settings()` would still return the *first* test's
+settings and `alembic upgrade head` would silently migrate a different
+database than the one the test just configured. A fresh read costs
+microseconds and is the only way this module always targets the
+environment as it stands at the moment migrations actually run.
 """
 
 import asyncio
@@ -20,7 +30,7 @@ from alembic import context
 # per ADR-002; every revision is hand-reviewed).
 from sunil.db import models  # noqa: F401
 from sunil.db.base import Base
-from sunil.settings import get_settings
+from sunil.settings import Settings
 
 config = context.config
 
@@ -29,7 +39,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url.get_secret_value())
+config.set_main_option("sqlalchemy.url", Settings().database_url.get_secret_value())
 
 
 def run_migrations_offline() -> None:
