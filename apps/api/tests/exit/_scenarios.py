@@ -10,7 +10,14 @@ from typing import Any
 
 import pytest
 
-from tests.exit._client import app_client, login, post_chat, run_migrations, seed_owner
+from tests.exit._client import (
+    app_client,
+    build_settings,
+    login,
+    post_chat,
+    run_migrations,
+    seed_owner_directly,
+)
 from tests.exit._mock_upstreams import ScriptedHTTPServer, anthropic_success
 from tests.exit._plans import valid_plan_json
 from tests.exit.conftest import script_clean_github_activity
@@ -35,15 +42,17 @@ def run_completed_turn(
     analysis_text: str = DEFAULT_ANALYSIS_TEXT,
     project_key: str = "easy_clean_workforce",
     conversation_id: str | None = None,
+    turn_deadline_s: int | None = None,
 ) -> Any:
     """Runs T2 migrations + seeds the owner + scripts a clean GitHub activity set + a
     valid plan + a scripted analysis response, then performs one real chat turn through
-    the local mock upstream. Returns the raw HTTP response; callers query `db_path`
-    afterwards for DB-level assertions (the SQLite file is real and closed by the time
-    the `with app_client(...)` block exits).
+    the local mock upstream (ADR-017's transport seam, wired via a fresh `Settings`
+    instance per ADR-018 — see `build_settings()`/`app_client()`). Returns the raw HTTP
+    response; callers query `db_path` afterwards for DB-level assertions (the SQLite
+    file is real and closed by the time the `with app_client(...)` block exits).
     """
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
     mock_server.script(
         "POST",
@@ -52,13 +61,14 @@ def run_completed_turn(
     )
     mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+        turn_deadline_s=turn_deadline_s,
+    )
+    with app_client(settings=settings) as client:
         login(client)
         return post_chat(
             client,
