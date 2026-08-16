@@ -52,11 +52,23 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
 
   const abortRef = useRef<AbortController | null>(null);
   const closeEventsRef = useRef<(() => void) | null>(null);
-  const fallbackTimersRef = useRef<number[]>([]);
+  // Every `setTimeout` this hook schedules that could still be pending when
+  // a turn ends — the two fallback-schedule steps *and* `setPhase`'s own
+  // 400ms-minimum-display delay — is tracked here so `teardown()` can
+  // proactively cancel all of it, not just the fallback schedule.
+  const pendingTimersRef = useRef<number[]>([]);
   const elapsedIntervalRef = useRef<number | null>(null);
   const liveRef = useRef(false);
   const lastPhaseChangeAtRef = useRef(0);
   const startedAtRef = useRef(0);
+  // The turn's identity. Bumped once per `sendTurn` call and captured by
+  // every phase-change scheduled during that call; `setPhase`'s deferred
+  // `apply()` compares against the *current* value before writing state, so
+  // a stale timer from an ended/cancelled turn can never overwrite a newer
+  // turn's phase — belt-and-braces alongside `pendingTimersRef`'s explicit
+  // cancellation, and it closes the class of bug (any future scheduled
+  // work inherits the same guard), not just this one instance of it.
+  const turnTokenRef = useRef(0);
   // `project_display_name` is only carried on `plan_created`'s `detail`
   // (`ARCHITECTURE_V1.md` §3.4) — the later "working"-phase stages don't
   // repeat it. Remembered here for the turn's duration so the "Checking
@@ -65,9 +77,9 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
   // one event that carried the name has passed.
   const projectNameRef = useRef<string | undefined>(undefined);
 
-  const clearFallbackTimers = useCallback(() => {
-    fallbackTimersRef.current.forEach((id) => window.clearTimeout(id));
-    fallbackTimersRef.current = [];
+  const clearPendingTimers = useCallback(() => {
+    pendingTimersRef.current.forEach((id) => window.clearTimeout(id));
+    pendingTimersRef.current = [];
   }, []);
 
   const clearElapsedInterval = useCallback(() => {
@@ -80,24 +92,29 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
   const teardown = useCallback(() => {
     closeEventsRef.current?.();
     closeEventsRef.current = null;
-    clearFallbackTimers();
+    clearPendingTimers();
     clearElapsedInterval();
-  }, [clearFallbackTimers, clearElapsedInterval]);
+  }, [clearPendingTimers, clearElapsedInterval]);
 
   // One aria-live-friendly phase change at a time: never set a new phase
   // sooner than 400ms after the last one (§5.3 — "prevents flicker on fast
   // tool calls"), whichever source (live or fallback) is producing it.
-  const setPhase = useCallback((phase: WorkPhase, dynamicLabel?: string) => {
+  // `token` is the calling turn's identity (`turnTokenRef`'s value at the
+  // moment `sendTurn` started it) — `apply()` re-checks it against
+  // whatever turn is current *when the timer actually fires*, so a delayed
+  // phase change from an ended/cancelled turn can never land on a newer one.
+  const setPhase = useCallback((token: number, phase: WorkPhase, dynamicLabel?: string) => {
     const now = Date.now();
     const remaining = Math.max(0, MIN_PHASE_DISPLAY_MS - (now - lastPhaseChangeAtRef.current));
     const apply = () => {
+      if (turnTokenRef.current !== token) return; // this turn is no longer current
       lastPhaseChangeAtRef.current = Date.now();
       setActiveTurn((prev) => (prev && prev.kind === "working" ? { ...prev, phase, dynamicLabel } : prev));
     };
     if (remaining === 0) {
       apply();
     } else {
-      window.setTimeout(apply, remaining);
+      pendingTimersRef.current.push(window.setTimeout(apply, remaining));
     }
   }, []);
 
@@ -123,6 +140,7 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
       teardown();
       abortRef.current?.abort();
 
+      const turnToken = ++turnTokenRef.current;
       const requestId = crypto.randomUUID();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -154,10 +172,10 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
       closeEventsRef.current = openProgressEvents(requestId, {
         onStage: ({ stage, detail }) => {
           liveRef.current = true;
-          clearFallbackTimers();
+          clearPendingTimers();
           const projectName = dynamicLabelFromDetail(detail);
           if (projectName) projectNameRef.current = projectName;
-          setPhase(phaseForStage(stage as StageName), projectNameRef.current);
+          setPhase(turnToken, phaseForStage(stage as StageName), projectNameRef.current);
         },
         onError: () => {
           // Identical to `SUNIL_PROGRESS_EVENTS` being off — the fallback
@@ -169,14 +187,14 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
       // The fallback schedule (§5.3's fallback variant): Understanding
       // 0-3s, Planning 3-5s, Working 5s→response. Each check defers to
       // whichever phase a real event has already produced.
-      fallbackTimersRef.current.push(
+      pendingTimersRef.current.push(
         window.setTimeout(() => {
-          if (!liveRef.current) setPhase("planning");
+          if (!liveRef.current) setPhase(turnToken, "planning");
         }, 3000),
       );
-      fallbackTimersRef.current.push(
+      pendingTimersRef.current.push(
         window.setTimeout(() => {
-          if (!liveRef.current) setPhase("working");
+          if (!liveRef.current) setPhase(turnToken, "working");
         }, 5000),
       );
 
@@ -195,7 +213,7 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
         if (response.conversation_id) onConversationId(response.conversation_id);
 
         if (response.outcome === "ok" && response.message) {
-          setPhase("finishing");
+          setPhase(turnToken, "finishing");
           await wait(FINISHING_HOLD_MS);
           setActiveTurn(null);
           return {
@@ -244,7 +262,7 @@ export function useTurn({ conversationId, onConversationId }: UseTurnArgs) {
         return { outcome: "failed" };
       }
     },
-    [cancelTurn, clearFallbackTimers, onConversationId, setPhase, teardown],
+    [cancelTurn, clearPendingTimers, onConversationId, setPhase, teardown],
   );
 
   useEffect(() => {
