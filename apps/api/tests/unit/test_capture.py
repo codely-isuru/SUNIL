@@ -143,7 +143,6 @@ def test_capture_rule_accepted_from_overrides_is_the_canonical_top_level_type() 
 
     assert decision.capture_policy is CapturePolicy.NONE
     assert decision.training_eligible is False
-    assert decision.training_eligible is False
 
 
 def test_apply_capture_to_content_nulls_under_none_and_metadata_only() -> None:
