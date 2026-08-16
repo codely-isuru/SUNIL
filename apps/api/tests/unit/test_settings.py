@@ -54,6 +54,57 @@ def test_missing_required_secret_fails_closed(monkeypatch: pytest.MonkeyPatch) -
         Settings(_env_file=None)
 
 
+def test_a_failed_settings_load_never_exposes_an_already_loaded_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Security review blocker 3: pydantic reports a *missing* field with
+    `input` set to the whole collected-so-far values dict, and `SecretStr`
+    coercion happens only after validation succeeds — so at the moment of
+    failure every *other* secret that did load is still a raw `str` and
+    would otherwise ride along inside the exception verbatim. Delete only
+    one required variable so the other secrets are the ones still "loaded"
+    at the moment of failure, matching the real failure shape exactly.
+    """
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://sunil:FakeDbPassLeak@db:5432/sunil")
+    monkeypatch.delenv("OWNER_PASSWORD", raising=False)  # the one field that is actually missing
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+
+    exc = excinfo.value
+    renderings = {
+        "str(exc)": str(exc),
+        "repr(exc)": repr(exc),
+        "exc.json()": exc.json(),
+        "exc.errors() as text": str(exc.errors()),
+    }
+    needles = {
+        "ANTHROPIC_API_KEY": REQUIRED_ENV["ANTHROPIC_API_KEY"],
+        "GITHUB_TOKEN": REQUIRED_ENV["GITHUB_TOKEN"],
+        "SESSION_SECRET": REQUIRED_ENV["SESSION_SECRET"],
+        "DATABASE_URL password": "FakeDbPassLeak",
+    }
+    leaks = [
+        f"{rendering} leaks {name}"
+        for rendering, text in renderings.items()
+        for name, needle in needles.items()
+        if needle in text
+    ]
+    assert not leaks, "a failed Settings() construction exposed already-loaded secrets:\n  " + (
+        "\n  ".join(leaks)
+    )
+    # The exception is still a real, catchable ValidationError — the fix
+    # must not change what every existing `except ValidationError` call
+    # site can rely on.
+    assert isinstance(exc, ValidationError)
+    # Nor does the original, secret-carrying exception stay reachable via
+    # exception chaining — `except ValidationError as exc: raise
+    # new_exc from exc` would still leave it on `__context__`/`__cause__`.
+    assert exc.__context__ is None
+    assert exc.__cause__ is None
+
+
 def test_owner_review_additions_have_the_agreed_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -74,13 +125,22 @@ def test_secrets_are_secretstr_and_never_appear_in_repr_or_str(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_required_env(monkeypatch)
+    fake_db_url = "postgresql+psycopg://sunil:FakeDbPassNeverLeaks@db:5432/sunil"
+    monkeypatch.setenv("DATABASE_URL", fake_db_url)
 
     settings = Settings(_env_file=None)
 
-    secret_fields = ("anthropic_api_key", "github_token", "session_secret", "owner_password")
-    for field_name in secret_fields:
+    # Includes `database_url` — the one secret that carries an embedded
+    # credential (a prior revision of this test omitted it).
+    secret_field_values = {
+        "anthropic_api_key": REQUIRED_ENV["ANTHROPIC_API_KEY"],
+        "github_token": REQUIRED_ENV["GITHUB_TOKEN"],
+        "session_secret": REQUIRED_ENV["SESSION_SECRET"],
+        "owner_password": REQUIRED_ENV["OWNER_PASSWORD"],
+        "database_url": fake_db_url,
+    }
+    for field_name, raw in secret_field_values.items():
         value = getattr(settings, field_name)
-        raw = REQUIRED_ENV[field_name.upper()]
 
         assert isinstance(value, SecretStr)
         assert raw not in repr(value)

@@ -33,9 +33,10 @@ from __future__ import annotations
 from functools import lru_cache
 from ipaddress import ip_address
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/api/sunil/settings.py -> sunil -> api -> apps -> repo root.
@@ -84,6 +85,42 @@ def _validate_base_url(field_name: str, value: str) -> str:
     )
 
 
+_REDACTED_INPUT_PLACEHOLDER = "<redacted — a failed Settings() load never exposes loaded values>"
+
+
+def _redact_validation_error(exc: ValidationError) -> ValidationError:
+    """Re-raise a `Settings` construction failure with every `input` value
+    stripped (ET-10, security review blocker 3).
+
+    On a *missing*-field error, pydantic reports `input` as the **entire
+    collected values dict so far** — and `SecretStr` coercion happens only
+    after validation succeeds, so at that moment every other secret that
+    *did* load is still a raw `str` inside that dict. It then rides inside
+    `.errors()`, `.json()`, `str(exc)`/`repr(exc)`, and a traceback. This is
+    the one path T4's redaction registry cannot rescue: on this path no
+    secret loaded successfully, so nothing was ever registered there
+    either.
+
+    `type` / `loc` / `ctx` are preserved so the human-readable message is
+    unchanged (`ctx` carries only constraint parameters — an `enum` list,
+    a `ge` bound — never a copy of the offending input); only `input` is
+    replaced. The result is still a real `pydantic.ValidationError`, so
+    `except ValidationError` at every existing call site keeps working
+    unchanged.
+    """
+    line_errors = []
+    for error in exc.errors():
+        line_error: dict[str, Any] = {
+            "type": error["type"],
+            "loc": error["loc"],
+            "input": _REDACTED_INPUT_PLACEHOLDER,
+        }
+        if "ctx" in error:
+            line_error["ctx"] = error["ctx"]
+        line_errors.append(line_error)
+    return ValidationError.from_exception_data(exc.title, line_errors, hide_input=True)
+
+
 class Settings(BaseSettings):
     """Typed, validated process configuration for the SUNIL API."""
 
@@ -93,6 +130,27 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    def __init__(self, **values: Any) -> None:
+        """Sanitise a validation failure before it ever leaves this class.
+
+        The `raise` deliberately happens *outside* the `except` block: a
+        `raise` written inside an `except ValidationError as exc:` clause
+        implicitly chains the new exception's `__context__` to `exc`,
+        regardless of `from None` (which only suppresses *display* of the
+        chain — the original, secret-carrying exception object stays
+        reachable via `__context__` otherwise). Falling through the
+        `except` before raising means there is no exception being handled
+        at that point, so `__context__` is never set at all — not merely
+        hidden from a traceback.
+        """
+        sanitized: ValidationError | None = None
+        try:
+            super().__init__(**values)
+        except ValidationError as exc:
+            sanitized = _redact_validation_error(exc)
+        if sanitized is not None:
+            raise sanitized
 
     # -- Database ---------------------------------------------------------
     # `SecretStr` because a Postgres URL commonly carries embedded
@@ -111,24 +169,14 @@ class Settings(BaseSettings):
     github_token: SecretStr = Field(
         description="Read-only GitHub PAT, used only by sunil/tools/github."
     )
-    # Added on T8: QA's fixture tests were hitting the real GitHub API with
-    # a placeholder token and getting a real 401 -- the host was hard-coded
-    # in prose with no override. Mirrors ANTHROPIC_BASE_URL's pattern for
-    # the Anthropic SDK. **Flagged, not settled:** an env-settable API base
-    # is also an exfiltration surface in a deployed environment (a
-    # compromised process could point this at an attacker-controlled host
-    # that echoes back attacker-chosen content). Built per the Delivery
-    # Manager's direction; the Architect's ruling on how it should be
-    # gated (e.g. restricted to non-production, or dropped once tests can
-    # inject a client directly) is pending -- do not treat this default-only
-    # shape as final.
-    github_api_base_url: str = Field(
-        default="https://api.github.com",
-        description="GitHub API host. Override for tests/fixtures only; production must not "
-        "override this (Architect ruling pending on how that is enforced).",
-    )
 
     # -- Upstream base URLs (A-11, ADR-017) ---------------------------------
+    # `github_api_base_url` started life on T8 as an unvalidated field (QA's
+    # fixture tests were hitting the real GitHub API with a placeholder
+    # token and getting a real 401). The Architect's ADR-017 ruling has
+    # since landed and settled exactly how it must be gated -- the shared
+    # loopback validator below, not a second field. Superseded here rather
+    # than duplicated.
     # Passed **explicitly** to each client/adapter — never left to the SDK's
     # own environment reading. Read from the installed anthropic SDK's
     # `_client.py`, precedence is kwarg -> ANTHROPIC_BASE_URL -> profile ->

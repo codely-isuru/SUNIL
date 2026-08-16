@@ -18,92 +18,56 @@ behaviour. `full_local_only` is *recorded, not enforced* — M1 has one
 machine and no export path, so there is nothing yet to restrict; V2/V3's
 export and training pipelines own the actual enforcement.
 
-**On defaults and `config/capture.yaml` (T3, not yet built):** the
-architecture (§13.2) has the registry loaders supply per-content-kind
-defaults with a per-project override from `config/capture.yaml`. T2 has no
-dependency on T3 (`docs/M1_BUILD_PLAN.md` §1.1's dependency table), so this
-module ships the exact M1 defaults from `ARCHITECTURE_V1.md` §13.2 as a
-built-in fallback table and accepts an optional `overrides` mapping with
-the same shape `config/capture.yaml` will produce. Once T3's loader exists,
-the persistence layer can pass its loaded config straight through this
-same parameter with no change to this function's contract.
+**The vocabulary lives in `sunil.capture`** (ADR-014 Amendment 1), a
+top-level leaf this module imports rather than redefines — see that
+module's docstring for why (a cross-lane type mismatch between this file
+and `core/registry/capture.py`, T3, was the defect Amendment 1 fixes).
+This module does not define `CaptureKind`, `CapturePolicy`, `Sensitivity`,
+`RetentionClass`, `ContentSource`, `CaptureRule` or `CaptureDecision`
+itself; it only imports and uses them.
+
+**On defaults and `config/capture.yaml` (T3):** the architecture (§13.2)
+has the registry loaders supply per-content-kind defaults, converted to
+`CaptureRule` (T3's `core/registry/capture.py` is the only place a raw
+YAML string becomes one of these enums — this module never does that
+conversion). This module ships the exact M1 defaults from
+`ARCHITECTURE_V1.md` §13.2 as a built-in fallback table and accepts an
+`overrides: Mapping[CaptureKind, CaptureRule]` parameter with exactly the
+shape `core/registry/capture.py` produces, so wiring the real registry in
+is a call-site change, not a contract change.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import StrEnum
-from typing import NamedTuple
+from collections.abc import Mapping
 
+from sunil.capture import (
+    CaptureDecision,
+    CaptureKind,
+    CapturePolicy,
+    CaptureRule,
+    ContentSource,
+    RetentionClass,
+    Sensitivity,
+)
 
-class CapturePolicy(StrEnum):
-    """The four ADR-014 policy values."""
+__all__ = [
+    "CaptureDecision",
+    "CaptureKind",
+    "CapturePolicy",
+    "CaptureRule",
+    "ContentSource",
+    "RetentionClass",
+    "Sensitivity",
+    "apply_capture_to_content",
+    "resolve_capture",
+]
 
-    NONE = "none"
-    METADATA_ONLY = "metadata_only"
-    REDACTED_FULL = "redacted_full"
-    FULL_LOCAL_ONLY = "full_local_only"
-
-
-class Sensitivity(StrEnum):
-    PUBLIC = "public"
-    INTERNAL = "internal"
-    CONFIDENTIAL = "confidential"
-    RESTRICTED = "restricted"
-
-
-class RetentionClass(StrEnum):
-    TRANSIENT = "transient"
-    STANDARD = "standard"
-    LONG = "long"
-    PERMANENT = "permanent"
-
-
-class CaptureKind(StrEnum):
-    """What kind of content is being captured — one member per capture
-    table's content column (§13.2's "Content" rows)."""
-
-    MESSAGE = "message"
-    PLAN = "plan"
-    LLM_CALL = "llm_call"
-    TOOL_CALL_RESULT = "tool_call_result"
-    MEMORY_SHORT_TERM = "memory_short_term"
-
-
-class ContentSource(StrEnum):
-    """Where the content originated. Part of `resolve_capture()`'s
-    signature for forward compatibility (a later policy may vary by
-    source); M1's own defaults (§13.2) do not vary by source, only by
-    `kind`, so this parameter is accepted and recorded but does not change
-    the M1 outcome — stated here so that is not mistaken for an oversight.
-    """
-
-    OWNER = "owner"
-    AGENT = "agent"
-    TOOL_EXTERNAL = "tool_external"
-    SYSTEM = "system"
-
-
-@dataclass(frozen=True)
-class CaptureDecision:
-    """The four ADR-014 columns, resolved once at capture time."""
-
-    capture_policy: CapturePolicy
-    sensitivity: Sensitivity
-    retention_class: RetentionClass
-    training_eligible: bool
-
-
-class CaptureRule(NamedTuple):
-    capture_policy: CapturePolicy
-    sensitivity: Sensitivity
-    retention_class: RetentionClass
-
-
-# `ARCHITECTURE_V1.md` §13.2's M1 defaults table, verbatim. M1 ships
-# exactly one project, so there is no per-project override table yet — the
-# `overrides` parameter below exists for the moment `config/capture.yaml`
-# lands (T3) and a second project needs a different rule.
+# `ARCHITECTURE_V1.md` §13.2's M1 defaults table, verbatim — and matching
+# `config/capture.yaml`'s own committed defaults (T3) value for value. M1
+# ships exactly one project, so there is no per-project override table
+# yet — the `overrides` parameter below exists for the moment a second
+# project needs a different rule.
 _M1_DEFAULTS: dict[CaptureKind, CaptureRule] = {
     CaptureKind.MESSAGE: CaptureRule(
         CapturePolicy.REDACTED_FULL, Sensitivity.INTERNAL, RetentionClass.STANDARD
@@ -114,10 +78,10 @@ _M1_DEFAULTS: dict[CaptureKind, CaptureRule] = {
     CaptureKind.LLM_CALL: CaptureRule(
         CapturePolicy.REDACTED_FULL, Sensitivity.INTERNAL, RetentionClass.STANDARD
     ),
-    CaptureKind.TOOL_CALL_RESULT: CaptureRule(
+    CaptureKind.TOOL_CALL: CaptureRule(
         CapturePolicy.REDACTED_FULL, Sensitivity.INTERNAL, RetentionClass.STANDARD
     ),
-    CaptureKind.MEMORY_SHORT_TERM: CaptureRule(
+    CaptureKind.MEMORY: CaptureRule(
         CapturePolicy.REDACTED_FULL, Sensitivity.INTERNAL, RetentionClass.TRANSIENT
     ),
 }
@@ -141,15 +105,16 @@ def resolve_capture(
     project_key: str | None = None,
     agent_id: str | None = None,
     source: ContentSource = ContentSource.SYSTEM,
-    overrides: dict[CaptureKind, CaptureRule] | None = None,
+    overrides: Mapping[CaptureKind, CaptureRule] | None = None,
 ) -> CaptureDecision:
     """Classify a piece of content at capture time.
 
     `project_key` and `agent_id` are accepted now so a future per-project
     override (`config/capture.yaml`, T3) is an additive change to this
     function's body, not to its callers' call sites. `overrides` lets a
-    caller that *has* loaded `config/capture.yaml` supply project-specific
-    rules without this module depending on T3's registry loader.
+    caller that *has* loaded `config/capture.yaml` (via
+    `core/registry/capture.py`) supply project-specific rules without this
+    module depending on T3's registry loader directly.
     """
     del project_key, agent_id, source  # unused in M1's uniform defaults; see module docstring
 
