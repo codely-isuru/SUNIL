@@ -108,6 +108,26 @@ by the outage rather than by the build.
 
 ---
 
+### 2026-08-16/17 — the merge queue
+
+`main` @ `845f65c` now carries **the whole frontend lane** (`21ab696`) and **seven backend
+branches** — T1, T2, T3, T4, T5, T7, T9 — each with an independent QA verdict behind it.
+
+The remaining branches (T6, T8, T10, T11a, T18, T19, T21, T22, T16c) hit real conflicts,
+chiefly a **union** in `settings.py` where `main`'s ET-10 redaction fix and T6's ADR-017
+loopback validator must both survive. Taking either side would silently drop a security
+control, so resolution went to the engineer owning both sides on `task/integration-1`
+rather than being improvised at the merge point.
+
+**The recurring defect of this milestone: a branch is green against what it was cut from,
+not against what exists.** Three confirmed instances — T5 carrying pre-fix redaction while
+its own tests passed; T8's merge-base resolving to a superseded T2 tip; and T11a never
+having merged T3, T8 or T10 at all (311 → 417 tests once it did). The worktree model bought
+clean concurrent lanes and cheap merges; what it does not give is any signal when the ground
+moves under a branch that is already green. Both halves of that trade are now on record.
+
+---
+
 ## 4. Known issues / open items
 
 * ~~BLOCKER — Docker daemon not running~~ **CLEARED 2026-08-14.** The owner started
