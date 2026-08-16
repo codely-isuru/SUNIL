@@ -187,6 +187,49 @@ def test_apply_capture_to_content_handles_none_content_gracefully() -> None:
     assert apply_capture_to_content(decision, None) is None
 
 
+def test_apply_capture_to_content_passes_through_a_json_dict_unchanged() -> None:
+    """Four of the five capture tables store content in a JSON column, not
+    text (`plans.raw_json`, `llm_calls.request_messages`/`response_json`,
+    `tool_calls.parameters`/`result`) — this must work for a dict/list
+    payload exactly as it does for a plain string, with no separate code
+    path, so a caller never has to hand-roll the nulling branch itself."""
+    decision = CaptureDecision(
+        capture_policy=CapturePolicy.REDACTED_FULL,
+        sensitivity=Sensitivity.INTERNAL,
+        retention_class=RetentionClass.STANDARD,
+        training_eligible=True,
+    )
+    payload = {"role": "user", "content": "check on the project", "steps": [1, 2, 3]}
+
+    assert apply_capture_to_content(decision, payload) == payload
+    assert apply_capture_to_content(decision, payload) is payload
+
+
+def test_apply_capture_to_content_nulls_a_json_dict_under_none_and_metadata_only() -> None:
+    payload = {"parameters": {"owner": "codely-isuru", "repo": "easy_clean_workforce"}}
+
+    for policy in (CapturePolicy.NONE, CapturePolicy.METADATA_ONLY):
+        decision = CaptureDecision(
+            capture_policy=policy,
+            sensitivity=Sensitivity.INTERNAL,
+            retention_class=RetentionClass.STANDARD,
+            training_eligible=False,
+        )
+        assert apply_capture_to_content(decision, payload) is None
+
+
+def test_apply_capture_to_content_passes_through_a_list_payload_unchanged() -> None:
+    decision = CaptureDecision(
+        capture_policy=CapturePolicy.REDACTED_FULL,
+        sensitivity=Sensitivity.INTERNAL,
+        retention_class=RetentionClass.STANDARD,
+        training_eligible=True,
+    )
+    payload = [{"commit": "abc123", "title": "fix: something"}]
+
+    assert apply_capture_to_content(decision, payload) == payload
+
+
 def test_sunil_capture_imports_nothing_from_sunil() -> None:
     """ADR-014 Amendment 1: `sunil.capture` is a top-level leaf module,
     same status as `sunil.redaction` — vocabulary is domain language, not
