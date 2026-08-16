@@ -169,6 +169,22 @@ class Settings(BaseSettings):
     github_token: SecretStr = Field(
         description="Read-only GitHub PAT, used only by sunil/tools/github."
     )
+    # Added on T8: QA's fixture tests were hitting the real GitHub API with
+    # a placeholder token and getting a real 401 -- the host was hard-coded
+    # in prose with no override. Mirrors ANTHROPIC_BASE_URL's pattern for
+    # the Anthropic SDK. **Flagged, not settled:** an env-settable API base
+    # is also an exfiltration surface in a deployed environment (a
+    # compromised process could point this at an attacker-controlled host
+    # that echoes back attacker-chosen content). Built per the Delivery
+    # Manager's direction; the Architect's ruling on how it should be
+    # gated (e.g. restricted to non-production, or dropped once tests can
+    # inject a client directly) is pending -- do not treat this default-only
+    # shape as final.
+    github_api_base_url: str = Field(
+        default="https://api.github.com",
+        description="GitHub API host. Override for tests/fixtures only; production must not "
+        "override this (Architect ruling pending on how that is enforced).",
+    )
 
     # -- Upstream base URLs (A-11, ADR-017) ---------------------------------
     # Passed **explicitly** to each client/adapter — never left to the SDK's

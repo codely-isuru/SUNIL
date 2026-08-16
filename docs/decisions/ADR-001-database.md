@@ -8,7 +8,7 @@ SRS Q8 (explicitly deferred to the Architect), FR-002.
 
 `ROADMAP.md` §4 names PostgreSQL + pgvector as the V1 data layer. The environment survey found that
 this machine has **no native PostgreSQL, no Redis, and a Docker daemon that is not running**. M1 is
-due **2026-08-17**. Starting Docker is a two-second human action, but it has not happened, and the
+due **2026-08-18**. Starting Docker is a two-second human action, but it has not happened, and the
 build lane cannot be gated on it.
 
 M1's data requirements are modest and known: ten tables, no similarity search, no concurrency beyond

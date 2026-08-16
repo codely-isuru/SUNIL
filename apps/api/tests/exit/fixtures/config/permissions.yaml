@@ -1,0 +1,7 @@
+# QA fixture config — mirrors ARCHITECTURE_V1.md §9.2's own example verbatim.
+# The one grant that exists in M1: read-only, pre-configured ALLOW (FR-121).
+version: 1
+agents:
+  project_manager:
+    github:
+      list_recent_activity: allow

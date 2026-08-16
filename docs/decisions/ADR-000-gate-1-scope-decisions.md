@@ -8,7 +8,7 @@
 
 `docs/ROADMAP.md` describes three product versions and thirteen agents. `docs/REQUIREMENTS_V1.md`
 narrows that to V1 and, within V1, to Milestone 1 — the roadmap §22 vertical slice, due
-**2026-08-17**. Seven questions had to be settled before architecture could start. The Business
+**2026-08-18**. Seven questions had to be settled before architecture could start. The Business
 Analyst presented each with a recommended default; the owner accepted all seven as-is.
 
 This ADR records those decisions so no later agent reopens them. Architectural mechanisms are

@@ -1,0 +1,13 @@
+# QA fixture config. The one M1 project is pinned to the real ADR-000 Q7 / ADR-000
+# decision (`codely-isuru/easy_clean_workforce`) so the SAME fixture file also backs the
+# @pytest.mark.live tests (which do hit the real repo). Fixture-driven (non-live) tests
+# never reach github.com at all -- GitHub calls are intercepted by the local scripted
+# server in _mock_upstreams.py -- so the coordinates below only matter for the request
+# PATH the adapter builds, not for real network access, in the non-live tests.
+version: 1
+projects:
+  easy_clean_workforce:
+    display_name: "EasyClean Workforce"
+    github:
+      owner: "codely-isuru"
+      repo: "easy_clean_workforce"
