@@ -12,8 +12,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sunil.capture import CaptureKind, CapturePolicy, CaptureRule, RetentionClass, Sensitivity
 from sunil.core.registry.agents import AgentDefinition, AgentRegistry
-from sunil.core.registry.capture import CaptureDefaults, CaptureKind, CaptureRegistry
+from sunil.core.registry.capture import CaptureRegistry
 from sunil.core.registry.loader import Registries
 from sunil.core.registry.model_catalogue import CapabilityDefinition, ModelDefinition, ModelRegistry
 from sunil.core.registry.permissions import PermissionRegistry
@@ -95,8 +96,10 @@ def build_test_registries() -> Registries:
 
     capture = CaptureRegistry(
         defaults={
-            kind: CaptureDefaults(
-                capture_policy="redacted_full", sensitivity="internal", retention_class="standard"
+            kind: CaptureRule(
+                capture_policy=CapturePolicy.REDACTED_FULL,
+                sensitivity=Sensitivity.INTERNAL,
+                retention_class=RetentionClass.STANDARD,
             )
             for kind in CaptureKind
         },

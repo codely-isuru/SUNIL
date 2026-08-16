@@ -16,7 +16,7 @@ import ast
 import pathlib
 
 import pytest
-from conftest import REPO_ROOT, SUNIL_PKG, require_dir
+from security_helpers import REPO_ROOT, SUNIL_PKG, require_dir
 
 
 def _python_files() -> list[pathlib.Path]:
