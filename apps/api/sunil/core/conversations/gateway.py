@@ -20,7 +20,7 @@ from sunil.redaction import scrub
 
 _ROLE_TO_SOURCE = {
     "user": ContentSource.OWNER,
-    "assistant": ContentSource.AGENT,
+    "assistant": ContentSource.SUNIL_GENERATED,
     "system": ContentSource.SYSTEM,
 }
 

@@ -13,8 +13,8 @@ from sunil.api.schemas import (
     ChatResponse,
     ChatTaskOut,
     ChatUsage,
-    KnownProjectOut,
     MessageOut,
+    ProjectSummary,
     TraceEntryOut,
 )
 
@@ -86,7 +86,7 @@ def test_chat_response_serialises_the_failure_shape_with_null_message_and_task()
 def test_chat_failure_carries_known_projects_for_unknown_project() -> None:
     failure = ChatFailure(
         kind="unknown_project",
-        known_projects=[KnownProjectOut(key="sample_project", display_name="Sample Project")],
+        known_projects=[ProjectSummary(key="sample_project", display_name="Sample Project")],
     )
 
     assert failure.known_projects[0].key == "sample_project"
