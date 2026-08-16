@@ -40,6 +40,7 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from sunil.capture import CaptureKind, ContentSource
 from sunil.core.orchestrator.guards import (
     ExecutionMetadata,
     InvalidPlanExecution,
@@ -51,7 +52,7 @@ from sunil.core.registry.loader import Registries
 from sunil.core.tool_framework.base import ToolAdapter, ToolResult
 from sunil.core.trace.context import NullTraceContext, TraceContext
 from sunil.core.trace.stages import TraceStage
-from sunil.db.capture import CaptureKind, ContentSource, resolve_capture
+from sunil.db.capture import resolve_capture
 from sunil.db.models import ToolCall
 from sunil.redaction import scrub
 
@@ -306,10 +307,10 @@ class ToolManager:
         ("T6 and T8 must call scrub() themselves").
         """
         decision = resolve_capture(
-            kind=CaptureKind.TOOL_CALL_RESULT,
+            kind=CaptureKind.TOOL_CALL,
             project_key=project_key,
             agent_id=meta.agent_id,
-            source=ContentSource.TOOL_EXTERNAL,
+            source=ContentSource.EXTERNAL_TOOL_RESULT,
         )
         # `apply_capture_to_content()` is typed for a single `str` column;
         # `tool_calls.result` is a JSON object, so the NONE/METADATA_ONLY
