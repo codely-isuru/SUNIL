@@ -6,9 +6,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import valid_config_files, write_config_dir
 from sunil.core.registry.capture import CaptureKind, load_capture
 from sunil.core.registry.errors import RegistrySchemaError
+
+from .conftest import valid_config_files, write_config_dir
 
 
 def test_loads_the_default_for_every_content_kind(valid_config_dir: Path) -> None:
