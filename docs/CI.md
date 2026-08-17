@@ -1,0 +1,449 @@
+# CI (T21/T22) — what each job does, and how to reproduce it locally
+
+**Owner:** OPS lane. **Workflow file:** `.github/workflows/ci.yml`. **Gates every merge**
+(`docs/GIT_WORKFLOW.md` rule 4, `docs/M1_BUILD_PLAN.md` §5 T21) — Delivery Manager does not
+merge a task branch until this is green.
+
+**T21** built the three jobs. **T22** hardened them after a real integration-only defect (see
+"Cross-lane test-collection collisions" below) and a security review (see "T22 security review
+findings" below). Both are folded into the same workflow file; this doc covers both.
+
+**Target environment:** the workflow runs on GitHub-hosted `ubuntu-latest` (Linux) runners. That
+is a different OS from this team's Windows 11 build machine. The commands below are written to be
+byte-identical between the two, and every one of them uses `python`, never `python3` — on Linux
+that would work either way, but this machine's `python3` is a broken Microsoft Store stub
+(`docs/ENVIRONMENT.md` §1), so the workflow is written the way a developer must also type it here.
+
+## Jobs
+
+| Job | Runs | Skips cleanly when | Becomes mandatory when |
+|---|---|---|---|
+| `backend` | cross-lane test-collection collision check → `pip install -e ".[dev]"` → `ruff check .` → `ruff format --check .` → `pytest -q -m "not live"` | never — `apps/api` exists from T1 | always mandatory |
+| `frontend` | `pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm build` | `apps/web/package.json` absent | `FRONTEND_REQUIRED: "true"` is set (flip the moment T14 merges to `main`) |
+| `security` | `pytest apps/api/tests/security -q -m "not live"` | `apps/api/tests/security/` absent | `SECURITY_SUITE_REQUIRED: "true"` is set (flip the moment T19 merges to `main`) |
+
+All three jobs run on every `push` and `pull_request`.
+
+## Repository visibility, and why it matters here
+
+`codely-isuru/SUNIL` is **public**. Every workflow run's log is world-readable. That changes the
+cost of a mistake: a CI job that ever holds a real credential and drops a variable into a log line
+publishes it to the internet, not merely to the team. Two consequences, both already applied:
+
+1. **No GitHub Actions secret is referenced anywhere in this file** — no `secrets.*`. The suite
+   runs entirely against fake literal placeholders (below) and a local SQLite file.
+2. **`permissions: contents: read`** is set at the workflow level. Nothing in these jobs writes to
+   the repo, comments on a PR, or touches packages/deployments, so the default `GITHUB_TOKEN` needs
+   nothing beyond read access — and that guarantee now lives in the reviewed file itself, not only
+   in a repository setting a different admin could flip later.
+
+## Fake settings values — present, but scoped to the steps that need them
+
+`sunil.settings.Settings()` has several required (non-defaulted) fields, so anything that imports
+`sunil.main` — including pytest collecting a test module that does so — needs *some* value for
+`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `SESSION_SECRET`, `OWNER_USERNAME`, `OWNER_PASSWORD` even in a
+test process that hasn't monkeypatched its own environment (mirrors
+`apps/api/tests/unit/test_settings.py`'s fixture values). These are **obviously-fake literal
+strings** (e.g. `sk-ant-fake-ci-value`), never a credential, and:
+
+- They are set only on the two `pytest` steps that actually need them (`backend`'s and
+  `security`'s), **not** at job or workflow level.
+- **Why that scoping matters (T22 security review finding 1):** `GITHUB_TOKEN` is a name that `gh`
+  and many third-party actions read from the ambient environment. A workflow-wide fake
+  `GITHUB_TOKEN` silently shadows the real one `actions/checkout` already provides via
+  `github.token` — harmless today (nothing calls `gh` here), but the first `gh pr comment` or
+  similar step anyone adds later would 401 with no obvious cause. Scoping the fake value to only
+  the `run:` step that needs it removes that trap entirely without giving anything up.
+- `.env` is never created, read, echoed, or uploaded as an artefact by CI.
+- Tests that need a real credential are marked `@pytest.mark.live` and deselected here with
+  `-m "not live"`.
+
+## The pytest exit-code family — "empty is not green" generalised
+
+`pytest`'s documented exit codes, and what each means for these jobs:
+
+| Exit code | Meaning | This workflow's response |
+|---|---|---|
+| 0 | all collected tests passed | step passes |
+| 1 | one or more tests failed | loud, explicit failure |
+| 2 | collection or execution was **interrupted** | loud, explicit failure |
+| 3 | internal pytest error | loud, explicit failure |
+| 4 | command-line usage error | loud, explicit failure |
+| 5 | **zero tests collected** | loud, explicit failure |
+
+T21 originally special-cased only exit 5 (a naive job that checks only for exit code `1` reports a
+zero-test run as green). **T22 generalises this to the whole family**, because exit **2** turned
+out to be the one that actually bit the team (see the incident below) and a job that only reacts
+to *some* nonzero codes with a real message, and others with silent nonzero propagation, is a job
+half the team will misread under time pressure. Every non-zero/non-one code now gets its own
+`::error::` line naming the failure class, not just a raw pytest exit code in the logs:
+
+```bash
+set +e
+python -m pytest -q -m "not live"
+code=$?
+set -e
+
+if [ "$code" -eq 0 ]; then
+  exit 0
+fi
+if [ "$code" -eq 1 ]; then
+  echo "::error::pytest reported one or more test failures (exit code 1)."
+  exit 1
+fi
+if [ "$code" -eq 5 ]; then
+  echo "::error::pytest collected zero tests (exit code 5). Empty is not green — treating as a failure."
+  exit 1
+fi
+echo "::error::pytest aborted abnormally (exit code $code) — the collection-error family (e.g. two lanes shipping same-named test modules -> exit 2; internal errors -> exit 3; usage errors -> exit 4). This is never a pass."
+exit 1
+```
+
+Independently verified by the Security Reviewer against the real workflow: the mapping is
+`0→0, 1→1, 2→2, 4→4, 5→1` at the `pytest` level, and every one of those exits the CI step/job
+non-zero — no path was found where a collection error reads as a pass.
+
+T1 shipped `apps/api/tests/unit/test_settings.py` specifically so exit 5 can never be hit by
+accident on the real suite — a deliberate, tested control, not a hypothetical.
+
+## Cross-lane test-collection collisions — an integration-only defect class
+
+**What happened (2026-08-14, during T22).** BE-2 built `task/T8-github-tool`'s base by merging
+`origin/task/T7-permissions` into `origin/task/T4-trace-spine`. The merged tree failed to collect
+*any* tests:
+
+```
+ERROR collecting tests/unit/test_capture.py
+import file mismatch:
+imported module 'test_capture' has this __file__ attribute:
+  ...\tests\unit\registry\test_capture.py
+which is not the same as the test file we want to collect:
+  ...\tests\unit\test_capture.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!
+1 error in 0.68s
+```
+
+T2 shipped `apps/api/tests/unit/test_capture.py`; T3 shipped
+`apps/api/tests/unit/registry/test_capture.py`. Neither test directory had an `__init__.py`, so
+pytest's default ("prepend") import mode imports each test file by its bare module name — and two
+files sharing a basename collide at import time, **aborting collection for the entire suite**
+(exit code **2**). Each lane was 100% green in isolation; the collision only exists once the two
+are merged, which is precisely the moment nobody is re-reading either lane's diff. Reproduced and
+confirmed independently as part of T22 (exit code 2, `1 error during collection`, zero tests run).
+
+**The fix that was tried and reverted, and why it matters.** `--import-mode=importlib` is the
+conventional fix for exactly this collision, and BE-1 tried it first while independently hitting
+the same collision merging T3 into T5's base. It was **reverted**: T3's registry tests use a bare
+`from conftest import ...`, which relies on prepend mode's implicit `sys.path` insertion of the
+test file's directory — `importlib` mode does not do that, so switching modes would have broken
+62 passing tests to fix a naming collision. **The smaller, ownership-respecting fix was used
+instead:** BE-1 renamed its own T2-owned file, `tests/unit/test_capture.py` →
+`tests/unit/test_db_capture.py` (BE-1 owns both T2 and T5, so this is a lane renaming its own
+earlier file, never another lane's). Full suite on that branch: **150 passed**, duplicate-basename
+check clean (verified independently as part of T22 against `origin/task/T5-api-skeleton`).
+
+**Lesson for whoever reaches for `--import-mode=importlib` next:** it is the textbook answer, and
+it is not free here. Check what the colliding lane's tests assume about import mechanics before
+switching modes for everyone.
+
+**What T22 added so the *class* is caught, not just this one instance:**
+
+1. **`scripts/check_test_basenames.py`** — a fast, dependency-free static check (no pip install
+   needed) that walks `apps/api/tests/` for any `test_*.py` file whose pytest-resolved dotted module
+   name (not just its bare basename — see "The false positive" below) collides with another's,
+   prints every colliding path, and exits 1. It runs as the **first** step of the `backend` job,
+   before install or lint, so a colliding merge fails at the cheapest possible point with a message
+   that names the exact files, rather than pytest's "import file mismatch" (which is correct but
+   does not, by itself, say "two lanes collided"). It also runs a second, related check for a bare
+   `conftest.py` import — added after a second, related incident; see "The second instance" below.
+2. **The exit-code-family handling above** — the general safety net. Even without the static
+   check, exit code 2 now produces an explicit `::error::` naming the collection-error family, not
+   a bare nonzero exit a reader has to go dig pytest's docs for.
+
+**Why *not* a hardcoded minimum collected-test count** (considered and rejected, per the Delivery
+Manager's ask to argue the call either way): with six lanes merging over a three-day build, any
+fixed number is stale within hours of being written. Set it too low and it catches nothing; set it
+to today's count and it false-fails the next legitimate smaller merge (e.g. a hotfix branch, or a
+lane still mid-task); keep raising it by hand and it becomes a number nobody trusts or bothers to
+update. A duplicate-basename scan has no such decay — it is exactly as correct on day one as on the
+last day of the milestone, and it fails on the actual defect rather than on an arbitrary threshold.
+
+## The second instance: a bare `conftest.py` import, one commit later
+
+**What happened.** The same defect class recurred immediately, from a different lane pair, in a
+different shape:
+
+```
+tests/unit/tool_framework/conftest.py   collides with   tests/security/conftest.py
+→ ImportError: cannot import name 'FAKE_ENV' (or, in an independent re-run below: 'REPO_ROOT')
+```
+
+**Reproduced against the real, current tree**, per the standard set on the first incident: checked
+out `origin/task/T8-github-tool` (`cd92706`, which carries `tests/unit/tool_framework/conftest.py`
+and, via its own earlier merge of `origin/task/T19-security`, `tests/security/conftest.py`), then
+merged in the latest `origin/task/T5-api-skeleton` tip (which itself already carries T1/T2/T4's
+review fixes, including the first incident's rename fix) — a clean, conflict-free merge. Full
+suite:
+
+```
+E       ImportError: cannot import name 'REPO_ROOT' from 'conftest'
+        (...\tests\unit\tool_framework\conftest.py)
+tests\security\test_prompt_injection.py:219: ImportError
+```
+
+`apps/api/tests/security/test_prompt_injection.py` (and four sibling files in the same suite,
+including `test_secret_exposure.py`) do `from conftest import REPO_ROOT, SUNIL_PKG` /
+`from conftest import FAKE_ENV, ...` — a **bare, non-relative import**. Neither `tests/security/`
+nor `tests/unit/tool_framework/` is a package (no `__init__.py`), so this is resolved by plain
+Python's `sys.modules` cache, not by pytest's own directory-scoped fixture lookup. Whichever
+`conftest.py` pytest happens to import *first* while walking the whole tree wins the bare name
+`"conftest"` in `sys.modules`; every later bare `from conftest import X` silently gets *that*
+module, and fails with `ImportError` for whatever name it doesn't define. Confirmed independently
+by also running each directory **by path** in isolation
+(`pytest tests/security -q`, `pytest tests/unit/tool_framework -q`): **zero `ImportError`s in
+either isolated run** — the collision only exists once both are collected in the same invocation,
+exactly matching the reported shape.
+
+**Is `conftest.py` a special case in the scan? Yes — but not by ignoring it, and not by flagging
+every duplicate.**
+
+`conftest.py` is the one basename that appears in every test directory *by design*: pytest finds
+and scopes fixtures from every `conftest.py` on the path to a test file automatically, with no
+import statement at all, and that is completely normal and never a collision risk by itself.
+Extending check 1's "flag any duplicate basename" rule to `conftest.py` would fire on every lane,
+every day, for a shape that is never actually a problem — pure noise, and noisy checks get muted or
+ignored, which is worse than not having the check.
+
+The Delivery Manager's own framing was: *"duplicate `conftest.py` files are fine until two of them
+define the same importable names and both directories are collected in one invocation."* That is
+the precisely correct physical description of when it breaks — but **it is the wrong thing to
+detect statically**, for the same reason a hardcoded test count is the wrong thing to detect
+statically: proving "these two `conftest.py`s define overlapping names" requires parsing every
+`conftest.py`'s top-level bindings (including anything built dynamically, `*`-imported, or
+assigned outside a simple `NAME = ...` line) and cross-referencing it against every bare import
+elsewhere in the tree, on every run, forever. Get that analysis even slightly wrong — a name built
+in a loop, an `__all__` re-export, a `from x import *` inside a `conftest.py` — and it produces a
+**false negative** on exactly the case that matters, which is worse than the noise it was avoiding.
+
+**The rule actually implemented (`find_bare_conftest_imports` in `check_test_basenames.py`) is
+narrower and does not depend on counting `conftest.py` files or their contents at all: flag a bare
+`from conftest import ...` / `import conftest` statement, anywhere under `apps/api/tests/`,
+unconditionally.** The argument: pytest already provides the correct, collision-proof mechanism for
+sharing a `conftest.py`'s contents — declare a fixture parameter, and pytest injects it by
+directory scope, no import required. The moment a test file reaches for a plain Python import of
+`conftest` instead, it has opted out of that mechanism and into the flat, package-free
+`sys.modules` cache that check 1's `test_*.py` collision already lives in — and it is *already*
+fragile the instant a second `conftest.py` exists **anywhere** in the tree that will ever be
+collected alongside it, which on a CI run of the whole suite is every `conftest.py` there is. There
+is no safe count of `conftest.py` files below which this pattern is fine; it is a defect in the
+import statement itself, present in the diff that wrote it, independent of what anything else in
+the tree happens to look like that day. Flagging the pattern rather than counting collisions has
+the same "no expiry, no recalibration" property as check 1's basename scan, and — unlike parsing
+for actual name overlaps — cannot produce a false negative: if the import is bare, it is wrong,
+full stop, regardless of whether today's tree happens to get away with it.
+
+**This is also, independently, why the check has to be static rather than pytest-invocation-based**
+(the Delivery Manager's other point): the lane that hit this was running its own suite **by path**
+as the workaround in force while collection is fragile — precisely the invocation shape that never
+triggers the collision (proven above: zero `ImportError`s when each directory runs alone). A check
+that only fires by observing a specific `pytest` invocation's behaviour is exactly the check that
+workaround bypasses. `check_test_basenames.py` never runs pytest at all — it reads source files
+directly off disk — so it fires the same way regardless of whether anyone is currently running the
+full suite, a subset by path, or nothing at all. It runs once, in CI, against the merged tree,
+which is the one invocation shape a per-lane workaround cannot opt out of.
+
+## The false positive: check 1 didn't know about package structure
+
+**What happened.** Check 1 flagged `tests/unit/providers/test_base.py` (T6) and
+`tests/unit/tool_framework/test_base.py` (T8) as a colliding basename. **BE-3 proved it was not a
+collision, and did the work before touching anything:**
+
+- both directories already carry their own `__init__.py`, so pytest imports them under distinct
+  dotted names — `providers.test_base` versus `tool_framework.test_base`;
+- confirmed by importing both in one interpreter session and getting two distinct module objects;
+- confirmed again by collecting both directories together: **57 passed, no `import file mismatch`**
+  (independently re-verified for this writeup against `origin/task/T10-agent-framework`, which
+  carries both directories — same result, 57 passed).
+
+BE-3 refused to rename a file that was not broken and reported the false positive instead — exactly
+the behaviour this whole check exists to encourage in others, now aimed correctly at itself.
+
+**The bug: check 1 grouped files by bare basename, the same shape as check 2's problem, applied to
+the wrong check.** A basename match is *necessary but not sufficient* for an actual pytest
+collision — pytest only collides on the basename when neither file's directory (nor any ancestor,
+up to the first that lacks one) has an `__init__.py`. Once package structure disambiguates two
+files, sharing a name is exactly as harmless as two classes in different modules sharing a method
+name. The check was checking the wrong condition.
+
+**The fix: `_pytest_module_name()` reconstructs pytest's own answer instead of approximating it.**
+For a given test file, walk up from its directory through every ancestor that has an `__init__.py`,
+collecting each ancestor's name, and stop at the first ancestor that does not — the same rule
+pytest's default ("prepend") import mode uses to decide how much of the path becomes part of the
+dotted module name versus where the bare `sys.path` insertion point sits. Two files collide if and
+only if this computed name is identical:
+
+```python
+def _pytest_module_name(path: Path, repo_root: Path) -> str:
+    components = [path.stem]
+    current = path.parent
+    while current != repo_root and (current / "__init__.py").exists():
+        components.append(current.name)
+        current = current.parent
+    return ".".join(reversed(components))
+```
+
+`tests/unit/test_capture.py` with no `__init__.py` anywhere on the path reduces to the bare name
+`test_capture`; `tests/unit/registry/test_capture.py`, also unpackaged at the time of the original
+incident, reduces to the same bare name — collision, correctly still caught. `providers/test_base.py`
+and `tool_framework/test_base.py`, each packaged in its own directory, reduce to
+`providers.test_base` and `tool_framework.test_base` — distinct, correctly no longer flagged.
+
+**Why this is the right shape of rule, not a decaying one:** "duplicate basenames matter only where
+package structure does not disambiguate them" is a property of the tree — computable, deterministic,
+and true or false the same way on every run — not a property of an invocation (like the "run by
+path" workaround) or a headcount that needs recalibrating (like a hardcoded minimum test count,
+already rejected above). It needed no threshold, no counting, and no new configuration; it needed
+the check to ask the same question pytest itself asks.
+
+**Proof, against real trees, both directions required:**
+
+| Tree | Real commits | Check 1 result |
+|---|---|---|
+| `59a1d37` (T4) merged with `a86db9d` (T7) — pre-package-fix, no `__init__.py` in either colliding directory | reconstructed from the original incident's exact commits | **FAIL** — `test_capture` collision correctly still detected |
+| `origin/task/T10-agent-framework` (`0b18870`) — carries both `tests/unit/providers/` and `tests/unit/tool_framework/`, each packaged | current, real branch tip | **OK** — 42 test files scanned, no collision reported; independently confirmed at the `pytest` level too: `pytest tests/unit/providers tests/unit/tool_framework -q` → **57 passed**, matching BE-3's own figure exactly |
+
+Both held, so the rule is right: check 1 now agrees with pytest's own import mechanics instead of
+approximating them with a bare filename comparison.
+
+## "Absent is green" — the other half of "empty is not green"
+
+The Security Reviewer's third finding: the `frontend` and `security` jobs' skip-cleanly guards
+were unconditional — they read "not present yet" as green **forever**, including after T14/T19
+land. A later accidental deletion or rename of `apps/web` or `apps/api/tests/security` would
+silently return the job to green, which is the same shape of silent-pass risk as the exit-5 trap,
+arriving through a different door (module presence rather than test count).
+
+**Fix:** each guard now checks a boolean env flag before treating absence as a skip:
+
+```bash
+if [ -f "apps/web/package.json" ]; then
+  echo "present=true" >> "$GITHUB_OUTPUT"
+elif [ "$FRONTEND_REQUIRED" = "true" ]; then
+  echo "::error::apps/web/package.json is missing, but FRONTEND_REQUIRED=true. Treating as a failure."
+  exit 1
+else
+  echo "present=false" >> "$GITHUB_OUTPUT"
+fi
+```
+
+`FRONTEND_REQUIRED` and `SECURITY_SUITE_REQUIRED` both ship `"false"`. **Action item for whoever
+merges T14 / T19 to `main`: flip the corresponding flag to `"true"` in the same PR (or immediately
+after) that lands the directory.** This is a one-line, reviewable, auditable change — a diff that
+flips `"false"` to `"true"` is exactly the kind of thing a reviewer notices, unlike a silently
+permissive default that nobody ever revisits. It deliberately is **not** the same mechanism as the
+duplicate-basename/minimum-count question above: that one is about *test collection health* inside
+a tree that exists; this one is about *whether a whole subtree that used to be required is still
+there at all*. Different failure shape, so a different, purpose-built guard — collapsing them into
+one mechanism would have made both harder to read for no shared benefit.
+
+## T22 security review findings — full disposition
+
+The Security Reviewer's verdict on the workflow, recorded because it should be, not buried:
+*"CI injection posture is excellent."* Zero `${{ }}` interpolations of untrusted input anywhere, no
+`pull_request_target`, no `workflow_run`, no `secrets.*` reference, `.env` never created, read, or
+uploaded, no artefact upload step at all. A malicious PR gets a restricted, read-only context with
+nothing in it worth exfiltrating.
+
+Three `should` findings, all addressed above:
+
+1. Workflow-wide `GITHUB_TOKEN` shadowed the name `gh`/actions read from the ambient environment →
+   scoped to only the two `pytest` steps that need it.
+2. No `permissions:` block (not a live hole — the repo's default Actions token is already
+   read-only with `can_approve_pull_request_reviews: false` — but the guarantee should live in the
+   reviewed file, not only in a repository setting) → `permissions: contents: read` added at
+   workflow level.
+3. "Empty is not green" (exit-5 handling) was defeated by "absent is green" (the frontend/security
+   skip guards never expiring) → the `*_REQUIRED` mandatory-flip pattern above.
+
+One `nit`, left as-is by conscious choice: actions are tag-pinned (`@v4`/`@v5`) rather than
+SHA-pinned. With a read-only token, no secrets, and no artefacts, the blast radius of a compromised
+action here is low, and the reviewer agreed this is genuinely low-stakes in this specific workflow.
+Revisit if a job ever gains write permissions or a real credential.
+
+**A new consumer of the duplicate-basename/collection-error guards:** `origin/task/T19-security`
+now carries `apps/api/tests/security/` (52 tests, a number of them red by design pending the rest
+of T19's build). Its `require()` helper calls `pytest.fail`, never `pytest.skip`, on exactly the
+reasoning in this document — a skipped security test reports green. Worth noting approvingly: T19
+independently arrived at "skip reads as green, so don't skip" for its own internal assertions, the
+same principle this file applies at the CI-job level.
+
+## Reproducing the `backend` job locally (Windows, PowerShell)
+
+```powershell
+python scripts\check_test_basenames.py
+cd apps\api
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m ruff format --check .
+.\.venv\Scripts\python.exe -m pytest -q -m "not live"
+```
+
+`scripts\dev-api.ps1` does the venv-creation and install steps for you as part of bringing the
+API up for local development.
+
+## Reproducing the `frontend` job locally
+
+Only once `apps/web` exists (T14):
+
+```powershell
+cd apps\web
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+```
+
+## Reproducing the `security` job locally
+
+Only once `apps/api/tests/security` exists (T19):
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python.exe -m pytest tests\security -q -m "not live"
+```
+
+## Why the frontend/security "skip cleanly" checks are step-level, not a job-level `if:`
+
+The build plan's own wording (`M1_BUILD_PLAN.md` §5 T21) suggests
+`if: hashFiles('apps/web/package.json') != ''` at the job level. That condition is evaluated
+**before any step in the job runs — including `actions/checkout`** — so at evaluation time the
+runner's workspace is empty regardless of what exists in the repository, and `hashFiles()` would
+not reliably reflect the real repo state. This workflow instead checks out the repo first, then
+uses a step with an `id:` to test for the file/directory's existence and gates every later step
+in the job on that step's output (`steps.web.outputs.present == 'true'` /
+`steps.sec.outputs.present == 'true'`). The effect is identical to the plan's intent — the job
+goes green with nothing to do rather than failing red — but it actually works.
+
+## What CI cannot enforce — needs a human/process rule instead
+
+- **No self-merges and no direct commits to `main`.** CI validates a branch; it does not stop
+  someone from pushing straight to `main` or merging their own work. `docs/GIT_WORKFLOW.md` rules
+  1 and 5 are the enforcement mechanism, and they are procedural, not technical, in this
+  repository (no branch-protection API access was exercised as part of T21/T22). If GitHub branch
+  protection (required status checks, required reviewers, no direct pushes) is available to this
+  repo, turning it on converts these from human rules into enforced ones — recommended, but out of
+  T21/T22's scope as specified.
+- **Merge order following dependency order** (a stacked branch is never merged before its base) —
+  CI has no concept of the task dependency graph in `M1_BUILD_PLAN.md` §1; only the Delivery
+  Manager tracking that manually (or a future check reading `docs/tasks/*` metadata) enforces it.
+- **Rebase-not-merge and `--no-ff` at merge time** — these are `git` invocation choices the
+  Delivery Manager makes by hand; nothing in the workflow inspects how a merge commit was made.
+- **"A test is never weakened, skipped or deleted to make it pass"** — CI can only tell you the
+  suite that exists is green; it cannot tell you whether yesterday's suite was quietly made
+  smaller. That is a review-time judgement (QA/Security reading the diff), not a CI check.
+- **Flipping `FRONTEND_REQUIRED` / `SECURITY_SUITE_REQUIRED` when T14/T19 land** — CI cannot know
+  "this task has now landed on `main`"; a human (Delivery Manager, at merge time) has to make that
+  edit. Until it happens, a deleted `apps/web` or `apps/api/tests/security` still reads as a clean
+  skip, not a failure.
+- **Announcing "green" in the Delivery Manager's thread** when a dependency branch becomes
+  consumable (§0.1 rule 2) — a purely communication step; CI has no thread to post to.

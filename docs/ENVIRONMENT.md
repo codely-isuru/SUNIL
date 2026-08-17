@@ -10,7 +10,8 @@ below were run and their exact output is reflected in the "Version / evidence" c
 **Target stack (`docs/ROADMAP.md` §4):** Python + FastAPI + PostgreSQL + pgvector + Redis +
 Docker (backend), Next.js/React/Tailwind (frontend), on Windows 11.
 
-**Survey date:** 2026-08-13.
+**Survey date:** 2026-08-13. **Docker section corrected 2026-08-14 (T21)** — the daemon has since
+been started; see §3.
 
 ---
 
@@ -55,6 +56,28 @@ yarn. Do not `npm install` at repo root — the new frontend should get its own 
 
 ## 3. Docker
 
+**Updated 2026-08-14 (T21) — corrects the 2026-08-13 survey below, which is now stale.**
+
+| Check | Result |
+|---|---|
+| `docker --version` | Docker version 29.7.2, build a7dcaa6 |
+| `docker compose version` | Docker Compose version v5.3.1 |
+| `docker info` | **Server section now returns.** `OperatingSystem: Docker Desktop`, `OSType: linux`, `ServerVersion: 29.7.2` — Linux containers, confirmed live by direct re-check during T21 |
+
+**Docker Desktop's daemon is now running** (it was not, at the 2026-08-13 survey below — someone
+started it since). Linux containers, Compose v5.3.1, server 29.7.2, all verified. This makes the
+no-Docker path a **contingency**, not the plan (`docs/ARCHITECTURE_V1.md` §15 item 5) — it does
+**not** put Docker/Postgres/Redis back on M1's critical path. SQLite remains the M1 default
+(ADR-001); Docker is still needed before Gate 3 to verify the Alembic migration once against real
+PostgreSQL (debt D-2).
+
+**V1 implication:** `docker compose up` for Postgres/Redis/pgvector containers will now work as
+soon as a compose file exists (T17, optional/post-M1 per `docs/M1_BUILD_PLAN.md` §9 — no compose
+file is committed yet as of T21). Nothing in M1's critical path depends on this.
+
+<details>
+<summary>Original 2026-08-13 survey (superseded by the above; kept for history)</summary>
+
 | Check | Result |
 |---|---|
 | `docker --version` | Docker version 29.7.2, build a7dcaa6 |
@@ -71,6 +94,8 @@ until a human starts Docker Desktop (which will spin the WSL2 distro back up
 automatically). This is a two-second manual action, not an install — no CLI command is
 needed, just launching the Docker Desktop application. Linux containers are supported
 (WSL2 backend, confirmed by the `docker-desktop` distro) once the daemon is up.
+
+</details>
 
 ---
 
@@ -171,14 +196,14 @@ variables at deploy time — not read from this ambient shell and not committed 
 In priority order (suggested commands are for the human to run; none were executed by this
 survey):
 
-1. **Start Docker Desktop** (daemon is installed but not running). This blocks Postgres,
-   pgvector, and Redis entirely for local dev, since neither is installed natively.
-   Suggested action: launch the Docker Desktop application from the Start Menu, then verify
-   with `docker info` (should show a populated `Server:` section).
+1. ~~**Start Docker Desktop**~~ — **done, corrected 2026-08-14 (T21).** The daemon is now
+   running (server 29.7.2, Linux containers, Compose v5.3.1 — see §3 above, re-verified during
+   T21). This is no longer a gap and is not on M1's critical path either way (ADR-001/005/013).
 
-2. **Bring up the Postgres + pgvector + Redis containers** once Docker is running. No
-   `docker-compose.yml` exists yet in the repo (Step 1 of `ROADMAP.md` §23 is not started).
-   Suggested action (once the compose file is authored in Stage 4): `docker compose up -d`.
+2. **Bring up the Postgres + pgvector + Redis containers**, once a compose file exists. No
+   `docker-compose.yml` is committed yet — that is T17's scope, and T17 is pre-classified
+   optional/post-M1 (`docs/M1_BUILD_PLAN.md` §9). Suggested action, if/when T17 is built:
+   `docker compose up -d`.
 
 3. **Decide and provision provider credentials** (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` or
    equivalent) via the secrets manager for the Model Router providers — currently absent
