@@ -46,6 +46,7 @@ def _fake_settings() -> Settings:
         _env_file=None,
         anthropic_api_key=SecretStr("sk-ant-fake-test-value"),
         github_token=SecretStr("github_pat_fake-test-value"),
+        openai_api_key=SecretStr("sk-fake-test-value-for-openai"),
         session_secret=SecretStr("fake-test-session-secret"),
         owner_username="test-owner",
         owner_password=SecretStr("fake-test-owner-password"),

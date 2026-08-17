@@ -30,6 +30,7 @@ SUNIL_PKG = REPO_ROOT / "apps" / "api" / "sunil"
 FAKE_ENV: dict[str, str] = {
     "ANTHROPIC_API_KEY": "sk-ant-fake-security-suite-value",
     "GITHUB_TOKEN": "github_pat_fake-security-suite-value",
+    "OPENAI_API_KEY": "sk-fake-security-suite-value-for-openai",
     "SESSION_SECRET": "fake-security-suite-session-secret",
     "OWNER_USERNAME": "security-suite-owner",
     "OWNER_PASSWORD": "fake-security-suite-owner-password",

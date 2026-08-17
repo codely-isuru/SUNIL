@@ -47,6 +47,7 @@ _ALEMBIC_INI = _API_DIR / "alembic.ini"
 _REQUIRED_ENV = {
     "ANTHROPIC_API_KEY": "sk-ant-fake-main-app-test",
     "GITHUB_TOKEN": "github_pat_fake-main-app-test",
+    "OPENAI_API_KEY": "sk-fake-main-app-test-for-openai",
     "SESSION_SECRET": "fake-session-secret-main-app-test",
     "OWNER_USERNAME": "test-owner",
     "OWNER_PASSWORD": "fake-owner-password-main-app-test",

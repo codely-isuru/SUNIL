@@ -114,6 +114,10 @@ def register_secrets_from_settings(settings: Any) -> None:
     """
     register(settings.anthropic_api_key.get_secret_value(), name="anthropic_api_key")
     register(settings.github_token.get_secret_value(), name="github_token")
+    # T23: the second provider's key is exactly as registrable as the
+    # first's — §9.1 registers secrets "regardless of their value", not
+    # only the ones a given milestone happens to call with.
+    register(settings.openai_api_key.get_secret_value(), name="openai_api_key")
     register(settings.session_secret.get_secret_value(), name="session_secret")
     register(settings.owner_password.get_secret_value(), name="owner_password")
     # The password embedded in a Postgres DATABASE_URL, if any (ADR-006:
