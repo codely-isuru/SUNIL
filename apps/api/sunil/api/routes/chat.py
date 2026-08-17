@@ -13,12 +13,19 @@ ADR-018 shape: `Depends(get_session)` (which itself reads
 `LiveTraceContext` `handle_chat_turn()` needs a sessionmaker (not a
 session) to construct — the same per-application state ADR-018
 established, never a module-level cache.
+
+**`TurnResult`/`TurnExecutor` are defined in
+`sunil.core.orchestrator.contracts`, not here** (moved there by T11b):
+`core/orchestrator/turn.py`'s `LiveTurnExecutor` needs both types, and
+`core/` may never import `sunil.api`
+(`tests/security/test_import_boundaries.py
+::test_core_never_imports_the_api_layer`, ARCHITECTURE_V1.md §3.1). Both
+are re-exported here unchanged so every existing
+`from sunil.api.routes.chat import TurnExecutor, TurnResult` import
+keeps working.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -41,70 +48,22 @@ from sunil.core.conversations.gateway import (
     persist_message,
 )
 from sunil.core.memory.short_term import read_recent_messages, record_short_term_memory_retrieval
+from sunil.core.orchestrator.contracts import TurnExecutor, TurnResult
 from sunil.core.trace.context import LiveTraceContext, TraceContext
 from sunil.core.trace.stages import TraceStage
 from sunil.db.models import AuditEvent, LLMCall, Task
 from sunil.db.session import get_session
 
-
-@dataclass(frozen=True)
-class TurnResult:
-    """What a `TurnExecutor` returns — the orchestration outcome the
-    chat route maps onto the frozen §6 envelope's `outcome`/`failure`/
-    `task`/`message` fields. Carries no trace or usage data itself: those
-    come from `audit_events`/`llm_calls`, read back by the route after
-    the executor returns (§8.1's own "reconstructable from logs alone").
-    """
-
-    outcome: str  # "ok" | "failed" -- §6's own two values
-    failure_kind: str | None
-    known_projects: list[dict[str, str]] | None
-    task_id: str | None
-    assistant_content: str | None
-
-
-@runtime_checkable
-class TurnExecutor(Protocol):
-    """Stages 4-11 of `ARCHITECTURE_V1.md` §3.4, behind one seam.
-
-    `@runtime_checkable` here is not a security boundary the way it would
-    be on `ValidatedPlan` or `ExecutionMetadata` — nothing ever chooses an
-    executor by `isinstance()`-checking untrusted input; the concrete
-    executor is wired once, by trusted code, at construction time. Unlike
-    those two, making this Protocol duck-typeable costs nothing, so it is
-    left on for testability.
-
-    **Verified against what T10 actually shipped** (`core/agent_framework
-    /runner.run_agent()`), not against the build plan's description of it,
-    per `tests/unit/api_routes/test_chat_turn_executor_fits_t10.py`:
-    `run_agent()` needs a real `Task` (already created), an
-    `AgentRegistry`, a `ModelRouter`, a `ToolManager` and an `agents`
-    mapping — none of which `run_turn()`'s four parameters carry. The
-    seam still fits, proven concretely with T10's real runner, but only
-    because a concrete `TurnExecutor` holds those as **constructor**
-    dependencies (this Protocol's four call-time parameters are enough to
-    drive it) and internally does the planning + Task/Workflow creation +
-    `run_agent()` call + `AgentResult -> TurnResult` mapping.
-
-    **The one place that mapping needs care:** `AgentResult.error_kind`
-    is an open string (e.g. `"agent_crashed"`); `ChatFailure.kind` is a
-    `Literal` of exactly the four §6 values. Whatever builds the real
-    `TurnResult` must canonicalise every `AgentResult.error_kind` onto
-    `provider_error|tool_failed|plan_rejected|unknown_project` before
-    returning it — an uncanonicalised value fails as a Pydantic
-    `ValidationError` inside `handle_chat_turn()`, not as a clean `failed`
-    outcome.
-    """
-
-    async def run_turn(
-        self,
-        *,
-        request_id: str,
-        user_id: str,
-        conversation_id: str,
-        message: str,
-        trace: TraceContext,
-    ) -> TurnResult: ...
+__all__ = [
+    "StubTurnExecutor",
+    "TurnExecutor",
+    "TurnResult",
+    "chat",
+    "handle_chat_turn",
+    "read_trace_entries",
+    "read_usage",
+    "router",
+]
 
 
 class StubTurnExecutor:
@@ -330,10 +289,36 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 # Stateless, so a single shared instance is harmless — unlike
 # `engine`/`sessionmaker`, nothing about this stub varies per `Settings`,
 # so this is not the module-level-cache pattern ADR-018 exists to remove.
-# T11b replaces this with a constructor call building the real executor
-# from `app.state.registries`, at which point this becomes a per-app value
-# too.
+# T11b's real executor (`core.orchestrator.turn.LiveTurnExecutor`) needs a
+# per-request `session` plus per-app collaborators
+# (`registries`/`model_router`/`tool_manager`/`agents`) that only a real
+# `create_app()` lifespan populates on `app.state` — see `_build_executor()`
+# below. This stub stays the fallback for any test fixture (like this
+# module's own `test_chat_route.py`) that builds a bare `FastAPI` app with
+# `chat.router` mounted directly, without wiring those, exactly as T11a's
+# own docstring promised: "T11b wires in the real one without this file
+# changing".
 _TURN_EXECUTOR = StubTurnExecutor()
+
+
+def _build_executor(request: Request, session: AsyncSession) -> TurnExecutor:
+    """The real `LiveTurnExecutor` when `request.app.state.registries` is
+    present (i.e. built via `sunil.main.create_app()`'s lifespan, which
+    also sets `model_router`/`tool_manager`/`agents`) — the module-level
+    `StubTurnExecutor` otherwise, so a bare-`FastAPI` test fixture that
+    never wires those keeps working unmodified."""
+    if getattr(request.app.state, "registries", None) is None:
+        return _TURN_EXECUTOR
+
+    from sunil.core.orchestrator.turn import LiveTurnExecutor
+
+    return LiveTurnExecutor(
+        session=session,
+        registries=request.app.state.registries,
+        model_router=request.app.state.model_router,
+        tool_manager=request.app.state.tool_manager,
+        agents=request.app.state.agents,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -366,7 +351,7 @@ async def chat(
         return await handle_chat_turn(
             session,
             trace,
-            executor=_TURN_EXECUTOR,
+            executor=_build_executor(request, session),
             user_id=user_id,
             request_id=request_id,
             message=payload.message,

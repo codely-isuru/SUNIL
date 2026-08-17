@@ -84,3 +84,49 @@ def test_turn_clock_is_started_on_every_request() -> None:
     response = client.get("/echo")
 
     assert response.json()["has_turn_clock"] is True
+
+
+def test_build_session_middleware_unwraps_the_secret_and_is_usable() -> None:
+    """`sunil.main.create_app()` used to call
+    `settings.session_secret.get_secret_value()` directly, which
+    `tests/security/test_import_boundaries.py
+    ::test_agents_never_unwrap_a_secret` correctly flags: `sunil/main.py`
+    is not on that test's allow-list (`providers/`, `tools/`, `db/`,
+    `api/`, `settings.py`, `redaction.py`). This factory moves the unwrap
+    into `sunil/api/middleware.py`, which is — `main.py` calls this
+    instead of unwrapping the secret itself."""
+    from dataclasses import dataclass
+
+    from starlette.applications import Starlette
+    from starlette.responses import Response
+    from starlette.routing import Route
+    from sunil.api.middleware import build_session_middleware
+
+    @dataclass
+    class _FakeSecretStr:
+        value: str
+
+        def get_secret_value(self) -> str:
+            return self.value
+
+    @dataclass
+    class _FakeSettings:
+        session_secret: _FakeSecretStr
+        session_cookie_name: str = "sunil_session"
+
+    settings = _FakeSettings(session_secret=_FakeSecretStr("a-fake-session-secret-for-this-test"))
+    middleware = build_session_middleware(settings)
+
+    async def _set_session(request):
+        request.session["marker"] = "present"
+        return Response(status_code=204)
+
+    app = Starlette(
+        routes=[Route("/set", _set_session, methods=["POST"])], middleware=[middleware]
+    )
+    client = TestClient(app)
+
+    response = client.post("/set")
+
+    assert response.status_code == 204
+    assert "sunil_session" in response.cookies

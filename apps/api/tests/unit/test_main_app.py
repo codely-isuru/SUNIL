@@ -430,3 +430,35 @@ def test_projects_endpoint_reads_the_real_committed_projects_yaml(
     assert response.json() == {
         "projects": [{"key": "easy_clean_workforce", "display_name": "EasyClean Workforce"}]
     }
+
+
+def test_chat_route_is_registered_on_the_real_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T11b's one-line addition to this module: `chat.router` must be
+    mounted, or the endpoint T11a built is unreachable through the real
+    app (it is otherwise only exercised by hand-built bare-`FastAPI` route
+    tests). A 401 (not 404) proves the route exists and auth-gates it —
+    the same shape `test_routes_projects.py` uses for its own route."""
+    db_path = tmp_path / "main_app_chat_registered.db"
+    _set_required_env(monkeypatch, db_path)
+    _migrate_to_head(db_path)
+
+    from sunil.main import create_app
+
+    app = create_app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "hello", "conversation_id": None},
+            headers={
+                "X-SUNIL-Client": "web",
+                "X-Request-Id": "0189d0b3-0000-4000-8000-000000000099",
+            },
+        )
+
+    assert response.status_code == 401, (
+        f"expected 401 (no session) proving the route exists, got {response.status_code}: "
+        f"{response.text[:300]}"
+    )

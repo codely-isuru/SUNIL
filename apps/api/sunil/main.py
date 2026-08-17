@@ -27,13 +27,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 
-from sunil.api.middleware import RequestContextMiddleware
-from sunil.api.routes import auth, health, projects
+from sunil.agents.project_manager.agent import ProjectManagerAgent
+from sunil.api.middleware import RequestContextMiddleware, build_session_middleware
+from sunil.api.routes import auth, chat, health, projects
+from sunil.core.orchestrator.turn import DatabaseLLMCallRecorder
 from sunil.core.registry.loader import load_registries
+from sunil.core.routing.router import ModelRouter
+from sunil.core.tool_framework.manager import build_tool_manager
 from sunil.db.session import assert_alembic_head, get_engine, get_sessionmaker
 from sunil.logging import configure_logging
+from sunil.providers.registry import build_provider_registry
 from sunil.redaction import register_secrets_from_settings
 from sunil.settings import Settings
 
@@ -70,6 +74,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # head and refuses to boot otherwise (§7.4).
     await assert_alembic_head(app.state.engine, expected_head=EXPECTED_ALEMBIC_HEAD)
 
+    # T11b: the turn orchestrator's collaborators, built once per app
+    # (never per-request, never process-global — ADR-018) and read by
+    # `sunil.api.routes.chat._build_executor()` from `app.state`. Kept
+    # here, alongside `registries`, rather than inside `create_app()`
+    # itself, because both the Model Router's provider registry and the
+    # Tool Manager's GitHub adapter are built from `settings` + the very
+    # `registries` this lifespan just loaded.
+    provider_registry = build_provider_registry(settings=settings, model_registry=registries.models)
+    app.state.model_router = ModelRouter(
+        model_registry=registries.models,
+        provider_registry=provider_registry,
+        recorder=DatabaseLLMCallRecorder(sessionmaker=app.state.sessionmaker),
+    )
+    app.state.tool_manager = build_tool_manager(
+        settings=settings, registries=registries, sessionmaker=app.state.sessionmaker
+    )
+    # M1's one agent (ADR-000 Q2) -- stateless, so one shared instance per
+    # app is correct, not a process-global cache (nothing about it varies
+    # per request or per `Settings`).
+    app.state.agents = {"project_manager": ProjectManagerAgent()}
+
     yield
 
 
@@ -98,15 +123,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_age=600,
         ),
         Middleware(RequestContextMiddleware),
-        Middleware(
-            SessionMiddleware,
-            secret_key=settings.session_secret.get_secret_value(),
-            session_cookie=settings.session_cookie_name,
-            max_age=86400,
-            same_site="lax",
-            https_only=False,  # local dev is http://localhost; flip when hosted over TLS
-            path="/",
-        ),
+        # Unwrapping `settings.session_secret` happens inside
+        # `build_session_middleware()`, not here — `sunil/main.py` is not
+        # on the allow-list `tests/security/test_import_boundaries.py
+        # ::test_agents_never_unwrap_a_secret` checks.
+        build_session_middleware(settings),
     ]
 
     app = FastAPI(title="SUNIL API", middleware=middleware, lifespan=lifespan)
@@ -122,5 +143,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(health.router)
     app.include_router(projects.router)
+    # T11a built POST /api/v1/chat behind chat.router; this is T11b's one
+    # line to actually mount it — without it the endpoint exists in code
+    # but is unreachable through the real app (ADR-018: registration
+    # happens once, here, on this app's own router table).
+    app.include_router(chat.router)
 
     return app
