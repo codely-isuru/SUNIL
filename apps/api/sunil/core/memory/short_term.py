@@ -17,8 +17,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sunil.capture import CaptureKind, ContentSource
-from sunil.db.capture import resolve_capture
+from sunil.db.capture import apply_capture_to_content, resolve_capture
 from sunil.db.models import Memory, MemoryType, Message
+from sunil.redaction import scrub
 
 _DEFAULT_LIMIT = 20
 
@@ -53,16 +54,26 @@ async def record_short_term_memory_retrieval(
 ) -> Memory:
     """Stage 3's own persistence: one `memories` row per turn, `type=
     short_term`, `source_request_id` set to this request (FR-144).
+
+    `content` is redacted (`scrub()`, ADR-006) and passed through
+    `apply_capture_to_content()` (ADR-014) before it reaches the
+    database, exactly as `conversations.gateway.persist_message()` does
+    for `messages.content` — every capture-table content write goes
+    through both, regardless of whether the specific string being
+    written today looks like it could carry a secret; the mechanism does
+    not get to depend on that judgement call holding forever.
     """
     decision = resolve_capture(kind=CaptureKind.MEMORY, source=ContentSource.SYSTEM)
+
+    raw_content = (
+        f"Retrieved {message_count} prior message(s) from conversation "
+        f"{conversation_id} as context for this request."
+    )
 
     memory = Memory(
         user_id=user_id,
         type=MemoryType.SHORT_TERM.value,
-        content=(
-            f"Retrieved {message_count} prior message(s) from conversation "
-            f"{conversation_id} as context for this request."
-        ),
+        content=apply_capture_to_content(decision, scrub(raw_content)),
         source_request_id=source_request_id,
         capture_policy=decision.capture_policy.value,
         sensitivity=decision.sensitivity.value,
