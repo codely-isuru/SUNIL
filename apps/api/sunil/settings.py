@@ -89,6 +89,12 @@ def _redact_validation_error(exc: ValidationError) -> ValidationError:
 _CANONICAL_BASE_URLS: dict[str, str] = {
     "anthropic_base_url": "https://api.anthropic.com",
     "github_api_base_url": "https://api.github.com",
+    # Verified from the installed `openai==3.1.0` SDK's own `_client.py`
+    # (T23): its default, when neither the `base_url` kwarg nor
+    # `OPENAI_BASE_URL` is set, is `https://api.openai.com/v1` — note the
+    # `/v1` suffix, unlike Anthropic's bare host. Copying Anthropic's value
+    # here would be wrong, not just inconsistent.
+    "openai_base_url": "https://api.openai.com/v1",
 }
 
 
@@ -169,6 +175,15 @@ class Settings(BaseSettings):
     github_token: SecretStr = Field(
         description="Read-only GitHub PAT, used only by sunil/tools/github."
     )
+    # T23 (2026-08-17): the owner has an OpenAI key but not yet an
+    # Anthropic one — OpenAI is wired first, Anthropic added later
+    # (docs/SECRETS_SETUP.md §0). No `default=`: same as the two secrets
+    # above, a missing value is a startup failure, not a silently-disabled
+    # provider (ADR-003 fails closed on a misconfigured provider registry,
+    # not on a missing key masquerading as "not configured").
+    openai_api_key: SecretStr = Field(
+        description="OpenAI API key, used only by sunil/providers/openai.py."
+    )
 
     # -- Upstream base URLs (A-11, ADR-017) ---------------------------------
     # `github_api_base_url` started life as a T8 ad hoc, unvalidated addition
@@ -197,6 +212,19 @@ class Settings(BaseSettings):
         description="tools/github — prefixed onto every request path. Non-canonical values "
         "must be loopback (§9.7).",
     )
+    # T23 (2026-08-17): same ADR-017 reasoning as the two fields above,
+    # applied to the new second provider — a redirected base leaks both
+    # the prompt and the key identically regardless of which vendor is on
+    # the other end. Note the `/v1` path suffix in the default: verified
+    # directly against the installed `openai==3.1.0` client's own
+    # resolution order (`base_url` kwarg -> `OPENAI_BASE_URL` env ->
+    # `https://api.openai.com/v1`) rather than assumed from Anthropic's
+    # bare-host shape.
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description="providers/openai — passed as base_url= explicitly. Non-canonical "
+        "values must be loopback (§9.7).",
+    )
 
     @field_validator("anthropic_base_url")
     @classmethod
@@ -207,6 +235,11 @@ class Settings(BaseSettings):
     @classmethod
     def _check_github_api_base_url(cls, value: str) -> str:
         return _validate_base_url("github_api_base_url", value)
+
+    @field_validator("openai_base_url")
+    @classmethod
+    def _check_openai_base_url(cls, value: str) -> str:
+        return _validate_base_url("openai_base_url", value)
 
     # -- Session ------------------------------------------------------------
     session_secret: SecretStr = Field(description="Signing key for SessionMiddleware's cookie.")
