@@ -756,7 +756,7 @@ not a post-hoc filter; it is part of the grammar.
         "required":["id","action"],
         "properties":{
           "id":     {"type":"string"},
-          "action": {"type":"string","enum":["resolve_project","load_recent_activity","summarise_activity"]},
+          "action": {"type":"string","enum":["resolve_project","list_recent_activity","summarise_activity"]},
           "tool":   {"type":"string","enum":["github","none"]}
         }}}
   }

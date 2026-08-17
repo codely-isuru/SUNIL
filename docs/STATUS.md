@@ -168,9 +168,10 @@ moves under a branch that is already green. Both halves of that trade are now on
 * **Exclusive file ownership** prevented every cross-lane collision except one, and that
   one (`sunil/capture.py`, created independently by two lanes) came from an ambiguous DM
   instruction rather than from the rule failing.
-* `docs/ARCHITECTURE_V1.md:759`'s worked-example plan JSON names `load_recent_activity`;
-  the real `config/tools.yaml` registers `list_recent_activity`. QA copied the doc and lost
-  an hour to it. Architect's to correct.
+* ~~`docs/ARCHITECTURE_V1.md:759`'s worked example named `load_recent_activity`~~ **FIXED
+  2026-08-17.** The real `config/tools.yaml` registers `list_recent_activity`; QA copied the
+  doc and lost an hour to it. Corrected at source, and the repo now has no remaining
+  reference to the wrong spelling.
 
 ---
 
