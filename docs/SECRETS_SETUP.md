@@ -16,6 +16,26 @@ in place.
 
 ---
 
+## 0. Which model provider — decided 2026-08-17
+
+The owner asked whether SUNIL could use the existing **Claude subscription** instead of an
+API key. **It cannot.** The subscription authenticates the Claude apps and Claude Code;
+calling a model from our own application goes through the metered Anthropic API, which has
+its own keys. There is no supported way to point the Model Router at subscription
+credentials, and borrowing Claude Code's own token would be unsupported and would break on
+any rotation.
+
+**Decision: wire OpenAI first (the owner already has that key), add Anthropic later.** Two
+registered providers is the V1 target state regardless — the Model Router selects per
+capability. This is also the first real test of ADR-003's claim that a provider can be added
+without touching an agent.
+
+**So the credential you need first is `SUNIL_OPENAI_API_KEY`.** The Anthropic section below
+stays accurate for when you add that key; neither is required for the 513 tests that already
+pass on fixtures.
+
+---
+
 ## 1. Anthropic API key
 
 **Where:** <https://console.anthropic.com/settings/keys> → *Create Key*.
