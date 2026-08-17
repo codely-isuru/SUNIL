@@ -227,3 +227,47 @@ def test_build_github_adapter_reads_the_base_url_from_settings() -> None:
     adapter = build_github_adapter(settings=_FakeSettings(), projects=_project_registry())
 
     assert adapter._base_url == "https://fake-configured-host.test"  # noqa: SLF001 - white-box
+
+
+async def test_the_real_client_is_constructed_with_follow_redirects_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-017: a redirected base sends `Authorization: Bearer <PAT>`
+    onward to whatever host issued the redirect. httpx defaults to
+    `follow_redirects=False` already, so this must be **stated
+    explicitly** at the one place this adapter builds its own client (no
+    injected test client) — an implicit default is not a control, and a
+    later engineer adding `follow_redirects=True` to chase a GitHub 301
+    would silently reopen the exfiltration path. Exercised end to end,
+    not read off the source as a string: this test never injects a
+    client, so `GitHubAdapter` must build its own real `httpx.AsyncClient`
+    and this test captures the kwargs it was actually constructed with.
+    """
+    captured_kwargs: dict[str, object] = {}
+    real_async_client = httpx.AsyncClient
+
+    class _RecordingAsyncClient(real_async_client):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            captured_kwargs.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _RecordingAsyncClient)
+
+    # A loopback address nothing listens on and a short timeout -- the
+    # connection fails fast (connection refused) rather than hanging or
+    # reaching the real network. Only the client's own constructor kwargs
+    # are under test; the request itself is expected to fail.
+    adapter = GitHubAdapter(
+        projects=_project_registry(),
+        token="fake-test-token",
+        base_url="http://127.0.0.1:1",
+        timeout_s=1.0,
+    )
+    await adapter.operations["list_recent_activity"].handler(
+        GitHubListRecentActivityParams(project_key="sample_project")
+    )
+
+    assert captured_kwargs.get("follow_redirects") is False, (
+        f"httpx.AsyncClient was constructed without an explicit follow_redirects=False: "
+        f"{captured_kwargs}"
+    )

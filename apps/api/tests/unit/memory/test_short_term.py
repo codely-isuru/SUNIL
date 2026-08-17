@@ -81,3 +81,37 @@ async def test_record_short_term_memory_retrieval_writes_a_memories_row(
     assert memory.source_request_id == "req-1"
     assert "3" in memory.content
     assert memory.sensitivity == "internal"
+
+
+async def test_record_short_term_memory_retrieval_redacts_a_registered_secret_from_content(
+    session: AsyncSession, user_and_conversation: tuple[User, Conversation]
+) -> None:
+    """ADR-006: every capture-table content write must scrub() before the
+    row reaches the database — `persist_message()` already does this;
+    this writer must too, even though its own content string is normally
+    a fixed pointer/summary rather than raw conversation text. The
+    `conversation_id` this function embeds in that summary is exactly
+    the kind of caller-supplied value a future change could turn into a
+    real secret carrier, so the mechanism must hold regardless of what
+    today's string happens to contain."""
+    from sunil import redaction
+
+    secret_value = "fake-test-secret-needle-for-memory-redaction"
+    redaction.register(secret_value, name="test_secret")
+    try:
+        user, conversation = user_and_conversation
+
+        memory = await record_short_term_memory_retrieval(
+            session,
+            user_id=user.id,
+            source_request_id="req-1",
+            # A conversation id containing the "secret" — proves the
+            # writer scrubs whatever it is given, not just the literal
+            # string it happens to build today.
+            conversation_id=secret_value,
+            message_count=3,
+        )
+
+        assert secret_value not in (memory.content or "")
+    finally:
+        redaction.reset_registry_for_tests()
