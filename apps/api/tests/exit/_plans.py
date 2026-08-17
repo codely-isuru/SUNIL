@@ -21,7 +21,18 @@ def valid_plan_dict(
         "tools": ["github"],
         "steps": [
             {"id": "s1", "action": "resolve_project", "tool": "none"},
-            {"id": "s2", "action": "load_recent_activity", "tool": "github"},
+            # Tool-bearing "action" values are registry-derived (plan_schema.py's
+            # `_tool_bearing_actions()` reads them straight from config/tools.yaml at
+            # runtime; plan_validator.py's `_validate_tool_step()` checks
+            # `registries.tools.has_operation(step.tool, step.action)`), so this MUST be
+            # the real operation name, "list_recent_activity" -- not the
+            # "load_recent_activity" spelling in ARCHITECTURE_V1.md §6.1's own static
+            # worked example, which is stale relative to the real config/tools.yaml and
+            # was never reachable from a real constrained-decoding call in the first
+            # place. Found by the Delivery Manager running the full suite on `main`
+            # (efd8366) after T11b's merge let requests reach Layer 4 for the first
+            # time; BE-1 traced the root cause while proving T11b.
+            {"id": "s2", "action": "list_recent_activity", "tool": "github"},
             {"id": "s3", "action": "summarise_activity", "tool": "none"},
         ],
     }
