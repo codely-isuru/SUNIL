@@ -281,3 +281,30 @@ def test_register_secrets_from_settings_registers_every_m1_secret() -> None:
         "fake-owner-password-from-settings",
     ):
         assert raw not in scrub(f"a log line mentioning {raw}")
+
+
+def test_register_secrets_from_settings_tolerates_an_absent_provider_key() -> None:
+    """T25: provider API keys are optional (`SecretStr | None`) -- the
+    owner has an OpenAI key and no Anthropic key. `register_secrets_from_
+    settings()` must not crash calling `.get_secret_value()` on `None`; it
+    must simply skip registering whichever provider key is absent, and
+    still register the one that is present plus every other secret."""
+    settings = Settings(
+        _env_file=None,
+        GITHUB_TOKEN="github_pat_fake-from-settings-2",
+        OPENAI_API_KEY="sk-fake-openai-from-settings-2",
+        SESSION_SECRET="fake-session-secret-from-settings-2",
+        OWNER_USERNAME="test-owner",
+        OWNER_PASSWORD="fake-owner-password-from-settings-2",
+    )
+    assert settings.anthropic_api_key is None
+
+    register_secrets_from_settings(settings)  # must not raise
+
+    for raw in (
+        "github_pat_fake-from-settings-2",
+        "sk-fake-openai-from-settings-2",
+        "fake-session-secret-from-settings-2",
+        "fake-owner-password-from-settings-2",
+    ):
+        assert raw not in scrub(f"a log line mentioning {raw}")

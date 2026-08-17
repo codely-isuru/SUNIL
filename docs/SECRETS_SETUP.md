@@ -3,7 +3,14 @@
 **For:** Isuru (owner). **Needed by:** Day 3 of the M1 build (2026-08-16), before the exit tests
 can run. **Nothing here should be pasted into a chat, a commit, an issue or a prompt.**
 
-Two credentials are required. Both go into **one file you create yourself**:
+**T25 (2026-08-17) update:** provider API keys are now optional at the settings layer — the app
+boots fine with only one of Anthropic/OpenAI configured, or neither. What is actually required
+**today** is `OPENAI_API_KEY` + `GITHUB_TOKEN`: `general_reasoning` (`config/models.yaml`), the
+M1 hot path both the plan call and the analysis call use, resolves to `openai` (T24). Anthropic
+is genuinely optional until some capability an agent can reach points at it again — see §0 and
+§4 below, both updated.
+
+Two credentials go into **one file you create yourself**:
 
 ```
 C:\repo\SUNIL\.env
@@ -33,7 +40,15 @@ without touching an agent.
 **So the credential you need first is `OPENAI_API_KEY`** (no `SUNIL_` prefix — confirmed
 against `.env.example`/`ARCHITECTURE_V1.md` §14.4 by T23, per this section's own rule below:
 "if they disagree, `.env.example` wins"). The Anthropic section below stays accurate for when
-you add that key; neither is required for the 547 tests that already pass on fixtures.
+you add that key; neither is required for the 559 tests that already pass on fixtures.
+
+**T25 update:** `OPENAI_API_KEY` is no longer "first" in the sense of "add this one now, add the
+other one later on the same footing" — as of T24, `general_reasoning` (the M1 hot path)
+resolves to `openai`, so `OPENAI_API_KEY` is required for any real turn to work at all, while
+`ANTHROPIC_API_KEY` is genuinely optional: the app boots and every fixture-based test passes
+without it, and it stays optional until a capability an agent can actually reach (its
+`preferred_capability`) is repointed at `anthropic` again. Add it whenever convenient, not
+because anything currently blocks on it.
 
 ---
 
@@ -65,8 +80,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 **Name it** something identifiable, e.g. `sunil-v1-dev`, same as the Anthropic key above.
 
 **Scope/limits:** same reasoning as §1 — a modest project-level spend cap bounds the damage if
-the key ever leaks. T23 wires exactly one capability (`general_reasoning_openai`,
-`config/models.yaml`) at this provider so far; no M1 chat turn calls it yet.
+the key ever leaks. **T24 update:** `general_reasoning` — the M1 hot path, used by both the
+orchestrator's plan call and the PM agent's analysis call — now resolves to this provider
+(`config/models.yaml`). Every real chat turn calls it.
 
 Add to `.env`:
 
@@ -136,14 +152,24 @@ each secret is *present*, never its value (`SecretStr` serialises to `[REDACTED]
 
 ## 4. What is blocked until they arrive
 
+**T25 update:** the table below described a world where every provider key was mandatory at
+the settings layer. That is no longer true — a missing provider key is a startup failure only
+if some agent's `preferred_capability` actually resolves to that provider
+(`sunil/providers/registry.py`'s `validate_capability_providers()`). Since T24 repointed
+`general_reasoning` to `openai`, the row that used to say "Anthropic key" for ET-5/ET-8/ET-9 was
+wrong the moment that landed — corrected below.
+
 | Blocked | Needs |
 |---|---|
 | ET-1 (real data, not fabricated), ET-12 (prompt-injection defence) | GitHub token |
-| ET-5, ET-8, ET-9 (analysis, provider failure, cost per attempt) | Anthropic key |
-| The full M1 end-to-end run | Both |
+| ET-5, ET-8, ET-9 (analysis, provider failure, cost per attempt) | OpenAI key (not Anthropic — T24 moved the hot path) |
+| The full M1 end-to-end run | OpenAI key + GitHub token |
+
+Anthropic's key blocks nothing in M1 today: no capability an agent can reach points at it (T25).
+Add it whenever convenient — the app does not need it to boot or to run a real turn.
 
 Everything else — T1 through T11, the frontend, the red test harness, the security boundary
-tests — builds and runs against fixtures without either credential.
+tests — builds and runs against fixtures without any live credential.
 
 ## 5. If a secret is ever exposed
 

@@ -169,20 +169,33 @@ class Settings(BaseSettings):
     )
 
     # -- Provider / integration secrets ------------------------------------
-    anthropic_api_key: SecretStr = Field(
-        description="Anthropic API key, used only by sunil/providers/anthropic.py."
+    # T25 (2026-08-17): provider API keys are OPTIONAL, and only these two
+    # fields are. `github_token` below stays required — the tool is not
+    # optional for M1, only which *model* providers are configured. This
+    # replaces T23's "no default" reasoning: that was right when Anthropic
+    # was the only provider, but with two registered, "every provider's
+    # key is mandatory" and "a missing key must not silently disable a
+    # provider" came apart — the owner has an OpenAI key and no Anthropic
+    # key, and the app must still boot. A provider whose key is absent is
+    # simply not registered (`sunil/providers/registry.py`'s
+    # `build_provider_registry()`), and fail-closed moves to registry
+    # cross-validation there: booting with a *capability an agent actually
+    # uses* pointed at an unregistered provider is still a loud, named
+    # startup failure — see `validate_capability_providers()` in that
+    # module. An unused capability (e.g. `general_reasoning_anthropic`
+    # while no agent points at it) is not an error.
+    anthropic_api_key: SecretStr | None = Field(
+        default=None,
+        description="Anthropic API key, used only by sunil/providers/anthropic.py. "
+        "Optional — a provider with no key is simply not registered.",
     )
     github_token: SecretStr = Field(
         description="Read-only GitHub PAT, used only by sunil/tools/github."
     )
-    # T23 (2026-08-17): the owner has an OpenAI key but not yet an
-    # Anthropic one — OpenAI is wired first, Anthropic added later
-    # (docs/SECRETS_SETUP.md §0). No `default=`: same as the two secrets
-    # above, a missing value is a startup failure, not a silently-disabled
-    # provider (ADR-003 fails closed on a misconfigured provider registry,
-    # not on a missing key masquerading as "not configured").
-    openai_api_key: SecretStr = Field(
-        description="OpenAI API key, used only by sunil/providers/openai.py."
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        description="OpenAI API key, used only by sunil/providers/openai.py. "
+        "Optional — a provider with no key is simply not registered.",
     )
 
     # -- Upstream base URLs (A-11, ADR-017) ---------------------------------

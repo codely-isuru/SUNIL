@@ -205,6 +205,60 @@ def test_settings_is_cached_per_process(monkeypatch: pytest.MonkeyPatch) -> None
         get_settings.cache_clear()
 
 
+# -- Optional provider keys (T25) ------------------------------------------
+# The owner has an OpenAI key and no Anthropic key. "Every provider's key is
+# mandatory" and "a missing key must not silently disable a provider" came
+# apart once two providers existed (T23/T24) -- the second is the one worth
+# keeping. `github_token`/`session_secret`/`owner_password` stay required:
+# the tool and the session are not optional for M1, only the *provider*
+# keys are.
+
+
+def test_settings_constructs_with_no_provider_keys_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY set: `Settings()` must
+    still construct -- a provider with no key is absent, not a startup
+    failure (that fail-closed behaviour moves to registry cross-validation,
+    `sunil/providers/registry.py`, which knows which capabilities actually
+    need a provider)."""
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.anthropic_api_key is None
+    assert settings.openai_api_key is None
+
+
+def test_settings_constructs_with_only_openai_key_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The owner's actual situation today: an OpenAI key, no Anthropic key."""
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.anthropic_api_key is None
+    assert settings.openai_api_key.get_secret_value() == REQUIRED_ENV["OPENAI_API_KEY"]
+
+
+def test_github_token_is_still_required_when_provider_keys_are_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T25 narrows exactly two fields to optional -- the tool credential
+    and the session are not among them."""
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
 # -- Upstream base URLs (A-11, ADR-017) -----------------------------------
 # Added by BE-2 (T6) ahead of T1/T5 picking up the ADR-017 delta — see
 # `settings.py`'s own "Cross-lane note" docstring. Co-located with the

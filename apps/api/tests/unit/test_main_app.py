@@ -228,6 +228,55 @@ def test_app_refuses_to_boot_against_a_broken_config_dir(
             pass
 
 
+def test_app_refuses_to_boot_when_general_reasoning_has_no_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T25: the real, committed `config/models.yaml` maps `general_reasoning`
+    (the PM agent's `preferred_capability`, `config/agents.yaml`) to
+    `openai`. With no `OPENAI_API_KEY` at all, `Settings()` now constructs
+    fine (T25 made provider keys optional) -- but the app must still refuse
+    to boot, loudly, naming the capability/provider/env var, rather than
+    booting with a hot path that will 500 on first use."""
+    db_path = tmp_path / "main_app_no_openai_key.db"
+    _set_required_env(monkeypatch, db_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _migrate_to_head(db_path)
+
+    from sunil.main import create_app
+
+    app = create_app()
+
+    with pytest.raises(Exception) as exc_info:  # noqa: B017 - RegistryCrossValidationError
+        with TestClient(app):
+            pass
+
+    message = str(exc_info.value)
+    assert "general_reasoning" in message
+    assert "openai" in message
+    assert "OPENAI_API_KEY" in message
+
+
+def test_app_boots_fine_with_no_anthropic_key_since_nothing_reachable_needs_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the same proof: `general_reasoning_anthropic`
+    (`config/models.yaml`) points at `anthropic` but no agent references
+    it, so a boot with only an OpenAI key -- the owner's actual situation
+    -- must succeed."""
+    db_path = tmp_path / "main_app_no_anthropic_key.db"
+    _set_required_env(monkeypatch, db_path)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _migrate_to_head(db_path)
+
+    from sunil.main import create_app
+
+    app = create_app()
+
+    with TestClient(app) as client:
+        resp = client.get("/api/v1/health")
+        assert resp.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # ADR-018 — settings/engine/sessionmaker are per-application state, not
 # process-global caches. QA's harness builds one app per test, each with its

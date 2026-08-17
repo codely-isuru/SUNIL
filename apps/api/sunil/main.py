@@ -37,7 +37,7 @@ from sunil.core.routing.router import ModelRouter
 from sunil.core.tool_framework.manager import build_tool_manager
 from sunil.db.session import assert_alembic_head, get_engine, get_sessionmaker
 from sunil.logging import configure_logging
-from sunil.providers.registry import build_provider_registry
+from sunil.providers.registry import build_provider_registry, validate_capability_providers
 from sunil.redaction import register_secrets_from_settings
 from sunil.settings import Settings
 
@@ -82,6 +82,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Tool Manager's GitHub adapter are built from `settings` + the very
     # `registries` this lifespan just loaded.
     provider_registry = build_provider_registry(settings=settings, model_registry=registries.models)
+    # T25: a provider whose key is absent is simply not registered above —
+    # fail-closed happens here instead, and only for a capability some
+    # agent can actually reach (`preferred_capability`, config/agents.yaml
+    # — see `validate_capability_providers()`'s own docstring for why
+    # `escalation_capability` is deliberately excluded). Refuses to boot
+    # with a hot path pointed at a provider with no key, rather than
+    # booting and 500ing on first use.
+    validate_capability_providers(
+        agents=registries.agents,
+        model_registry=registries.models,
+        provider_registry=provider_registry,
+    )
     app.state.model_router = ModelRouter(
         model_registry=registries.models,
         provider_registry=provider_registry,
