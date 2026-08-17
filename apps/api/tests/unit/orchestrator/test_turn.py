@@ -23,6 +23,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sunil.api.routes.chat import TurnExecutor
@@ -501,3 +502,18 @@ async def test_a_malformed_plan_never_produces_a_tool_call(
     )
 
     assert tool_manager.calls == []
+
+
+def test_execute_plan_is_reachable_from_the_turn_module_and_enforces_guard_site_1() -> None:
+    """Guard site 1 (`core.orchestrator.guards.execute_plan`, ADR-004
+    Amendment 1) — `guards.py`'s own docstring: "T11b's turn.py calls
+    this ... as the entry point of stage 7 onward". Re-exported here (not
+    reimplemented) so `sunil.core.orchestrator.turn.execute_plan` is the
+    same function guards.py defines, matching
+    `tests/security/test_plan_execution_guards.py
+    ::test_execute_plan_rejects_a_dict`'s own expectation."""
+    from sunil.core.orchestrator.guards import InvalidPlanExecution
+    from sunil.core.orchestrator.turn import execute_plan
+
+    with pytest.raises(InvalidPlanExecution):
+        execute_plan({"agent": "project_manager", "steps": [{"tool": "github"}]})

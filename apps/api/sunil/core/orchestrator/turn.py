@@ -62,6 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sunil.core.agent_framework.base import Agent
 from sunil.core.agent_framework.runner import run_agent
 from sunil.core.orchestrator.contracts import TurnResult
+from sunil.core.orchestrator.guards import execute_plan
 from sunil.core.orchestrator.plan_schema import build_plan_schema
 from sunil.core.orchestrator.plan_validator import (
     PlanRejected,
@@ -278,6 +279,13 @@ class LiveTurnExecutor:
         await transition_workflow_status(
             self._session, workflow, to_status=WorkflowStatus.IN_PROGRESS.value
         )
+
+        # Guard site 1 (ADR-004 Amendment 1, `core.orchestrator.guards`):
+        # "the very first statement of plan execution... T11b's turn.py
+        # calls this ... as the entry point of stage 7 onward" — explicit,
+        # even though `run_agent()` also re-checks (guard site 2). Defence
+        # in depth is the point: three independent call sites, one guard.
+        validated_plan = execute_plan(validated_plan)
 
         try:
             agent_result = await run_agent(
