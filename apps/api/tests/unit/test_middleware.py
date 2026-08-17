@@ -121,9 +121,7 @@ def test_build_session_middleware_unwraps_the_secret_and_is_usable() -> None:
         request.session["marker"] = "present"
         return Response(status_code=204)
 
-    app = Starlette(
-        routes=[Route("/set", _set_session, methods=["POST"])], middleware=[middleware]
-    )
+    app = Starlette(routes=[Route("/set", _set_session, methods=["POST"])], middleware=[middleware])
     client = TestClient(app)
 
     response = client.post("/set")

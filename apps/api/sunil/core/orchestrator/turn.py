@@ -203,9 +203,7 @@ class LiveTurnExecutor:
                     task_id=task.id,
                 )
             except TurnDeadlineExceeded:
-                return await self._fail(
-                    task=task, workflow=workflow, failure_kind="provider_error"
-                )
+                return await self._fail(task=task, workflow=workflow, failure_kind="provider_error")
             except ProviderExhaustedError as exc:
                 if not isinstance(exc.__cause__, StructuredOutputError):
                     # A genuine provider-boundary exhaustion -- not a
@@ -299,9 +297,7 @@ class LiveTurnExecutor:
                 trace=trace,
             )
         except (ProviderExhaustedError, TurnDeadlineExceeded):
-            return await self._fail(
-                task=task, workflow=workflow, failure_kind="provider_error"
-            )
+            return await self._fail(task=task, workflow=workflow, failure_kind="provider_error")
 
         if agent_result.ok:
             await transition_task_status(self._session, task, to_status=TaskStatus.COMPLETED.value)
@@ -382,8 +378,7 @@ class LiveTurnExecutor:
         await trace.emit(
             TraceStage.MODEL_SELECTED,
             summary=(
-                f"selected {response.provider}/{response.model} "
-                f"for capability {_PLAN_CAPABILITY!r}"
+                f"selected {response.provider}/{response.model} for capability {_PLAN_CAPABILITY!r}"
             ),
             detail={
                 "capability": _PLAN_CAPABILITY,

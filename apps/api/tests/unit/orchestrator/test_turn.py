@@ -117,7 +117,9 @@ class FakeToolManager:
 
         self.calls: list[RecordedToolCall] = []
         self._result = result or ToolResult(
-            ok=True, data={"commits": [], "pull_requests": [], "issues": []}, error_kind=None,
+            ok=True,
+            data={"commits": [], "pull_requests": [], "issues": []},
+            error_kind=None,
             error_message=None,
         )
 
