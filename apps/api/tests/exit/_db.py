@@ -21,6 +21,28 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+# The twelve real tables (ARCHITECTURE_V1.md §7.3), verbatim. `count_for_request()`
+# interpolates its `table` argument into SQL -- ruff's S608 correctly flags that
+# pattern in general, so this allow-list is what actually closes it rather than
+# suppressing the warning: `table` is checked against real schema names before it
+# ever reaches the query string, not merely assumed to always be a safe literal.
+_KNOWN_TABLES = frozenset(
+    {
+        "users",
+        "conversations",
+        "messages",
+        "workflows",
+        "tasks",
+        "task_status_events",
+        "plans",
+        "tool_calls",
+        "approvals",
+        "memories",
+        "llm_calls",
+        "audit_events",
+    }
+)
+
 
 def _connect(db_path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
@@ -32,9 +54,7 @@ def _rows_as_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def fetch_all(
-    db_path: str | Path, sql: str, params: tuple = ()
-) -> list[dict[str, Any]]:
+def fetch_all(db_path: str | Path, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
     conn = _connect(db_path)
     try:
         return _rows_as_dicts(conn.execute(sql, params).fetchall())
@@ -42,25 +62,20 @@ def fetch_all(
         conn.close()
 
 
-def fetch_one(
-    db_path: str | Path, sql: str, params: tuple = ()
-) -> dict[str, Any] | None:
+def fetch_one(db_path: str | Path, sql: str, params: tuple = ()) -> dict[str, Any] | None:
     rows = fetch_all(db_path, sql, params)
     return rows[0] if rows else None
 
 
 def count_for_request(db_path: str | Path, table: str, request_id: str) -> int:
-    row = fetch_one(
-        db_path,
-        f"SELECT COUNT(*) AS n FROM {table} WHERE request_id = ?",
-        (request_id,),
-    )
+    if table not in _KNOWN_TABLES:
+        raise ValueError(f"count_for_request(): {table!r} is not one of the twelve real tables")
+    sql = f"SELECT COUNT(*) AS n FROM {table} WHERE request_id = ?"  # noqa: S608 -- table is allow-listed above, never external input
+    row = fetch_one(db_path, sql, (request_id,))
     return int(row["n"]) if row else 0
 
 
-def audit_stages_for_request(
-    db_path: str | Path, request_id: str
-) -> list[dict[str, Any]]:
+def audit_stages_for_request(db_path: str | Path, request_id: str) -> list[dict[str, Any]]:
     """Ordered by `seq` — the column ET-6 is graded on (ARCHITECTURE_V1.md §8.1's own
     canonical query, reproduced here so ET-6 tests the documented invariant directly)."""
     return fetch_all(
@@ -86,9 +101,7 @@ def llm_calls_for_request(
     )
 
 
-def tool_calls_for_request(
-    db_path: str | Path, request_id: str
-) -> list[dict[str, Any]]:
+def tool_calls_for_request(db_path: str | Path, request_id: str) -> list[dict[str, Any]]:
     return fetch_all(
         db_path,
         "SELECT * FROM tool_calls WHERE request_id = ? ORDER BY id",
@@ -109,14 +122,10 @@ def task_for_request(db_path: str | Path, request_id: str) -> dict[str, Any] | N
 
 
 def workflow_for_request(db_path: str | Path, request_id: str) -> dict[str, Any] | None:
-    return fetch_one(
-        db_path, "SELECT * FROM workflows WHERE request_id = ?", (request_id,)
-    )
+    return fetch_one(db_path, "SELECT * FROM workflows WHERE request_id = ?", (request_id,))
 
 
-def task_status_events_for_task(
-    db_path: str | Path, task_id: str
-) -> list[dict[str, Any]]:
+def task_status_events_for_task(db_path: str | Path, task_id: str) -> list[dict[str, Any]]:
     return fetch_all(
         db_path,
         "SELECT * FROM task_status_events WHERE task_id = ? ORDER BY at",

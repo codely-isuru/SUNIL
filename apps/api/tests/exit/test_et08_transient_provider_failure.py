@@ -51,9 +51,7 @@ def test_et8_recovers_via_retry_and_completes_the_turn(
     script_clean_github_activity(mock_server)
     # attempt 1 (plan): transient failure; attempt 2 (plan): success; then analysis.
     mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
-    mock_server.script(
-        "POST", "/v1/messages", anthropic_success(text=valid_plan_json())
-    )
+    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
     mock_server.script(
         "POST",
         "/v1/messages",
@@ -68,21 +66,19 @@ def test_et8_recovers_via_retry_and_completes_the_turn(
     )
     with app_client(settings=settings) as client:
         login(client)
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
-        f"expected the turn to recover and succeed, got {body.get('outcome')}: {body.get('failure')}"
+        f"expected the turn to recover and succeed, got {body.get('outcome')}: "
+        f"{body.get('failure')}"
     )
 
     plan_calls = llm_calls_for_request(db_path, request_id, purpose="plan")
     assert len(plan_calls) >= 2, (
-        f"expected at least 2 provider attempts for `plan` (1 failed + 1 succeeded), got {len(plan_calls)}"
+        f"expected at least 2 provider attempts for `plan` (1 failed + 1 succeeded), "
+        f"got {len(plan_calls)}"
     )
     assert count_for_request(db_path, "tool_calls", request_id) == 1, (
         "the turn must still complete the one expected tool call"
@@ -107,17 +103,13 @@ def test_et8_exhausted_retries_fail_cleanly_with_terminal_failed_state(
     )
     with app_client(settings=settings) as client:
         login(client)
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
     assert resp.status_code == 200, (
         "a cleanly-failed turn is still HTTP 200 with a discriminated outcome (§6)"
     )
     body = resp.json()
-    assert body["outcome"] == "failed", (
-        f"expected outcome=failed, got {body.get('outcome')}"
-    )
+    assert body["outcome"] == "failed", f"expected outcome=failed, got {body.get('outcome')}"
     assert body["failure"]["kind"] == "provider_error", (
         f"expected failure.kind=provider_error, got {body['failure']}"
     )
@@ -168,9 +160,7 @@ def test_et8_turn_deadline_breach_also_maps_to_provider_error(
     )
     with app_client(settings=settings) as client:
         login(client)
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
     assert resp.status_code == 200
     body = resp.json()

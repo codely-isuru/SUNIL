@@ -50,9 +50,7 @@ def _run_turn_with_malformed_plan(
     )
     with app_client(settings=settings) as client:
         login(client)
-        return post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        return post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
 
 def test_et7_non_json_plan_output_yields_zero_tool_calls(
@@ -71,9 +69,7 @@ def test_et7_non_json_plan_output_yields_zero_tool_calls(
         f"a rejected plan is still a valid HTTP transaction (§6): got {resp.status_code}"
     )
     body = resp.json()
-    assert body["outcome"] == "failed", (
-        f"expected outcome=failed, got {body.get('outcome')}"
-    )
+    assert body["outcome"] == "failed", f"expected outcome=failed, got {body.get('outcome')}"
     assert body["failure"]["kind"] == "plan_rejected", (
         f"expected failure.kind=plan_rejected, got {body['failure']}"
     )
@@ -84,7 +80,8 @@ def test_et7_non_json_plan_output_yields_zero_tool_calls(
 
     plans = plans_for_request(db_path, request_id)
     assert plans, (
-        "rejected plan attempts must still be persisted (ARCHITECTURE_V1.md §6.2 -- evidence, not a lost log line)"
+        "rejected plan attempts must still be persisted "
+        "(ARCHITECTURE_V1.md §6.2 -- evidence, not a lost log line)"
     )
     assert all(p["validated"] in (0, False) for p in plans), (
         f"no plan attempt should be marked validated: {plans}"
@@ -105,9 +102,7 @@ def test_et7_plan_naming_an_unregistered_agent_yields_zero_tool_calls(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["outcome"] == "failed", (
-        f"expected outcome=failed, got {body.get('outcome')}"
-    )
+    assert body["outcome"] == "failed", f"expected outcome=failed, got {body.get('outcome')}"
     assert body["failure"]["kind"] == "plan_rejected", (
         f"expected failure.kind=plan_rejected, got {body['failure']}"
     )

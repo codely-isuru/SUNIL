@@ -35,9 +35,7 @@ def test_et10_no_secret_in_any_persisted_row_or_log_output(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -45,9 +43,7 @@ def test_et10_no_secret_in_any_persisted_row_or_log_output(
 
     canaries = (CANARY_API_KEY, CANARY_GITHUB_TOKEN)
 
-    llm_rows = fetch_all(
-        db_path, "SELECT * FROM llm_calls WHERE request_id = ?", (request_id,)
-    )
+    llm_rows = fetch_all(db_path, "SELECT * FROM llm_calls WHERE request_id = ?", (request_id,))
     assert llm_rows, "expected at least one llm_calls row to inspect"
     for row in llm_rows:
         blob = all_text_blob(
@@ -63,9 +59,7 @@ def test_et10_no_secret_in_any_persisted_row_or_log_output(
                 f"secret value leaked into llm_calls row {row['id']}: found {canary!r}"
             )
 
-    tool_rows = fetch_all(
-        db_path, "SELECT * FROM tool_calls WHERE request_id = ?", (request_id,)
-    )
+    tool_rows = fetch_all(db_path, "SELECT * FROM tool_calls WHERE request_id = ?", (request_id,))
     for row in tool_rows:
         blob = all_text_blob(row, "parameters", "result")
         for canary in canaries:

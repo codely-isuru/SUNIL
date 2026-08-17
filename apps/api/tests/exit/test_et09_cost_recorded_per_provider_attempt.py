@@ -44,9 +44,7 @@ def test_et9_cost_recorded_for_every_provider_attempt_no_magic_numbers(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -63,21 +61,16 @@ def test_et9_cost_recorded_for_every_provider_attempt_no_magic_numbers(
         f"M1 must write purpose in {M1_LLM_PURPOSES} only, saw: {purposes_seen}"
     )
     assert NEVER_WRITTEN_IN_M1_PURPOSE not in purposes_seen, (
-        f"ADR-015: M1 never writes purpose={NEVER_WRITTEN_IN_M1_PURPOSE!r} (final_response is deterministic, not an LLM call)"
+        f"ADR-015: M1 never writes purpose={NEVER_WRITTEN_IN_M1_PURPOSE!r} "
+        f"(final_response is deterministic, not an LLM call)"
     )
     for required in ("plan", "analysis"):
         matching = [c for c in all_calls if c["purpose"] == required]
-        assert len(matching) >= 1, (
-            f"expected at least one llm_calls row with purpose={required!r}"
-        )
+        assert len(matching) >= 1, f"expected at least one llm_calls row with purpose={required!r}"
 
     for call in all_calls:
-        assert (call["input_tokens"] or 0) > 0, (
-            f"expected non-zero input_tokens, got row: {call}"
-        )
-        assert (call["output_tokens"] or 0) > 0, (
-            f"expected non-zero output_tokens, got row: {call}"
-        )
+        assert (call["input_tokens"] or 0) > 0, f"expected non-zero input_tokens, got row: {call}"
+        assert (call["output_tokens"] or 0) > 0, f"expected non-zero output_tokens, got row: {call}"
         assert call["cost_micro_usd"] is not None, (
             f"expected a non-null cost_micro_usd, got row: {call}"
         )
@@ -102,9 +95,7 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
     seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
     mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
-    mock_server.script(
-        "POST", "/v1/messages", anthropic_success(text=valid_plan_json())
-    )
+    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
     mock_server.script(
         "POST",
         "/v1/messages",
@@ -119,9 +110,7 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
     )
     with app_client(settings=settings) as client:
         login(client)
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -140,6 +129,7 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
 
     failed_attempt = [c for c in plan_calls if (c["error_kind"] is not None)]
     succeeded_attempt = [c for c in plan_calls if c["error_kind"] is None]
+    error_kinds = [c["error_kind"] for c in plan_calls]
     assert len(failed_attempt) == 1 and len(succeeded_attempt) == 1, (
-        f"expected exactly one failed + one successful plan attempt, got error_kinds: {[c['error_kind'] for c in plan_calls]}"
+        f"expected exactly one failed + one successful plan attempt, got error_kinds: {error_kinds}"
     )

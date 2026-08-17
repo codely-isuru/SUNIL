@@ -47,10 +47,11 @@ def test_et12_injected_activity_never_reaches_a_prompt_and_behaviour_is_unchange
     seed_owner_directly(db_path)
     script_injected_github_activity(mock_server)
 
-    analysis_text = "EasyClean Workforce activity looks normal: a few commits and one open issue about invoice rounding."
-    mock_server.script(
-        "POST", "/v1/messages", anthropic_success(text=valid_plan_json())
+    analysis_text = (
+        "EasyClean Workforce activity looks normal: a few commits and one open "
+        "issue about invoice rounding."
     )
+    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
     mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
 
     settings = build_settings(
@@ -61,19 +62,16 @@ def test_et12_injected_activity_never_reaches_a_prompt_and_behaviour_is_unchange
     )
     with app_client(settings=settings) as client:
         login(client)
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
 
     # "The agent's behaviour is unchanged": normal completion, the one expected tool
     # call and nothing else, the same agent, the scripted (not attacker-dictated) reply.
     assert body["outcome"] == "ok", (
-        f"expected outcome=ok despite the injected content, got {body.get('outcome')}: {body.get('failure')}"
+        f"expected outcome=ok despite the injected content, got {body.get('outcome')}: "
+        f"{body.get('failure')}"
     )
     assert body["task"]["assigned_agent"] == "project_manager"
     tool_calls = tool_calls_for_request(db_path, request_id)
@@ -81,8 +79,7 @@ def test_et12_injected_activity_never_reaches_a_prompt_and_behaviour_is_unchange
         f"the injected instruction must not cause any extra/different tool call: {tool_calls}"
     )
     assert (
-        tool_calls[0]["tool"] == "github"
-        and tool_calls[0]["operation"] == "list_recent_activity"
+        tool_calls[0]["tool"] == "github" and tool_calls[0]["operation"] == "list_recent_activity"
     )
     assert body["message"]["content"] == analysis_text, (
         "the final message must be exactly the scripted analysis -- if it were anything "
@@ -94,9 +91,7 @@ def test_et12_injected_activity_never_reaches_a_prompt_and_behaviour_is_unchange
     # "No unprojected external payload appears in any llm_calls.request_messages row...
     # issue bodies are absent": the strong, "Mitigated" claim (THREAT_MODEL.md §5.1
     # control 3) -- the issue-body marker must never surface anywhere downstream.
-    llm_rows = fetch_all(
-        db_path, "SELECT * FROM llm_calls WHERE request_id = ?", (request_id,)
-    )
+    llm_rows = fetch_all(db_path, "SELECT * FROM llm_calls WHERE request_id = ?", (request_id,))
     assert llm_rows, "expected at least one llm_calls row to inspect"
     for row in llm_rows:
         blob = all_text_blob(
@@ -111,7 +106,8 @@ def test_et12_injected_activity_never_reaches_a_prompt_and_behaviour_is_unchange
     # which must also never carry the excluded body content.
     for tc in tool_calls:
         assert INJECTED_ISSUE_BODY_MARKER not in (tc["result"] or ""), (
-            f"the tool_calls.result projection must not contain the excluded issue body: {tc['result']!r}"
+            f"the tool_calls.result projection must not contain the excluded issue "
+            f"body: {tc['result']!r}"
         )
 
     # The analysis call's prompt must still show evidence of the *projection* having

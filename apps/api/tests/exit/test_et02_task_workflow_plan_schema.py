@@ -32,9 +32,7 @@ def test_et2_task_and_workflow_exist_with_schema_valid_plan(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -53,9 +51,7 @@ def test_et2_task_and_workflow_exist_with_schema_valid_plan(
     plans = plans_for_request(db_path, request_id)
     assert len(plans) >= 1, "expected at least one `plans` row for this request"
     accepted = [p for p in plans if p["validated"] in (1, True)]
-    assert accepted, (
-        f"expected at least one plans row with validated=true, got: {plans}"
-    )
+    assert accepted, f"expected at least one plans row with validated=true, got: {plans}"
 
     plan_json = json.loads(accepted[-1]["raw_json"])
     required_keys = {
@@ -69,9 +65,7 @@ def test_et2_task_and_workflow_exist_with_schema_valid_plan(
         "steps",
     }
     missing = required_keys - plan_json.keys()
-    assert not missing, (
-        f"plan JSON is missing required keys per ARCHITECTURE_V1.md §6.1: {missing}"
-    )
+    assert not missing, f"plan JSON is missing required keys per ARCHITECTURE_V1.md §6.1: {missing}"
     assert 0.0 <= plan_json["confidence"] <= 1.0, (
         f"confidence out of [0,1]: {plan_json['confidence']}"
     )

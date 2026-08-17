@@ -30,9 +30,7 @@ def test_et6_all_twelve_stages_present_in_order_and_unique(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -43,20 +41,24 @@ def test_et6_all_twelve_stages_present_in_order_and_unique(
     stages_in_order = [r["stage"] for r in rows]
 
     assert len(rows) == 12, (
-        f"expected exactly 12 audit_events rows for this request, got {len(rows)}: {stages_in_order}"
+        f"expected exactly 12 audit_events rows for this request, got {len(rows)}: "
+        f"{stages_in_order}"
     )
     assert set(stages_in_order) == set(TRACE_STAGES), (
-        f"stage set mismatch.\n  expected: {sorted(TRACE_STAGES)}\n  got:      {sorted(set(stages_in_order))}"
+        f"stage set mismatch.\n  expected: {sorted(TRACE_STAGES)}\n"
+        f"  got:      {sorted(set(stages_in_order))}"
     )
     assert stages_in_order == list(TRACE_STAGES), (
-        f"stages are not in the documented order.\n  expected: {list(TRACE_STAGES)}\n  got:      {stages_in_order}"
+        f"stages are not in the documented order.\n  expected: {list(TRACE_STAGES)}\n"
+        f"  got:      {stages_in_order}"
     )
     seqs = [r["seq"] for r in rows]
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs), (
         f"seq must be strictly increasing and unique: {seqs}"
     )
     assert len(set(stages_in_order)) == len(stages_in_order), (
-        f"a stage was emitted more than once -- retries must land in `detail`, never as extra rows: {stages_in_order}"
+        "a stage was emitted more than once -- retries must land in `detail`, "
+        f"never as extra rows: {stages_in_order}"
     )
 
     # -- Cross-checked against the frozen §6 HTTP response's inline trace --
