@@ -108,9 +108,7 @@ class ScriptedHTTPServer:
                     self.send_response(404)
                     self.end_headers()
                     self.wfile.write(
-                        json.dumps(
-                            {"error": f"no scripted response for {key}"}
-                        ).encode()
+                        json.dumps({"error": f"no scripted response for {key}"}).encode()
                     )
                     return
                 resp = queue.pop(0) if len(queue) > 1 else queue[0]
@@ -161,9 +159,7 @@ def anthropic_success(
     )
 
 
-def anthropic_transient_error(
-    *, status: int = 500, kind: str = "api_error"
-) -> ScriptedResponse:
+def anthropic_transient_error(*, status: int = 500, kind: str = "api_error") -> ScriptedResponse:
     """500/503/529/429 -- all specified (ARCHITECTURE_V1.md §4.3) to map to
     ProviderTransientError. Verified for 500 -> InternalServerError and 429 ->
     RateLimitError against the real SDK (module docstring)."""

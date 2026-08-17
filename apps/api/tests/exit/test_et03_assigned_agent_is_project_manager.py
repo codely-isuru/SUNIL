@@ -24,9 +24,7 @@ def test_et3_assigned_agent_is_project_manager(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -34,7 +32,8 @@ def test_et3_assigned_agent_is_project_manager(
 
     assert body["task"] is not None, "expected a `task` object in the chat response"
     assert body["task"]["assigned_agent"] == "project_manager", (
-        f"response task.assigned_agent should be project_manager, got {body['task']['assigned_agent']!r}"
+        "response task.assigned_agent should be project_manager, "
+        f"got {body['task']['assigned_agent']!r}"
     )
 
     task_row = task_for_request(db_path, request_id)

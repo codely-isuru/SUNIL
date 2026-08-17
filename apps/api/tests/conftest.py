@@ -9,8 +9,10 @@ orchestrator) is a plain function called from inside a test body via
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -32,6 +34,63 @@ def pytest_configure(config: pytest.Config) -> None:
 # for the reason "the backend doesn't exist yet" -- see _helpers.py for why that
 # distinction governs what may and may not be a fixture in this suite.
 # --------------------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_stdlib_logger_registry() -> Iterator[None]:
+    """Cross-lane test-isolation fix, not a rename.
+
+    `tests/security/test_secret_exposure.py` and `tests/unit/test_redaction.py` both
+    call `get_logger("t")` -- the same literal name -- and Python's stdlib `logging`
+    module keeps ONE process-wide registry of named `Logger` objects
+    (`logging.Logger.manager.loggerDict`) that `structlog.configure()` does not reset.
+    Whichever test runs first can leave state (handlers/level/propagate/disabled) on
+    that shared object for the other to inherit. Confirmed by reproduction, not by
+    the report alone: `test_scrub_through_the_real_structlog_chain_redacts_an_exception_value`
+    passed standalone (`pytest tests/unit/test_redaction.py::test_..._exception_value`)
+    and failed only as part of the full suite (`json.decoder.JSONDecodeError: Expecting
+    value` -- the captured buffer was empty, meaning the "t" logger's handler by the
+    time this test ran was not the one the test had just installed).
+
+    This is the general form of memory lesson L-002 (never let one run's leftover
+    state look like another run's evidence) applied to the stdlib logging registry
+    itself. A two-line rename in the two colliding files fixes these two names; it
+    does not fix the class -- a third test reusing either name later reintroduces
+    the identical bug. An autouse fixture here, in the one conftest QA owns at the
+    root of the whole suite, closes the class for every test without editing a line
+    in either of the two files that exhibited it (both belong to other lanes).
+
+    Deliberately conservative in what it touches:
+    - Only loggers *created during this test* are removed afterward, so a logger
+      pytest's own logging plugin (or anything else) set up before any test ran is
+      never touched.
+    - Every logger that already existed has its mutable state snapshotted and
+      restored, so a test that mutates a shared logger's configuration can never
+      leak that mutation forward into a later test either.
+    - The root logger is untouched entirely -- `logging.Logger.manager.loggerDict`
+      holds only *named* loggers (`getLogger("some-name")`); the root logger is a
+      separate object this fixture never reaches, so `configure_logging()`'s normal
+      handler setup on the root logger is unaffected.
+    """
+    manager = logging.Logger.manager
+    pre_existing_names = set(manager.loggerDict.keys())
+    saved_state = {
+        name: (list(logger.handlers), logger.level, logger.propagate, logger.disabled)
+        for name, logger in manager.loggerDict.items()
+        if isinstance(logger, logging.Logger)
+    }
+    try:
+        yield
+    finally:
+        for name in set(manager.loggerDict.keys()) - pre_existing_names:
+            del manager.loggerDict[name]
+        for name, (handlers, level, propagate, disabled) in saved_state.items():
+            logger = manager.loggerDict.get(name)
+            if isinstance(logger, logging.Logger):
+                logger.handlers = handlers
+                logger.level = level
+                logger.propagate = propagate
+                logger.disabled = disabled
 
 
 @pytest.fixture

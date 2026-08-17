@@ -22,9 +22,7 @@ def test_et4_exactly_one_allowed_github_tool_call(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -42,10 +40,6 @@ def test_et4_exactly_one_allowed_github_tool_call(
     assert call["permission_decision"] == "allow", (
         f"expected permission_decision=allow, got {call['permission_decision']!r}"
     )
-    assert call["status"] == "ok", (
-        f"expected a successful tool call, got status={call['status']!r}"
-    )
+    assert call["status"] == "ok", f"expected a successful tool call, got status={call['status']!r}"
     assert call["agent_id"] == "project_manager"
-    assert call["task_id"], (
-        "tool_calls row must be linked to the Task (task_id non-null)"
-    )
+    assert call["task_id"], "tool_calls row must be linked to the Task (task_id non-null)"

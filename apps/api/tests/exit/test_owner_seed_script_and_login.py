@@ -47,9 +47,7 @@ import pytest
 from tests._helpers import import_or_fail
 from tests.exit._client import app_client, build_settings, login, run_migrations
 
-_REPO_ROOT = (
-    Path(__file__).resolve().parents[4]
-)  # exit -> tests -> api -> apps -> repo root
+_REPO_ROOT = Path(__file__).resolve().parents[4]  # exit -> tests -> api -> apps -> repo root
 _SCRIPT_PATH = _REPO_ROOT / "scripts" / "seed-owner.py"
 
 
@@ -59,9 +57,7 @@ def _load_seed_owner_script() -> ModuleType:
             f"NOT YET BUILT: {_SCRIPT_PATH} does not exist yet. Blocked on T2.",
             pytrace=False,
         )
-    spec = importlib.util.spec_from_file_location(
-        "qa_seed_owner_script_under_test", _SCRIPT_PATH
-    )
+    spec = importlib.util.spec_from_file_location("qa_seed_owner_script_under_test", _SCRIPT_PATH)
     if spec is None or spec.loader is None:
         pytest.fail(
             f"NOT YET BUILT: could not load a module spec for {_SCRIPT_PATH}.",
@@ -119,9 +115,7 @@ def test_hash_password_produces_a_verifiable_scrypt_9_6_encoding():
         f"expected n=16384 r=8 p=1 per §9.6, got: {parts[1:4]}"
     )
 
-    assert _verify_scrypt_hash(
-        encoded, candidate_password="correct horse battery staple"
-    )
+    assert _verify_scrypt_hash(encoded, candidate_password="correct horse battery staple")
     assert not _verify_scrypt_hash(encoded, candidate_password="wrong password")
 
     # A fresh random salt every call -- hashing the same password twice must never
@@ -136,23 +130,15 @@ def test_seed_owner_script_creates_then_updates_and_the_owner_can_log_in(
     run_migrations(database_url, monkeypatch=monkeypatch)
     module = _load_seed_owner_script()
 
-    get_settings = import_or_fail(
-        "sunil.settings.get_settings", blocked_on="T1 (Settings)"
-    )
+    get_settings = import_or_fail("sunil.settings.get_settings", blocked_on="T1 (Settings)")
 
     def _run_script_as_owner(username: str, password: str) -> None:
         monkeypatch.setenv("OWNER_USERNAME", username)
         monkeypatch.setenv("OWNER_PASSWORD", password)
         monkeypatch.setenv("DATABASE_URL", database_url)
-        monkeypatch.setenv(
-            "ANTHROPIC_API_KEY", "sk-ant-test-canary-do-not-use-for-real-calls"
-        )
-        monkeypatch.setenv(
-            "GITHUB_TOKEN", "github_pat_test-canary-do-not-use-for-real-calls"
-        )
-        monkeypatch.setenv(
-            "SESSION_SECRET", "qa-test-session-secret-32-bytes-minimum-000000"
-        )
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-canary-do-not-use-for-real-calls")
+        monkeypatch.setenv("GITHUB_TOKEN", "github_pat_test-canary-do-not-use-for-real-calls")
+        monkeypatch.setenv("SESSION_SECRET", "qa-test-session-secret-32-bytes-minimum-000000")
         # Script context (ADR-018 §3): get_settings() is legitimately cached here, so a
         # fresh read for THIS call requires clearing it first -- the one place in this
         # whole harness where cache_clear() is the sanctioned pattern, not a rejected one.
@@ -171,9 +157,7 @@ def test_seed_owner_script_creates_then_updates_and_the_owner_can_log_in(
         ).fetchall()
     finally:
         conn.close()
-    assert len(rows) == 1, (
-        f"expected exactly one users row after the first seed, got {len(rows)}"
-    )
+    assert len(rows) == 1, f"expected exactly one users row after the first seed, got {len(rows)}"
     first_hash = rows[0][0]
     assert _verify_scrypt_hash(first_hash, candidate_password="first-password-Xk9!")
 
@@ -197,9 +181,9 @@ def test_seed_owner_script_creates_then_updates_and_the_owner_can_log_in(
         "the password hash must change after re-seeding with a new password"
     )
     assert _verify_scrypt_hash(second_hash, candidate_password="second-password-Zq3!")
-    assert not _verify_scrypt_hash(
-        second_hash, candidate_password="first-password-Xk9!"
-    ), "the OLD password must no longer verify once the script has updated it"
+    assert not _verify_scrypt_hash(second_hash, candidate_password="first-password-Xk9!"), (
+        "the OLD password must no longer verify once the script has updated it"
+    )
 
     # -- "and then logs in through the API" (closes walkthrough step 1: authenticate) --
     get_settings.cache_clear()

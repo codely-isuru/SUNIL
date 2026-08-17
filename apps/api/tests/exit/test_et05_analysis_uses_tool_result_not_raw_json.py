@@ -29,9 +29,7 @@ def test_et5_analysis_call_is_fed_tool_result_and_response_is_prose(
         mock_server=mock_server,
         request_id=request_id,
     )
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -40,9 +38,7 @@ def test_et5_analysis_call_is_fed_tool_result_and_response_is_prose(
     # 1. "Verifiable via the LLM input/output log": the persisted analysis-purpose
     # llm_calls row's own input must contain the tool's data.
     analysis_calls = llm_calls_for_request(db_path, request_id, purpose="analysis")
-    assert len(analysis_calls) >= 1, (
-        "expected at least one llm_calls row with purpose=analysis"
-    )
+    assert len(analysis_calls) >= 1, "expected at least one llm_calls row with purpose=analysis"
     prompt_text = "\n".join(c.get("request_messages") or "" for c in analysis_calls)
     assert "CSV export" in prompt_text, (
         "the tool's projected data must appear in the analysis call's input"
@@ -51,8 +47,7 @@ def test_et5_analysis_call_is_fed_tool_result_and_response_is_prose(
     # And the log's own OUTPUT is what the user received (ADR-015: no third call).
     output_text = "\n".join((c.get("response_text") or "") for c in analysis_calls)
     assert (
-        DEFAULT_ANALYSIS_TEXT in output_text
-        or output_text.strip() == DEFAULT_ANALYSIS_TEXT.strip()
+        DEFAULT_ANALYSIS_TEXT in output_text or output_text.strip() == DEFAULT_ANALYSIS_TEXT.strip()
     )
 
     # 2. "Reflects that analysis rather than raw JSON": the assistant message is prose,

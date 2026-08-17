@@ -46,9 +46,7 @@ def malformed_plan_text() -> str:
     to catch, i.e. a hypothetical failure of the real constrained-decoding guarantee.
     A FakeProvider/mock server is not bound by that guarantee, which is exactly what
     makes this fault injectable at all."""
-    return (
-        "I'm not sure how to format this as JSON, but here is my plan: check the repo."
-    )
+    return "I'm not sure how to format this as JSON, but here is my plan: check the repo."
 
 
 def plan_with_unregistered_agent_json() -> str:

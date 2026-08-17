@@ -34,6 +34,13 @@ exactly the questions this file's previous revision flagged):
   3. **`scripts/seed-owner.py`** is a script context (ADR-018 §3) — env vars +
      `get_settings.cache_clear()` remain the sanctioned pattern there, unlike for the app
      itself. See `test_owner_seed_script_and_login.py`, which owns that seam.
+
+VERIFIED against the real, merged stack (2026-08-17, `main` at `79ce574`): `login()`
+below must send `X-SUNIL-Client: web` — `auth.py`'s login/logout routes both call
+`require_client_header(request)`, the same dependency `chat.py` uses, so the CSRF
+protection is deliberately not chat-only. A version of this helper without that header
+gets a real 403 from the real route, which is exactly the kind of thing running against
+the actual merged code (rather than a fixture assumption) catches.
 """
 
 from __future__ import annotations
@@ -85,13 +92,13 @@ def run_migrations(database_url: str, *, monkeypatch: pytest.MonkeyPatch) -> Non
         "alembic.command.upgrade", blocked_on="alembic (installed; should not fire)"
     )
 
-    api_root = (
-        Path(__file__).resolve().parents[2]
-    )  # apps/api/tests/exit/_client.py -> apps/api
+    # apps/api/tests/exit/_client.py -> apps/api
+    api_root = Path(__file__).resolve().parents[2]
     ini_path = api_root / "alembic.ini"
     if not ini_path.exists():
         pytest.fail(
-            f"NOT YET BUILT: {ini_path} does not exist yet. Blocked on T2 (data layer, migration 0001).",
+            f"NOT YET BUILT: {ini_path} does not exist yet. "
+            "Blocked on T2 (data layer, migration 0001).",
             pytrace=False,
         )
     for key, value in _MIGRATION_ENV_FLOOR.items():
@@ -103,15 +110,13 @@ def run_migrations(database_url: str, *, monkeypatch: pytest.MonkeyPatch) -> Non
     # regardless of where `pytest` is invoked from (verified during T18 development).
     script_location = cfg.get_main_option("script_location") or "migrations"
     if not os.path.isabs(script_location):
-        cfg.set_main_option(
-            "script_location", str((api_root / script_location).resolve())
-        )
+        cfg.set_main_option("script_location", str((api_root / script_location).resolve()))
     try:
         upgrade(cfg, "head")
     except Exception as exc:  # noqa: BLE001 - surfaced deliberately as a clear red failure
         pytest.fail(
-            f"NOT YET BUILT or migration failed: `alembic upgrade head` against {ini_path} "
-            f"raised {exc.__class__.__name__}: {exc}. Blocked on T2.",
+            f"NOT YET BUILT or migration failed: `alembic upgrade head` against "
+            f"{ini_path} raised {exc.__class__.__name__}: {exc}. Blocked on T2.",
             pytrace=False,
         )
 
@@ -143,10 +148,10 @@ def seed_owner_directly(
         )
     n, r, p, dklen = 2**14, 8, 1, 32
     salt = os.urandom(16)
-    digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=dklen
-    )
-    password_hash = f"scrypt${n}${r}${p}${base64.b64encode(salt).decode()}${base64.b64encode(digest).decode()}"
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=dklen)
+    salt_b64 = base64.b64encode(salt).decode()
+    hash_b64 = base64.b64encode(digest).decode()
+    password_hash = f"scrypt${n}${r}${p}${salt_b64}${hash_b64}"
 
     conn = sqlite3.connect(str(db_path))
     try:
@@ -164,8 +169,8 @@ def seed_owner_directly(
         conn.commit()
     except sqlite3.OperationalError as exc:
         pytest.fail(
-            f"NOT YET BUILT: `users` table shape does not match ARCHITECTURE_V1.md §7.3 yet "
-            f"({exc}). Blocked on T2.",
+            f"NOT YET BUILT: `users` table shape does not match "
+            f"ARCHITECTURE_V1.md §7.3 yet ({exc}). Blocked on T2.",
             pytrace=False,
         )
     finally:
@@ -221,8 +226,8 @@ def build_settings(
         settings = Settings(**kwargs)
     except TypeError as exc:
         pytest.fail(
-            f"NOT YET BUILT: sunil.settings.Settings does not yet accept every field "
-            f"this harness needs per ADR-017/018 ({exc}). Blocked on T1.",
+            f"NOT YET BUILT: sunil.settings.Settings does not yet accept every "
+            f"field this harness needs per ADR-017/018 ({exc}). Blocked on T1.",
             pytrace=False,
         )
         raise  # unreachable; pytest.fail raises, but keeps type checkers honest
@@ -237,9 +242,10 @@ def build_settings(
     ):
         if requested and getattr(settings, attr_name, None) != requested:
             pytest.fail(
-                f"NOT YET BUILT: sunil.settings.Settings has no working `{attr_name}` "
-                f"field yet (ADR-017) -- passed {requested!r}, instance has "
-                f"{getattr(settings, attr_name, '<missing>')!r}. Blocked on T1.",
+                f"NOT YET BUILT: sunil.settings.Settings has no working "
+                f"`{attr_name}` field yet (ADR-017) -- passed {requested!r}, "
+                f"instance has {getattr(settings, attr_name, '<missing>')!r}. "
+                "Blocked on T1.",
                 pytrace=False,
             )
     return settings
@@ -262,10 +268,11 @@ def build_live_settings(
 
 @contextmanager
 def app_client(*, settings: Any) -> Iterator[Any]:
-    """Yield a `fastapi.testclient.TestClient` wrapping `sunil.main.create_app(settings=...)`
-    (ADR-018), run inside the client's own context so ASGI lifespan (startup/shutdown)
-    actually executes — documented (ARCHITECTURE_V1.md §3.2) to be when the app
-    constructs its long-lived httpx/AsyncAnthropic clients from `app.state`.
+    """Yield a `fastapi.testclient.TestClient` wrapping
+    `sunil.main.create_app(settings=...)` (ADR-018), run inside the client's own
+    context so ASGI lifespan (startup/shutdown) actually executes — documented
+    (ARCHITECTURE_V1.md §3.2) to be when the app constructs its long-lived
+    httpx/AsyncAnthropic clients from `app.state`.
     """
     create_app = import_or_fail(
         "sunil.main.create_app",
@@ -280,8 +287,8 @@ def app_client(*, settings: Any) -> Iterator[Any]:
         app = create_app(settings=settings)
     except TypeError as exc:
         pytest.fail(
-            f"NOT YET BUILT: sunil.main.create_app() does not yet accept `settings=` "
-            f"(ADR-018). Blocked on T5. ({exc})",
+            f"NOT YET BUILT: sunil.main.create_app() does not yet accept "
+            f"`settings=` (ADR-018). Blocked on T5. ({exc})",
             pytrace=False,
         )
     with TestClient(app) as client:
@@ -294,8 +301,15 @@ def login(
     username: str = TEST_OWNER_USERNAME,
     password: str = TEST_OWNER_PASSWORD,
 ) -> None:
+    """POST /api/v1/auth/login. Sends `X-SUNIL-Client: web` -- verified against the
+    real, merged `auth.py`: login/logout both call `require_client_header()`, the
+    same CSRF dependency `chat.py` uses, so this is not chat-only (see module
+    docstring for how this was found: a real 403 from the real route).
+    """
     resp = client.post(
-        "/api/v1/auth/login", json={"username": username, "password": password}
+        "/api/v1/auth/login",
+        json={"username": username, "password": password},
+        headers={"X-SUNIL-Client": "web", "Origin": WEB_ORIGIN},
     )
     if resp.status_code != 200:
         pytest.fail(

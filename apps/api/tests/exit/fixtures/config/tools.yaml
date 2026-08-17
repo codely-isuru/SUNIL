@@ -1,10 +1,18 @@
 # QA fixture config. The one M1 tool and its one read-only operation
-# (ARCHITECTURE_V1.md §9.3, FR-100/105).
+# (ARCHITECTURE_V1.md §9.3, FR-100/105). Shape verified directly against the real,
+# committed `config/tools.yaml` on 2026-08-17 (found missing `description`/`timeout_s`
+# here while fixing the models.yaml ruling — `ToolOperationDefinition` requires both,
+# and a fixture missing them is the same class of drift the ruling was about).
 version: 1
 tools:
   github:
+    display_name: "GitHub"
     operations:
       list_recent_activity:
         read_only: true
+        description: "Recent commits, open pull requests and open issues for the configured project."
+        timeout_s: 15
         params:
-          project_key: string
+          project_key:
+            type: string
+            required: true

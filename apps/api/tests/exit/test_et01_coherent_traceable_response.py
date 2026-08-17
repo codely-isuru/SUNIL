@@ -54,9 +54,7 @@ def test_et1_fixture_response_traces_to_tool_result(
         "a scheduler timezone bug), and one open issue about invoice rounding. Nothing "
         "looks urgent, but the rounding issue is worth a look."
     )
-    mock_server.script(
-        "POST", "/v1/messages", anthropic_success(text=valid_plan_json())
-    )
+    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
     mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
 
     settings = build_settings(
@@ -67,13 +65,9 @@ def test_et1_fixture_response_traces_to_tool_result(
     )
     with app_client(settings=settings) as client:
         login(client)
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
 
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
@@ -85,7 +79,8 @@ def test_et1_fixture_response_traces_to_tool_result(
     message = body["message"]
     assert message is not None and message["role"] == "assistant"
     assert message["content"] == analysis_text, (
-        f"the assistant message should be the agent's analysis verbatim (ADR-015), got: {message['content']!r}"
+        "the assistant message should be the agent's analysis verbatim (ADR-015), "
+        f"got: {message['content']!r}"
     )
     assert not message["content"].strip().startswith("{"), (
         "final response looks like raw JSON, not prose"
@@ -94,9 +89,7 @@ def test_et1_fixture_response_traces_to_tool_result(
     # "Traceable to real data returned by the M1 tool, not fabricated": the analysis
     # call's own prompt must have actually contained the tool's projected data.
     analysis_calls = llm_calls_for_request(db_path, request_id, purpose="analysis")
-    assert len(analysis_calls) >= 1, (
-        "expected at least one llm_calls row with purpose=analysis"
-    )
+    assert len(analysis_calls) >= 1, "expected at least one llm_calls row with purpose=analysis"
     combined_prompt = "\n".join(c.get("request_messages") or "" for c in analysis_calls)
     for expected_fragment in ("CSV export", "invoice rounding", "timezone"):
         assert expected_fragment in combined_prompt, (
@@ -124,31 +117,24 @@ def test_et1_live_end_to_end_real_data(
     with app_client(settings=settings) as client:
         login(client)
         started = time.monotonic()
-        resp = post_chat(
-            client, message="Check on EasyClean Workforce", request_id=request_id
-        )
+        resp = post_chat(client, message="Check on EasyClean Workforce", request_id=request_id)
         elapsed_s = time.monotonic() - started
 
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
     assert body["outcome"] == "ok", (
         f"expected outcome=ok, got {body.get('outcome')}: {body.get('failure')}"
     )
     message = body["message"]
-    assert message and message["content"].strip(), (
-        "expected a non-empty natural-language answer"
-    )
+    assert message and message["content"].strip(), "expected a non-empty natural-language answer"
     assert not message["content"].strip().startswith("{"), (
         "final response looks like raw JSON, not prose"
     )
 
     # NFR-060 is a p95 target that a single run cannot prove or disprove (D-12); report
     # honestly (docs/ARCHITECTURE_V1.md §5.2) rather than assert a percentile from n=1.
-    print(
-        f"ET-1 live turn latency: {elapsed_s:.2f}s (NFR-060 target: <=30s p95, indicative only)"
-    )
+    print(f"ET-1 live turn latency: {elapsed_s:.2f}s (NFR-060 target: <=30s p95, indicative only)")
     assert elapsed_s < 60, (
-        f"turn took {elapsed_s:.1f}s -- more than 2x the target, investigate before trusting NFR-060"
+        f"turn took {elapsed_s:.1f}s -- more than 2x the target, "
+        "investigate before trusting NFR-060"
     )

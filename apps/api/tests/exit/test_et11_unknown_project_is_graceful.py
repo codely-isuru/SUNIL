@@ -42,9 +42,7 @@ def test_et11_unknown_project_plan_sentinel_yields_graceful_failure(
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
-    mock_server.script(
-        "POST", "/v1/messages", anthropic_success(text=unknown_project_plan_json())
-    )
+    mock_server.script("POST", "/v1/messages", anthropic_success(text=unknown_project_plan_json()))
 
     settings = build_settings(
         database_url=database_url,
@@ -64,30 +62,22 @@ def test_et11_unknown_project_plan_sentinel_yields_graceful_failure(
         # the same {key, display_name} shape as failure.known_projects below.
         projects_resp = client.get("/api/v1/projects")
 
-    assert resp.status_code == 200, (
-        f"unexpected status {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"unexpected status {resp.status_code}: {resp.text[:500]}"
     body = resp.json()
-    assert body["outcome"] == "failed", (
-        f"expected outcome=failed, got {body.get('outcome')}"
-    )
+    assert body["outcome"] == "failed", f"expected outcome=failed, got {body.get('outcome')}"
     assert body["failure"]["kind"] == "unknown_project", (
         f"expected failure.kind=unknown_project, got {body['failure']}"
     )
     assert body["failure"]["kind"] in FAILURE_KINDS
 
     known = body["failure"].get("known_projects")
-    assert known, (
-        "expected a non-empty known_projects list so the UI can offer real choices"
-    )
+    assert known, "expected a non-empty known_projects list so the UI can offer real choices"
     keys = {p["key"] for p in known}
     assert "easy_clean_workforce" in keys, (
         f"expected the configured project in known_projects, got keys: {keys}"
     )
     for p in known:
-        assert "display_name" in p, (
-            f"each known_projects entry needs a display_name: {p}"
-        )
+        assert "display_name" in p, f"each known_projects entry needs a display_name: {p}"
 
     assert count_for_request(db_path, "tool_calls", request_id) == 0, (
         "an unknown project must never reach the tool -- no garbage-identifier call (FR-107)"
