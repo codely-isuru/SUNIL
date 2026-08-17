@@ -146,6 +146,34 @@ moves under a branch that is already green. Both halves of that trade are now on
 
 ---
 
+## 3a. Carried into M2 — open, recorded, not blocking
+
+* **Mutation coverage of the wrapper escaping is uncertified.** The Security Reviewer
+  mutation-tested its own new assertions: 3 of 4 mutations killed their intended test
+  (neutering the ADR-017 loopback guard, removing `follow_redirects=False`, removing
+  projection-layer escaping). The 4th — mutating the **wrapper** escaping at
+  `projection.py:193` — changed no test outcome, and it could not establish whether the
+  mutation applied. **The code is confirmed correct three independent ways** (live prompt
+  inspection, a direct delimiter-count test, and the bare `assert` at `:194` now a real
+  raise). What is unproven is that any test would catch a *future* regression in that
+  layer. Ten minutes with a working mutation settles it.
+* **ET-12 alone would not catch a projection-layer regression** — and that is correct
+  behaviour, not a defect: ET-12 is an outcome test, and the outcome still holds when one
+  layer is removed, because the wrapper is the backstop. **Consequence: the two layer
+  tests are load-bearing, not redundant with ET-12.** Do not delete them while tidying.
+* **DC-1** — M1's injection posture rests on the analysis call having no tools. That
+  expires when agents loop at M6.
+* **DC-14** — stored-plan verification (`validated = true` before privileged execution).
+  The `validated_plan_id` seam is built and the column carries it; the check is M5.
+* **Exclusive file ownership** prevented every cross-lane collision except one, and that
+  one (`sunil/capture.py`, created independently by two lanes) came from an ambiguous DM
+  instruction rather than from the rule failing.
+* `docs/ARCHITECTURE_V1.md:759`'s worked-example plan JSON names `load_recent_activity`;
+  the real `config/tools.yaml` registers `list_recent_activity`. QA copied the doc and lost
+  an hour to it. Architect's to correct.
+
+---
+
 ## 4. Known issues / open items
 
 * ~~BLOCKER — Docker daemon not running~~ **CLEARED 2026-08-14.** The owner started
