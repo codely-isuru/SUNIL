@@ -185,6 +185,82 @@ def anthropic_permanent_error(
 
 
 # ----------------------------------------------------------------------------------
+# Response builders — OpenAI Chat Completions API shape (T24: `general_reasoning`
+# now resolves to `openai`/`gpt-5.1-2025-11-13`, config/models.yaml — verified against
+# the installed `openai==3.1.0` SDK's own response models
+# (`openai.types.chat.ChatCompletion`/`Choice`/`ChatCompletionMessage`/
+# `CompletionUsage`, sunil/providers/openai.py's module docstring), the same discipline
+# `anthropic_success()` above used for the Messages API. Every field the SDK's pydantic
+# response models require with no default is present below.
+# ----------------------------------------------------------------------------------
+
+
+def openai_success(
+    *,
+    text: str,
+    prompt_tokens: int = 120,
+    completion_tokens: int = 60,
+    finish_reason: str = "stop",
+    provider_request_id: str | None = None,
+) -> ScriptedResponse:
+    return ScriptedResponse(
+        status=200,
+        body={
+            "id": provider_request_id or ("chatcmpl_" + uuid.uuid4().hex[:20]),
+            "object": "chat.completion",
+            "created": 1_723_000_000,
+            "model": "gpt-5.1-2025-11-13",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text, "refusal": None},
+                    "finish_reason": finish_reason,
+                    "logprobs": None,
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        },
+    )
+
+
+def openai_transient_error(*, status: int = 500, kind: str = "server_error") -> ScriptedResponse:
+    """500/503/429/408 -- specified (`sunil/providers/openai.py`, A-16) to map to
+    ProviderTransientError, the identical rule Anthropic uses (status-code-keyed, never
+    name-keyed)."""
+    return ScriptedResponse(
+        status=status,
+        body={
+            "error": {
+                "message": "simulated by QA fixture",
+                "type": kind,
+                "param": None,
+                "code": None,
+            }
+        },
+    )
+
+
+def openai_permanent_error(
+    *, status: int = 400, kind: str = "invalid_request_error"
+) -> ScriptedResponse:
+    return ScriptedResponse(
+        status=status,
+        body={
+            "error": {
+                "message": "simulated by QA fixture",
+                "type": kind,
+                "param": None,
+                "code": None,
+            }
+        },
+    )
+
+
+# ----------------------------------------------------------------------------------
 # Response builders — GitHub REST API shape
 # ----------------------------------------------------------------------------------
 

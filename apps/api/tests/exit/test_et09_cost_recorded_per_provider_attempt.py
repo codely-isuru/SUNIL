@@ -27,7 +27,7 @@ from tests.exit._client import (
 )
 from tests.exit._contract import M1_LLM_PURPOSES, NEVER_WRITTEN_IN_M1_PURPOSE
 from tests.exit._db import llm_calls_for_request
-from tests.exit._mock_upstreams import anthropic_success, anthropic_transient_error
+from tests.exit._mock_upstreams import openai_success, openai_transient_error
 from tests.exit._plans import valid_plan_json
 from tests.exit._scenarios import run_completed_turn
 from tests.exit.conftest import script_clean_github_activity
@@ -90,16 +90,19 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
     """This scenario is fully test-controlled (1 forced transient failure then 1
     success for `plan`, 1 success for `analysis`), so an exact count IS the right
     assertion here -- proving this harness would fail loudly if a real retry ever broke
-    a hard-coded "exactly 3" elsewhere (A-2's whole point)."""
+    a hard-coded "exactly 3" elsewhere (A-2's whole point).
+
+    T24: `general_reasoning` now resolves to `openai` -- both calls go through
+    `POST /v1/chat/completions`, not Anthropic's `/v1/messages`."""
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
-    mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
+    mock_server.script("POST", "/v1/chat/completions", openai_transient_error(status=500))
+    mock_server.script("POST", "/v1/chat/completions", openai_success(text=valid_plan_json()))
     mock_server.script(
         "POST",
-        "/v1/messages",
-        anthropic_success(text="Quiet week on EasyClean Workforce."),
+        "/v1/chat/completions",
+        openai_success(text="Quiet week on EasyClean Workforce."),
     )
 
     settings = build_settings(
@@ -107,6 +110,8 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        # `/v1` required -- see _scenarios.py's run_completed_turn() comment.
+        openai_base_url=f"{mock_server.base_url}/v1",
     )
     with app_client(settings=settings) as client:
         login(client)

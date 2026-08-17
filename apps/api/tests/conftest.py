@@ -129,14 +129,27 @@ def qa_config_dir() -> Path:
 
 @pytest.fixture
 def live_env() -> dict[str, str] | None:
-    """Real ANTHROPIC_API_KEY / GITHUB_TOKEN from the ambient OS environment, if both
-    are present. `None` means live-marked tests must skip (see `require_live_credentials`
-    below) -- this is the one place that decides "blocked on secrets" vs "can run".
+    """Real ANTHROPIC_API_KEY / GITHUB_TOKEN / OPENAI_API_KEY from the ambient OS
+    environment, if all three are present. `None` means live-marked tests must skip
+    (see `require_live_credentials` below) -- this is the one place that decides
+    "blocked on secrets" vs "can run".
+
+    T24: `OPENAI_API_KEY` joined the requirement here because `general_reasoning`
+    (`config/models.yaml`) now resolves to `openai` -- a live end-to-end turn needs
+    this key to reach the hot path at all, not only Anthropic's/GitHub's. All three
+    are required together (conservative) rather than loosening Anthropic/GitHub to
+    optional, since both ET-1 and ET-11's live variants still read GitHub, and a
+    future capability may still route through Anthropic.
     """
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    token = os.environ.get("GITHUB_TOKEN")
-    if key and token:
-        return {"ANTHROPIC_API_KEY": key, "GITHUB_TOKEN": token}
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    github_token = os.environ.get("GITHUB_TOKEN")
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if anthropic_key and github_token and openai_key:
+        return {
+            "ANTHROPIC_API_KEY": anthropic_key,
+            "GITHUB_TOKEN": github_token,
+            "OPENAI_API_KEY": openai_key,
+        }
     return None
 
 
@@ -147,7 +160,7 @@ def require_live_credentials(live_env: dict[str, str] | None) -> dict[str, str]:
     """
     if live_env is None:
         pytest.skip(
-            "blocked on secrets, not on code: needs a real ANTHROPIC_API_KEY and GITHUB_TOKEN "
-            "in the environment (arriving Day 3 per the brief). Not a red test result."
+            "blocked on secrets, not on code: needs a real ANTHROPIC_API_KEY, GITHUB_TOKEN "
+            "and OPENAI_API_KEY in the environment. Not a red test result."
         )
     return live_env

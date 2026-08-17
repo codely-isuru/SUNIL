@@ -32,7 +32,7 @@ from tests.exit._client import (
     seed_owner_directly,
 )
 from tests.exit._db import all_text_blob, fetch_all, tool_calls_for_request
-from tests.exit._mock_upstreams import anthropic_success
+from tests.exit._mock_upstreams import openai_success
 from tests.exit._plans import valid_plan_json
 from tests.exit.conftest import (
     INJECTED_ISSUE_BODY_MARKER,
@@ -51,14 +51,15 @@ def test_et12_injected_activity_never_reaches_a_prompt_and_behaviour_is_unchange
         "EasyClean Workforce activity looks normal: a few commits and one open "
         "issue about invoice rounding."
     )
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
+    mock_server.script("POST", "/v1/chat/completions", openai_success(text=valid_plan_json()))
+    mock_server.script("POST", "/v1/chat/completions", openai_success(text=analysis_text))
 
     settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        openai_base_url=f"{mock_server.base_url}/v1",
     )
     with app_client(settings=settings) as client:
         login(client)

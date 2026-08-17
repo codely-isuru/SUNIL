@@ -67,16 +67,23 @@ def test_the_pinned_price_table_matches_architecture_4_4() -> None:
     assert registries.models.pricing_version == "2026-08-14"
 
 
-def test_both_m1_capabilities_resolve_and_general_reasoning_defaults_to_sonnet() -> None:
-    """§5.3: 'claude-sonnet-5 is the M1 default for both live
-    capabilities.'"""
+def test_both_m1_capabilities_resolve_and_general_reasoning_defaults_to_gpt51() -> None:
+    """§5.3, T24 (2026-08-17): `general_reasoning` now resolves to
+    `openai`/`gpt-5.1-2025-11-13` — the owner has an OpenAI key and no
+    Anthropic key yet. `general_reasoning_anthropic` carries the shape
+    `general_reasoning` had before this change, so the Anthropic path is
+    still config-reachable, not deleted."""
     registries = load_registries(repo_root() / "config")
 
     general = registries.models.get_capability("general_reasoning")
     complex_ = registries.models.get_capability("complex_reasoning")
+    general_anthropic = registries.models.get_capability("general_reasoning_anthropic")
 
-    assert general.model == "claude-sonnet-5"
+    assert general.provider == "openai"
+    assert general.model == "gpt-5.1-2025-11-13"
     assert complex_.model == "claude-opus-5"
+    assert general_anthropic.provider == "anthropic"
+    assert general_anthropic.model == "claude-sonnet-5"
 
 
 def test_the_github_tool_exposes_exactly_the_one_read_only_operation() -> None:

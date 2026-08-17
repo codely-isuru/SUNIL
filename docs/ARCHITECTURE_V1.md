@@ -717,7 +717,19 @@ shown a timeout error, and the turn's own failure would never be recorded as a f
 - 40 < 45 by design: the server always produces a persisted, traced failure *before* the client
   gives up, so a timeout is never invisible on the server side.
 
-`claude-sonnet-5` is the M1 default for both live capabilities — it is the documented best
+**T24 (2026-08-17) update:** `general_reasoning` — both live capabilities — now resolves to
+`gpt-5.1-2025-11-13`/`openai`, not `claude-sonnet-5`. The owner has an OpenAI key and no
+Anthropic key yet (`docs/SECRETS_SETUP.md` §0), so the M1 hot path needs the provider whose key
+actually exists; `general_reasoning_anthropic` (`config/models.yaml`) carries the exact shape
+`general_reasoning` had before this change, so adding the Anthropic key later is a config edit,
+not a code change (ADR-016). `claude-opus-5` is still wired to `complex_reasoning` and is still
+not on the M1 hot path — that capability, and the latency reasoning below it, are unaffected by
+this change. OpenAI's per-token pricing is not yet verified (`config/models.yaml`'s own comment)
+so the "$150 budget comfortable" claim below is Anthropic-specific and does not currently
+transfer; it is left here as the reasoning for `claude-sonnet-5`'s original selection, not as a
+claim about the live path.
+
+`claude-sonnet-5` was the M1 default for both live capabilities — it is the documented best
 speed/intelligence trade and at $2/$10 per MTok it keeps the whole $150 budget comfortable.
 `claude-opus-5` is wired to `complex_reasoning` and is not on the M1 hot path. Opus calls with
 `effort: high` would put the 30 s target at genuine risk; that is the reason, stated so it is not
@@ -735,9 +747,19 @@ and that must be provable by a test rather than asserted.
 **Layer 1 — the schema is generated from the registries, at runtime.**
 `plan_schema.build_plan_schema(agents, tools, projects, actions)` emits JSON Schema whose `agents`,
 `tools`, `project_key` and `steps[].action` fields are `enum`s populated from the live registries.
-Because the Anthropic API enforces the schema by constrained decoding, **the model cannot emit an
-agent or tool name that is not registered** — the token sequence is not reachable. The whitelist is
-not a post-hoc filter; it is part of the grammar.
+When the Anthropic API is the active provider, it enforces the schema by constrained decoding, so
+**the model cannot emit an agent or tool name that is not registered** — the token sequence is not
+reachable. The whitelist is not a post-hoc filter; it is part of the grammar.
+
+**T24 (2026-08-17): `general_reasoning` now resolves to `openai`, not `anthropic` (§5.3).**
+OpenAI's structured-output guarantee is conditional (`response_format.json_schema.strict: true`,
+`sunil/providers/openai.py`'s module docstring) and covers a narrower JSON Schema subset than
+Anthropic's unconditional constrained decoding — every property must appear in `required` under
+`strict` mode, which is why `steps[].tool` was added to `required` below. The adapter always sets
+`strict: True`, so Layer 1 still holds on the current hot path, but it is now doing *conditional*
+work rather than an unconditional vendor guarantee — Layers 3–5 are correspondingly more load-
+bearing than they were when Anthropic was the only provider ever exercised. This is a documented
+trade, not a silently-discovered gap.
 
 ```jsonc
 {
@@ -753,7 +775,7 @@ not a post-hoc filter; it is part of the grammar.
     "tools":         {"type":"array","items":{"type":"string","enum":["github"]}},
     "steps":         {"type":"array","items":{
         "type":"object","additionalProperties":false,
-        "required":["id","action"],
+        "required":["id","action","tool"],   // T24: every property required (OpenAI strict mode)
         "properties":{
           "id":     {"type":"string"},
           "action": {"type":"string","enum":["resolve_project","list_recent_activity","summarise_activity"]},
@@ -768,10 +790,11 @@ unrecognised project name has a legal, non-executing representation, so the mode
 invent an identifier. `tool: "none"` avoids a nullable union type, which is outside the verified
 schema-feature envelope (§4.3).
 
-**Layer 2 — the provider refuses to guess.** `AnthropicProvider.generate()` returns
-`LLMResponse.data` only if a `json_schema` was requested *and* the response body parsed as JSON.
-Anything else raises `StructuredOutputError`. It never returns half-parsed data, never falls back to
-regex, never strips markdown fences and retries. NFR-041 is a property of this one method.
+**Layer 2 — the provider refuses to guess.** Both `AnthropicProvider.generate()` and (T23/T24)
+`OpenAIProvider.generate()` return `LLMResponse.data` only if a `json_schema` was requested *and*
+the response body parsed as JSON. Anything else raises `StructuredOutputError`. Neither ever
+returns half-parsed data, falls back to regex, or strips markdown fences and retries. NFR-041 is a
+property of this method on every registered provider, not one vendor's alone.
 
 **Layer 3 — Pydantic.** `PlanDraft` with `model_config = ConfigDict(extra="forbid")` re-validates
 types, enum membership, `0.0 ≤ confidence ≤ 1.0`, non-empty `steps`, and unique `steps[].id`. This

@@ -16,6 +16,19 @@ The schema stays inside the verified `output_config` feature envelope
 sentinels — `project_key: "__unknown__"` and `steps[].tool: "none"` —
 keep every field a plain string enum.
 
+**T24 (2026-08-17): every property is listed in every object's
+`required`, `steps[].tool` included.** This is not merely stylistic —
+`general_reasoning` (§4.5, `config/models.yaml`) now resolves to the
+OpenAI provider, whose `strict: true` structured-output mode requires
+every property to appear in `required` (a property merely absent from
+`required` is legal "optional" for Anthropic but not for OpenAI — see
+`sunil/providers/openai.py`'s module docstring). A step with no tool
+still emits `tool: "none"` explicitly rather than omitting the key; the
+sentinel already existed, only the requiredness was missing. Anthropic's
+envelope (§4.3) permits `required` freely, so this narrows nothing on
+that path — `test_plan_schema_stays_inside_the_output_config_feature_
+envelope` still passes unchanged.
+
 **Flagged assumption, not a registry-backed fact — confirm with the
 Architect:** none of T3's six `config/*.yaml` files models a "plan
 intent" or "plan step action" vocabulary; `agents.yaml` holds role and
@@ -106,7 +119,19 @@ def build_plan_schema(registries: Registries) -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["id", "action"],
+                    # T24: every property listed in `required`, `tool`
+                    # included — OpenAI's `strict: true` structured-output
+                    # mode requires this (a property merely absent from
+                    # `required` is not legal "optional" the way it is for
+                    # Anthropic; see `sunil/providers/openai.py`). A step
+                    # with no tool still legally emits this field — the
+                    # `"none"` sentinel already in `tool`'s enum below
+                    # expresses absence explicitly rather than omitting
+                    # the key. Both providers' constrained decoding stay
+                    # satisfied by this: `required` naming an
+                    # already-legal enum value narrows nothing Anthropic's
+                    # envelope forbids (§4.3 permits `required` freely).
+                    "required": ["id", "action", "tool"],
                     "properties": {
                         "id": {"type": "string"},
                         "action": {"type": "string", "enum": action_names},
