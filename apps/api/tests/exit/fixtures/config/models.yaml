@@ -4,16 +4,22 @@
 # Manager ruling: "the flat shape is canonical... a fixture that models a different
 # shape is testing a configuration format that does not exist"). Prices copied verbatim
 # from ARCHITECTURE_V1.md §4.4's verified catalogue (USD per million tokens) so ET-9's
-# cost arithmetic checks a real pinned table, not an invented one. `claude-sonnet-5` is
-# the M1 default for both live capabilities (§5.3). Quoted price strings match the real
-# file's own convention (avoids float-to-Decimal precision surprises).
+# cost arithmetic checks a real pinned table, not an invented one where Anthropic
+# capabilities are still exercised. Quoted price strings match the real file's own
+# convention (avoids float-to-Decimal precision surprises).
 #
-# T23 (2026-08-17): `gpt-5.1-2025-11-13` / `general_reasoning_openai` mirror the real
-# `config/models.yaml`'s new entries so this fixture stays a faithful copy of the shape
-# the loader actually validates cross-registry (agents/tools/projects) against, not a
-# narrower one that would pass here and fail against the real file. Its four numeric
-# fields are the SAME unverified placeholder as the real file (0 — see that file's own
-# comment); this is not an independent second guess at a real price.
+# T23 (2026-08-17): `gpt-5.1-2025-11-13` mirrors the real `config/models.yaml`'s new
+# model entry so this fixture stays a faithful copy of the shape the loader actually
+# validates cross-registry (agents/tools/projects) against, not a narrower one that
+# would pass here and fail against the real file. Its four numeric fields are the SAME
+# unverified placeholder as the real file (0 — see that file's own comment); this is
+# not an independent second guess at a real price.
+#
+# T24 (2026-08-17): `general_reasoning` repointed to `openai`/`gpt-5.1-2025-11-13`
+# (the M1 hot path — the owner has an OpenAI key, no Anthropic key yet), mirroring the
+# real file exactly. `general_reasoning_anthropic` carries the shape `general_reasoning`
+# had before this change, same reason the real file keeps it: a config edit, not a code
+# change, is all a later Anthropic key needs.
 version: 1
 pricing_version: "2026-08-14"
 
@@ -44,8 +50,8 @@ models:
 
 capabilities:
   general_reasoning:
-    provider: anthropic
-    model: claude-sonnet-5
+    provider: openai
+    model: gpt-5.1-2025-11-13
     max_tokens: 1024
     timeout_s: 20
 
@@ -55,8 +61,8 @@ capabilities:
     max_tokens: 2048
     timeout_s: 25
 
-  general_reasoning_openai:
-    provider: openai
-    model: gpt-5.1-2025-11-13
+  general_reasoning_anthropic:
+    provider: anthropic
+    model: claude-sonnet-5
     max_tokens: 1024
     timeout_s: 20

@@ -10,9 +10,19 @@
 # `capabilities` is the `capability -> {provider, model, max_tokens,
 # timeout_s}` lookup an agent's `preferred_capability` /
 # `escalation_capability` (config/agents.yaml) and the orchestrator's own
-# plan-generation call resolve against (§4.5). `claude-sonnet-5` is the M1
-# default for both live capabilities (§5.3); `complex_reasoning` is wired
-# to Opus 5 for M6's escalation path and is not on the M1 hot path.
+# plan-generation call resolve against (§4.5).
+#
+# T24 (2026-08-17): `general_reasoning` now resolves to `openai` /
+# `gpt-5.1-2025-11-13` — the owner has an OpenAI key and no Anthropic key
+# yet (docs/SECRETS_SETUP.md §0), so the M1 hot path needs a provider
+# whose key actually exists. `general_reasoning_anthropic` below carries
+# the exact shape `general_reasoning` used before this change
+# (`claude-sonnet-5`) so that adding the Anthropic key later is a config
+# edit (repoint `general_reasoning` back, or point `config/agents.yaml` /
+# `core/orchestrator/turn.py`'s `_PLAN_CAPABILITY` at
+# `general_reasoning_anthropic` instead), never a code change (ADR-016).
+# `complex_reasoning` is wired to Opus 5 for M6's escalation path and is
+# not on the M1 hot path either way.
 version: 1
 pricing_version: "2026-08-14"
 
@@ -49,9 +59,11 @@ models:
     output_usd_per_mtok: "5"
     supports_structured_output: true
 
-  # T23 (2026-08-17) — the second registered provider (ADR-003 §4.6). The
-  # model id itself IS verified: `gpt-5.1-2025-11-13` is a real, pinned
-  # entry read directly from the installed `openai==3.1.0` SDK's own
+  # T23 (2026-08-17) — the second registered provider (ADR-003 §4.6);
+  # T24 (2026-08-17) repointed `general_reasoning` here, so this is now
+  # the M1 hot-path model. The model id itself IS verified:
+  # `gpt-5.1-2025-11-13` is a real, pinned entry read directly from the
+  # installed `openai==3.1.0` SDK's own
   # `openai.types.shared.chat_model.ChatModel` Literal, not invented.
   # `supports_structured_output: true` is also verified — the SDK exposes
   # `response_format={"type": "json_schema", ...}` with a `strict` flag
@@ -81,9 +93,20 @@ capabilities:
   # Used by both the orchestrator's plan-generation call (purpose=plan) and
   # the Project Manager agent's analysis call (purpose=analysis) — M1's
   # nominal-path model for both (§5.1, §5.3).
+  #
+  # T24 (2026-08-17): repointed from anthropic/claude-sonnet-5 to
+  # openai/gpt-5.1-2025-11-13 — the owner has an OpenAI key, no Anthropic
+  # key yet. This is the real test of ADR-003's §4.6 claim: the hot path
+  # now runs through the second provider with zero changes to
+  # core/orchestrator, core/agent_framework, agents/* or tools/* — only
+  # this file and config/agents.yaml's *values* would ever need to move,
+  # and config/agents.yaml did not even need that (it names the
+  # capability, not the provider). This was made strict-schema-safe for
+  # OpenAI first — see core/orchestrator/plan_schema.py's T24 note
+  # (every property, including steps[].tool, is now in `required`).
   general_reasoning:
-    provider: anthropic
-    model: claude-sonnet-5
+    provider: openai
+    model: gpt-5.1-2025-11-13
     max_tokens: 1024
     timeout_s: 20
 
@@ -95,19 +118,13 @@ capabilities:
     max_tokens: 2048
     timeout_s: 25
 
-  # T23, ADR-003 §4.6: proves the second provider is fully wired end to
-  # end (registry -> model catalogue -> a capability) without disturbing
-  # the M1 hot path. No M1 agent points `preferred_capability`/
-  # `escalation_capability` at this name yet — `general_reasoning` above
-  # stays on Anthropic. A future engineer who does repoint a
-  # structured-output-using capability here first needs
-  # `core/orchestrator/plan_schema.py`'s `steps[].tool` property added to
-  # that object's own `required` list — see `sunil/providers/openai.py`'s
-  # module docstring point 5 for why (OpenAI's strict-schema mode requires
-  # every property to be listed in `required`; Anthropic's envelope does
-  # not).
-  general_reasoning_openai:
-    provider: openai
-    model: gpt-5.1-2025-11-13
+  # T24: the exact shape `general_reasoning` had before this change —
+  # kept so adding the owner's Anthropic key later is a config edit
+  # (repoint `general_reasoning` back to this shape, or point
+  # `config/agents.yaml`/`turn.py`'s `_PLAN_CAPABILITY` at this name
+  # instead), never a code change (ADR-016).
+  general_reasoning_anthropic:
+    provider: anthropic
+    model: claude-sonnet-5
     max_tokens: 1024
     timeout_s: 20

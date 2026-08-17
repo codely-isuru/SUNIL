@@ -80,3 +80,22 @@ def test_plan_schema_requires_every_top_level_field(registries: Registries) -> N
         "tools",
         "steps",
     }
+
+
+def test_plan_schema_requires_every_step_field_too(registries: Registries) -> None:
+    """T24: OpenAI's `strict: true` structured-output mode (verified from
+    the installed SDK's own `openai/lib/_pydantic.py` strict-schema
+    helper — see `sunil/providers/openai.py`) requires *every* property
+    listed in `required`; a property that is merely absent from
+    `required` is not legal "optional" under that mode, unlike Anthropic's
+    envelope where it is. `tool` was the one property on the whole schema
+    not in its object's own `required` list — a step legitimately has no
+    tool, but the enum already carries the `"none"` sentinel for exactly
+    that case (see the module docstring), so the fix is to require the
+    property and let `"none"` express absence, not to leave it optional.
+    """
+    schema = build_plan_schema(registries)
+
+    step_schema = schema["properties"]["steps"]["items"]
+    assert set(step_schema["required"]) == set(step_schema["properties"].keys())
+    assert set(step_schema["required"]) == {"id", "action", "tool"}

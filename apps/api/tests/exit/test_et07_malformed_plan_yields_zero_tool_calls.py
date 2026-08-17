@@ -25,7 +25,7 @@ from tests.exit._client import (
     seed_owner_directly,
 )
 from tests.exit._db import count_for_request, plans_for_request
-from tests.exit._mock_upstreams import anthropic_success
+from tests.exit._mock_upstreams import openai_success
 from tests.exit._plans import malformed_plan_text, plan_with_unregistered_agent_json
 
 
@@ -40,13 +40,14 @@ def _run_turn_with_malformed_plan(
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=plan_text))
+    mock_server.script("POST", "/v1/chat/completions", openai_success(text=plan_text))
 
     settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        openai_base_url=f"{mock_server.base_url}/v1",
     )
     with app_client(settings=settings) as client:
         login(client)

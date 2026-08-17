@@ -18,7 +18,7 @@ from tests.exit._client import (
     run_migrations,
     seed_owner_directly,
 )
-from tests.exit._mock_upstreams import ScriptedHTTPServer, anthropic_success
+from tests.exit._mock_upstreams import ScriptedHTTPServer, openai_success
 from tests.exit._plans import valid_plan_json
 from tests.exit.conftest import script_clean_github_activity
 
@@ -50,22 +50,34 @@ def run_completed_turn(
     instance per ADR-018 — see `build_settings()`/`app_client()`). Returns the raw HTTP
     response; callers query `db_path` afterwards for DB-level assertions (the SQLite
     file is real and closed by the time the `with app_client(...)` block exits).
+
+    T24: `general_reasoning` (`config/models.yaml`) now resolves to `openai` — both the
+    plan call and the analysis call go through `POST /v1/chat/completions`, not
+    Anthropic's `/v1/messages`, so this scripts the OpenAI response shape.
     """
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
     mock_server.script(
         "POST",
-        "/v1/messages",
-        anthropic_success(text=valid_plan_json(project_key=project_key)),
+        "/v1/chat/completions",
+        openai_success(text=valid_plan_json(project_key=project_key)),
     )
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
+    mock_server.script("POST", "/v1/chat/completions", openai_success(text=analysis_text))
 
     settings = build_settings(
         database_url=database_url,
         config_dir=config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        # `/v1` is NOT optional here (found empirically, T24): unlike
+        # Anthropic's client, which appends the full `/v1/messages` path
+        # itself onto a bare host, `openai`'s client joins its relative
+        # `/chat/completions` path onto `base_url` verbatim -- the `/v1`
+        # segment is expected to already be part of `base_url` (exactly
+        # matching the real default `https://api.openai.com/v1`,
+        # `sunil/settings.py`'s `_CANONICAL_BASE_URLS`).
+        openai_base_url=f"{mock_server.base_url}/v1",
         turn_deadline_s=turn_deadline_s,
     )
     with app_client(settings=settings) as client:

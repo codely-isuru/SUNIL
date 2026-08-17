@@ -33,7 +33,7 @@ from tests.exit._client import (
 )
 from tests.exit._contract import FAILURE_KINDS
 from tests.exit._db import count_for_request
-from tests.exit._mock_upstreams import anthropic_success
+from tests.exit._mock_upstreams import openai_success
 from tests.exit._plans import unknown_project_plan_json
 
 
@@ -42,13 +42,16 @@ def test_et11_unknown_project_plan_sentinel_yields_graceful_failure(
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=unknown_project_plan_json()))
+    mock_server.script(
+        "POST", "/v1/chat/completions", openai_success(text=unknown_project_plan_json())
+    )
 
     settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        openai_base_url=f"{mock_server.base_url}/v1",
     )
     with app_client(settings=settings) as client:
         login(client)
@@ -109,6 +112,7 @@ def test_et11_live_unconfigured_project_is_graceful_no_fault_injection_needed(
         config_dir=qa_config_dir,
         anthropic_api_key=creds["ANTHROPIC_API_KEY"],
         github_token=creds["GITHUB_TOKEN"],
+        openai_api_key=creds["OPENAI_API_KEY"],
     )
     with app_client(settings=settings) as client:
         login(client)

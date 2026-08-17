@@ -185,6 +185,7 @@ def build_settings(
     config_dir: Path,
     anthropic_base_url: str | None = None,
     github_api_base_url: str | None = None,
+    openai_base_url: str | None = None,
     turn_deadline_s: int | None = None,
     owner_username: str = TEST_OWNER_USERNAME,
     owner_password: str = TEST_OWNER_PASSWORD,
@@ -197,10 +198,11 @@ def build_settings(
     seam. `_env_file=None` so a real repo-root `.env`, if one happens to exist on this
     machine, is never read into a test.
 
-    `anthropic_base_url` / `github_api_base_url` are the ADR-017 transport seams. Every
-    value this harness passes for them is loopback (a local `ScriptedHTTPServer`), so
-    the accompanying guard (§9.7, T-24) never rejects a legitimate test call. The
-    negative case is Security's (T19) named test, not duplicated here.
+    `anthropic_base_url` / `github_api_base_url` / `openai_base_url` are the ADR-017
+    transport seams. Every value this harness passes for them is loopback (a local
+    `ScriptedHTTPServer`), so the accompanying guard (§9.7, T-24) never rejects a
+    legitimate test call. The negative case is Security's (T19) named test, not
+    duplicated here.
     """
     Settings = import_or_fail(
         "sunil.settings.Settings", blocked_on="T1 (Settings, ADR-017/018 fields)"
@@ -221,6 +223,8 @@ def build_settings(
         kwargs["anthropic_base_url"] = anthropic_base_url
     if github_api_base_url:
         kwargs["github_api_base_url"] = github_api_base_url
+    if openai_base_url:
+        kwargs["openai_base_url"] = openai_base_url
     if turn_deadline_s is not None:
         kwargs["sunil_turn_deadline_s"] = turn_deadline_s
     if overrides:
@@ -243,6 +247,7 @@ def build_settings(
     for requested, attr_name in (
         (anthropic_base_url, "anthropic_base_url"),
         (github_api_base_url, "github_api_base_url"),
+        (openai_base_url, "openai_base_url"),
     ):
         if requested and getattr(settings, attr_name, None) != requested:
             pytest.fail(
@@ -256,17 +261,28 @@ def build_settings(
 
 
 def build_live_settings(
-    *, database_url: str, config_dir: Path, anthropic_api_key: str, github_token: str
+    *,
+    database_url: str,
+    config_dir: Path,
+    anthropic_api_key: str,
+    github_token: str,
+    openai_api_key: str,
 ) -> Any:
     """Same as `build_settings()`, but for `@pytest.mark.live` tests: real credentials,
-    and `anthropic_base_url`/`github_api_base_url` left at their canonical defaults so
-    the real APIs are actually called.
+    and `anthropic_base_url`/`github_api_base_url`/`openai_base_url` left at their
+    canonical defaults so the real APIs are actually called.
+
+    T24: `openai_api_key` is required (not defaulted to the CANARY value
+    `build_settings()` uses elsewhere) because `general_reasoning` now resolves to
+    `openai` -- a live turn with a fake key would reach the real API and get a real
+    401, not a meaningful proof of anything.
     """
     return build_settings(
         database_url=database_url,
         config_dir=config_dir,
         anthropic_api_key=anthropic_api_key,
         github_token=github_token,
+        openai_api_key=openai_api_key,
     )
 
 

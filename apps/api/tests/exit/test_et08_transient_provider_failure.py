@@ -38,7 +38,7 @@ from tests.exit._db import (
     llm_calls_for_request,
     task_for_request,
 )
-from tests.exit._mock_upstreams import anthropic_success, anthropic_transient_error
+from tests.exit._mock_upstreams import openai_success, openai_transient_error
 from tests.exit._plans import valid_plan_json
 from tests.exit.conftest import script_clean_github_activity
 
@@ -50,12 +50,12 @@ def test_et8_recovers_via_retry_and_completes_the_turn(
     seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
     # attempt 1 (plan): transient failure; attempt 2 (plan): success; then analysis.
-    mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
-    mock_server.script("POST", "/v1/messages", anthropic_success(text=valid_plan_json()))
+    mock_server.script("POST", "/v1/chat/completions", openai_transient_error(status=500))
+    mock_server.script("POST", "/v1/chat/completions", openai_success(text=valid_plan_json()))
     mock_server.script(
         "POST",
-        "/v1/messages",
-        anthropic_success(text="All quiet on EasyClean Workforce."),
+        "/v1/chat/completions",
+        openai_success(text="All quiet on EasyClean Workforce."),
     )
 
     settings = build_settings(
@@ -63,6 +63,7 @@ def test_et8_recovers_via_retry_and_completes_the_turn(
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        openai_base_url=f"{mock_server.base_url}/v1",
     )
     with app_client(settings=settings) as client:
         login(client)
@@ -93,13 +94,14 @@ def test_et8_exhausted_retries_fail_cleanly_with_terminal_failed_state(
     # Every attempt fails the same way (ScriptedHTTPServer holds a single scripted
     # response constant when only one is queued) -- exercises full exhaustion, not a
     # lucky recovery.
-    mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
+    mock_server.script("POST", "/v1/chat/completions", openai_transient_error(status=500))
 
     settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        openai_base_url=f"{mock_server.base_url}/v1",
     )
     with app_client(settings=settings) as client:
         login(client)
@@ -149,13 +151,17 @@ def test_et8_turn_deadline_breach_also_maps_to_provider_error(
     """
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
-    mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
+    # Never actually reached -- the deadline is breached before the first attempt
+    # starts -- but scripted anyway so a future change that makes the deadline check
+    # fire one attempt later fails loudly here instead of getting a silent 404.
+    mock_server.script("POST", "/v1/chat/completions", openai_transient_error(status=500))
 
     settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
+        openai_base_url=f"{mock_server.base_url}/v1",
         turn_deadline_s=0,
     )
     with app_client(settings=settings) as client:

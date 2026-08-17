@@ -81,7 +81,13 @@ class _ScriptedProvider:
     fake.
     """
 
-    name = "anthropic"
+    # T24: `general_reasoning` (`config/models.yaml`, loaded for real below via
+    # `load_registries`) now resolves to `openai` -- this fake must register
+    # under the name the real config actually points at, or `ModelRouter`
+    # raises `UnknownProviderError` before this harness's own fakery is even
+    # reached. The provider's *name* is a label the router looks up by string;
+    # nothing about this test is Anthropic- or OpenAI-specific otherwise.
+    name = "openai"
 
     def __init__(self, plan: dict[str, Any], analysis_text: str) -> None:
         self._plan = plan
