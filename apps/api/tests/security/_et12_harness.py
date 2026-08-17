@@ -81,15 +81,14 @@ class _ScriptedProvider:
     fake.
     """
 
-    # T24: `general_reasoning` (`config/models.yaml`, loaded for real below via
-    # `load_registries`) now resolves to `openai` -- this fake must register
-    # under the name the real config actually points at, or `ModelRouter`
-    # raises `UnknownProviderError` before this harness's own fakery is even
-    # reached. The provider's *name* is a label the router looks up by string;
-    # nothing about this test is Anthropic- or OpenAI-specific otherwise.
-    name = "openai"
-
-    def __init__(self, plan: dict[str, Any], analysis_text: str) -> None:
+    # `name` is supplied by the caller from the *resolved* capability rather
+    # than fixed here. A hard-coded vendor silently stops exercising the real
+    # path the moment `config/models.yaml` repoints `general_reasoning` --
+    # which T25 did, moving the hot path from Anthropic to OpenAI. The
+    # provider name is only a lookup label for `ModelRouter`; nothing else in
+    # this harness is vendor-specific.
+    def __init__(self, plan: dict[str, Any], analysis_text: str, *, name: str) -> None:
+        self.name = name
         self._plan = plan
         self._analysis_text = analysis_text
         self.requests: list[Any] = []
@@ -158,9 +157,14 @@ async def _drive(github_payload: dict[str, list[dict]], *, message: str) -> Turn
 
     registries = load_registries(REPO_ROOT / "config")
 
+    # Whichever provider the hot-path capability resolves to today. Hard-coding
+    # a vendor here would have silently stopped exercising the real path the
+    # moment T25 switched `general_reasoning` from Anthropic to OpenAI.
+    hot_path_provider = registries.models.get_capability("general_reasoning").provider
     provider = _ScriptedProvider(
         _plan_for(registries),
         "Recent activity looks routine: a handful of commits and one open issue.",
+        name=hot_path_provider,
     )
     provider_registry = ProviderRegistry()
     provider_registry.register(provider)

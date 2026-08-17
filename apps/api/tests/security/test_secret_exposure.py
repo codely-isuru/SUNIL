@@ -38,17 +38,110 @@ SECRET_NAME_PATTERN = re.compile(r"(api_key|apikey|token|secret|password|credent
 # ---------------------------------------------------------------------------
 
 
-def test_every_secret_named_field_is_a_secretstr(fake_env: dict[str, str]) -> None:
-    """ADR-006: every secret typed SecretStr, never str. Derive the list from
-    the field names rather than restating it, so it cannot drift."""
+# A secret may be `SecretStr` or `SecretStr | None` — and `None` is a real
+# narrowing, so which fields are allowed to be optional is pinned here rather
+# than left to drift. T25 made the two *provider* keys optional because the
+# owner holds one vendor's key and the app must not demand a key it never
+# calls. Nothing else may become optional without this list changing, which is
+# a reviewable one-line diff rather than a silent weakening.
+OPTIONAL_SECRET_FIELDS = frozenset({"anthropic_api_key", "openai_api_key"})
+
+
+def _secret_annotations() -> tuple[type, ...]:
+    from pydantic import SecretStr
+
+    return (SecretStr, SecretStr | None)
+
+
+def test_every_secret_named_field_is_a_secretstr_or_optional_secretstr(
+    fake_env: dict[str, str],
+) -> None:
+    """ADR-006: every secret typed `SecretStr`, never `str`.
+
+    Widened for T25, but deliberately *not* to "contains a SecretStr
+    somewhere". The point of this test is that a credential can never be a
+    plain `str`, so the assertion enumerates the two annotations that keep the
+    `[REDACTED]` guarantee and rejects everything else — `str`, `str | None`,
+    `Any` and bare `Optional` all still fail.
+    """
+    from pydantic import SecretStr
     from sunil.settings import Settings
 
+    allowed = (SecretStr, SecretStr | None)
     offenders = [
+        f"{name}: {field.annotation}"
+        for name, field in Settings.model_fields.items()
+        if SECRET_NAME_PATTERN.search(name) and field.annotation not in allowed
+    ]
+    assert not offenders, (
+        "secret-named fields must be SecretStr or SecretStr | None:"
+        + "\n  "
+        + ("\n  ").join(offenders)
+    )
+
+
+def test_only_the_provider_keys_are_optional_secrets(fake_env: dict[str, str]) -> None:
+    """`SecretStr | None` is weaker than `SecretStr`: a `None` carries no
+    `[REDACTED]` guarantee because it carries no value at all, and every
+    unwrap of it needs a `None` check that a non-optional field does not.
+
+    That trade is correct for a provider key the owner may not hold. It would
+    not be correct for `SESSION_SECRET`, `OWNER_PASSWORD`, `GITHUB_TOKEN` or
+    `DATABASE_URL` — each of those being absent means the app cannot do its
+    job safely, and should fail at construction. This pins the boundary.
+    """
+    from pydantic import SecretStr
+    from sunil.settings import Settings
+
+    optional_now = {
         name
         for name, field in Settings.model_fields.items()
-        if SECRET_NAME_PATTERN.search(name) and field.annotation is not SecretStr
-    ]
-    assert not offenders, f"secret-named fields typed as plain str: {offenders}"
+        if SECRET_NAME_PATTERN.search(name) and field.annotation == SecretStr | None
+    }
+    newly_optional = optional_now - OPTIONAL_SECRET_FIELDS
+    assert not newly_optional, (
+        f"these secrets became optional without a decision: {sorted(newly_optional)}. "
+        "An optional secret is one nothing forces the operator to supply."
+    )
+    no_longer_optional = OPTIONAL_SECRET_FIELDS - optional_now
+    assert not no_longer_optional, (
+        f"these are no longer optional: {sorted(no_longer_optional)} — update "
+        "OPTIONAL_SECRET_FIELDS so the list stays the honest record of the trade."
+    )
+
+
+def test_an_absent_provider_key_never_crashes_a_secret_unwrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The concrete hazard `SecretStr | None` introduces: every
+    `.get_secret_value()` on an optional field needs a `None` check, and one
+    was already missed in `redaction.register_secrets_from_settings()`.
+
+    Behavioural rather than static, so it catches a *new* unguarded unwrap on
+    either startup path, not just the one that has already been fixed.
+    """
+    from sunil.providers.registry import build_provider_registry
+    from sunil.redaction import register_secrets_from_settings, reset_registry_for_tests
+    from sunil.settings import Settings
+
+    for key, value in FAKE_ENV.items():
+        monkeypatch.setenv(key, value)
+    for absent in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(absent, raising=False)
+
+    settings = Settings(_env_file=None)
+    assert settings.anthropic_api_key is None
+    assert settings.openai_api_key is None
+
+    reset_registry_for_tests()
+    try:
+        register_secrets_from_settings(settings)  # must not raise
+    finally:
+        reset_registry_for_tests()
+
+    registries = require("sunil.core.registry.loader", "T3").load_registries(REPO_ROOT / "config")
+    registry = build_provider_registry(settings=settings, model_registry=registries.models)
+    assert registry is not None
 
 
 def test_no_secretstr_renders_its_value_in_any_common_rendering(
@@ -422,7 +515,7 @@ def test_dev_check_reports_presence_only_for_every_secretstr_field(
     expected = {
         name.upper()
         for name, field in Settings.model_fields.items()
-        if field.annotation is SecretStr
+        if field.annotation in (SecretStr, SecretStr | None)
     }
     assert declared == expected, (
         f"dev-check.ps1 would print the value of: {sorted(expected - declared)}; "

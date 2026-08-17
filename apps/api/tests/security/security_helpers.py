@@ -42,10 +42,27 @@ def require(module_path: str, owed_by: str) -> ModuleType:
 
     `pytest.fail`, never `pytest.skip`: a skipped security test reports green,
     which is T21's exit-code-5 trap wearing a different hat.
+
+    **Distinguishes an absent control from a broken environment.** A
+    `ModuleNotFoundError` raised while importing `module_path` may be for a
+    *different* module entirely — a missing third-party dependency that
+    `module_path` imports transitively. Reporting that as "control absent,
+    owed by T10" is precisely the misattribution that made 24 of these tests
+    unreadable once before, so the two cases now say different things.
     """
     try:
         return importlib.import_module(module_path)
     except ModuleNotFoundError as exc:
+        missing = exc.name or ""
+        requested_root = module_path.split(".")[0]
+        if missing and not (missing == module_path or module_path.startswith(f"{missing}.")):
+            if missing.split(".")[0] != requested_root:
+                pytest.fail(
+                    f"ENVIRONMENT, not a finding: `{module_path}` exists but could not be "
+                    f"imported because the dependency `{missing}` is not installed. Install the "
+                    'backend dev extras (`pip install -e ".[dev]"` in apps/api) and re-run; '
+                    "this is not an absent control."
+                )
         pytest.fail(
             f"RED - control absent, test intact: `{module_path}` does not exist yet "
             f"(owed by {owed_by}). Underlying import error: {exc}"
