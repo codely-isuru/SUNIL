@@ -56,7 +56,7 @@ from sunil.db.capture import apply_capture_to_content, resolve_capture
 from sunil.db.models import ToolCall
 from sunil.redaction import scrub
 
-__all__ = ["ExecutionMetadata", "InvalidPlanExecution", "ToolManager"]
+__all__ = ["ExecutionMetadata", "InvalidPlanExecution", "ToolManager", "build_tool_manager"]
 
 # tool_calls.status values (mirrors sunil.db.models.ToolCallStatus by
 # value — not imported directly so this module's DB-write helper stays a
@@ -360,3 +360,36 @@ class ToolManager:
         if tool_result is not None:
             return tool_result
         return ToolResult(ok=False, data=None, error_kind=error_kind, error_message=error_message)
+
+
+def build_tool_manager(
+    *,
+    settings: Any,
+    registries: Registries,
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> ToolManager:
+    """The one place `sunil.main`'s lifespan (or any other caller outside
+    `core/tool_framework/`/`tools/`) may obtain a real, adapter-wired
+    `ToolManager` (T11b).
+
+    `tests/security/test_import_boundaries.py
+    ::test_only_the_tool_framework_may_import_a_tool_adapter` enforces
+    "a determined engineer can still import an adapter module" (T-10)
+    against every file, `sunil/main.py` included — this factory is what
+    lets `main.py` build the real Tool Manager without itself importing
+    `sunil.tools.github.adapter`. Kept generic over `settings: Any`
+    (matching `sunil.redaction`'s own pattern) so this module carries no
+    import-time dependency on `sunil.settings`.
+
+    M1 ships exactly one tool (`github`, ADR-000 Q1) — adding a second
+    adapter is one more line here, mirroring
+    `providers/registry.py::build_provider_registry()`'s own §4.6 shape.
+    """
+    from sunil.tools.github.adapter import build_github_adapter
+
+    github_adapter = build_github_adapter(settings=settings, projects=registries.projects)
+    return ToolManager(
+        adapters={"github": github_adapter},
+        registries=registries,
+        sessionmaker=sessionmaker,
+    )

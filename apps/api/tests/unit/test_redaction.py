@@ -244,7 +244,7 @@ def test_scrub_through_the_real_structlog_chain_redacts_an_exception_value() -> 
     handler.setFormatter(original_handlers[0].formatter)
     root.handlers = [handler]
     try:
-        get_logger("t").info(
+        get_logger("test_redaction_real_chain").info(
             "bound_exception_case",
             error=_BoomError("bad key sk-ant-fakeTHISISASECRETVALUE1234567890"),
         )

@@ -171,12 +171,17 @@ class Settings(BaseSettings):
     )
 
     # -- Upstream base URLs (A-11, ADR-017) ---------------------------------
-    # `github_api_base_url` started life on T8 as an unvalidated field (QA's
-    # fixture tests were hitting the real GitHub API with a placeholder
-    # token and getting a real 401). The Architect's ADR-017 ruling has
-    # since landed and settled exactly how it must be gated -- the shared
-    # loopback validator below, not a second field. Superseded here rather
-    # than duplicated.
+    # `github_api_base_url` started life as a T8 ad hoc, unvalidated addition
+    # (QA's fixture tests were hitting the real GitHub API with a placeholder
+    # token and getting a real 401 — the host was hard-coded with no
+    # override), and was independently formalised here under ADR-017 with
+    # `anthropic_base_url`'s same loopback-or-canonical validator. More than
+    # one branch carried a T8-era copy of the field; every merge keeps the
+    # single ADR-017-validated definition below (with
+    # `_check_github_api_base_url` coverage) and drops the earlier
+    # unvalidated duplicate — a class body redefining the same field name
+    # twice is exactly the kind of drift a single canonical definition
+    # exists to prevent.
     # Passed **explicitly** to each client/adapter — never left to the SDK's
     # own environment reading. Read from the installed anthropic SDK's
     # `_client.py`, precedence is kwarg -> ANTHROPIC_BASE_URL -> profile ->

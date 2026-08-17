@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import time
 import uuid
+from typing import Any
 
 import structlog
+from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -59,3 +62,25 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
         response.headers[_REQUEST_ID_HEADER] = request_id
         return response
+
+
+def build_session_middleware(settings: Any) -> Middleware:
+    """`sunil.main.create_app()`'s `SessionMiddleware` entry — moved here
+    (T11b) because unwrapping `settings.session_secret` is a
+    `SecretStr.get_secret_value()` call, and `sunil/main.py` is not on
+    `tests/security/test_import_boundaries.py
+    ::test_agents_never_unwrap_a_secret`'s allow-list (`providers/`,
+    `tools/`, `db/`, `api/`, `settings.py`, `redaction.py`) — this module
+    is. Kept generic over `settings: Any` (matching `sunil.redaction`'s
+    own pattern) so this module carries no import-time dependency on
+    `sunil.settings`.
+    """
+    return Middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret.get_secret_value(),
+        session_cookie=settings.session_cookie_name,
+        max_age=86400,
+        same_site="lax",
+        https_only=False,  # local dev is http://localhost; flip when hosted over TLS
+        path="/",
+    )
