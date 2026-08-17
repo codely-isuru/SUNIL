@@ -18,10 +18,11 @@ from __future__ import annotations
 
 from tests.exit._client import (
     app_client,
+    build_settings,
     login,
     post_chat,
     run_migrations,
-    seed_owner,
+    seed_owner_directly,
 )
 from tests.exit._db import count_for_request, plans_for_request
 from tests.exit._mock_upstreams import anthropic_success
@@ -38,16 +39,16 @@ def _run_turn_with_malformed_plan(
     plan_text,
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     mock_server.script("POST", "/v1/messages", anthropic_success(text=plan_text))
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+    )
+    with app_client(settings=settings) as client:
         login(client)
         return post_chat(
             client, message="Check on EasyClean Workforce", request_id=request_id

@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * SUNIL design-system token contract — docs/design/DESIGN_SYSTEM.md §1–§6.
+ *
+ * These CSS custom properties mirror the "Colour Tokens" / radii / motion
+ * tables verbatim (same names, same values) so the token identity named in
+ * the design doc exists as real CSS variables, independent of Tailwind.
+ * `tailwind.config.ts` is the primary consumption path for components
+ * (utility classes); these variables are the documented escape hatch for
+ * anywhere a raw CSS value is needed (e.g. non-Tailwind inline styles).
+ */
+:root {
+  color-scheme: dark;
+
+  /* Colour */
+  --color-canvas: #030712;
+  --color-surface: #0b1220;
+  --color-surface-raised: #111b2e;
+  --color-border: #1e2a3e;
+  --color-border-accent: rgba(34, 211, 238, 0.18);
+  --color-border-strong: rgba(34, 211, 238, 0.4);
+  --color-accent: #22d3ee;
+  --color-accent-hover: #67e8f9;
+  --color-accent-active: #06b6d4;
+  --color-accent-on: #031015;
+  --color-text-primary: #e8fbff;
+  --color-text-secondary: #7dd3fc;
+  --color-text-muted: #4fa8c7;
+  --color-text-disabled: #2e4256;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-danger-strong: #ef4444;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* Elevation (glow, not grey shadow — §5) */
+  --glow-hover: 0 0 12px rgba(34, 211, 238, 0.25);
+  --glow-active: 0 0 24px rgba(34, 211, 238, 0.35);
+  --glow-focus: 0 0 0 3px rgba(34, 211, 238, 0.35);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 600ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-canvas);
+  color: var(--color-text-primary);
+}
+
+a {
+  color: inherit;
+}
+
+/*
+ * Accessibility floor — DESIGN_SYSTEM.md §7.
+ * Every interactive element gets a visible focus indicator on keyboard
+ * focus only (`:focus-visible`); mouse/pointer clicks do not show it.
+ */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  box-shadow: var(--glow-focus);
+}
+
+/*
+ * Reduced motion — DESIGN_SYSTEM.md §6/§7. No experience may depend on
+ * animation to convey state; under `prefers-reduced-motion: reduce`, the
+ * `pulse` loop and any message-enter slide/fade collapse to an effectively
+ * instant, opacity-only change. Text/colour state changes still happen —
+ * only the motion is removed.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

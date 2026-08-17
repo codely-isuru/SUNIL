@@ -10,7 +10,7 @@
 | **Branch** | `main` (single-branch rule; feature work lands via short-lived branches → `main`) |
 | **Delivery** | Minions Team 18 (portal `http://localhost:4317`) |
 | **Due** | 2026-08-18 (Milestone 1 vertical slice) · budget ~$150 |
-| **Last updated** | 2026-08-14 |
+| **Last updated** | 2026-08-16 |
 
 ---
 
@@ -95,6 +95,39 @@ Gate 2 approval.
    chat, fully traced. QA writes the red exit tests first.
 3. **Stage 7 — Staging**, then **Gate 3 (human)** before anything reaches production.
 
+### 2026-08-16 — interrupted by a usage limit, recovered clean
+
+The session hit its usage limit and **all six lanes terminated mid-task**. No work was
+lost. Every worktree was audited; two dirty trees were committed as `wip(...)` and
+pushed (QA's harness rebase, OPS's conftest rule), two unpushed branches were pushed
+(T3's capture vocabulary, T11a's base). All nineteen task branches are on `origin`.
+
+**Schedule impact, stated plainly: the interruption cost roughly two calendar days.**
+M1 remains due 2026-08-18. The extra day the owner bought on 08-14 has been consumed
+by the outage rather than by the build.
+
+---
+
+### 2026-08-16/17 — the merge queue
+
+`main` @ `845f65c` now carries **the whole frontend lane** (`21ab696`) and **seven backend
+branches** — T1, T2, T3, T4, T5, T7, T9 — each with an independent QA verdict behind it.
+
+The remaining branches (T6, T8, T10, T11a, T18, T19, T21, T22, T16c) hit real conflicts,
+chiefly a **union** in `settings.py` where `main`'s ET-10 redaction fix and T6's ADR-017
+loopback validator must both survive. Taking either side would silently drop a security
+control, so resolution went to the engineer owning both sides on `task/integration-1`
+rather than being improvised at the merge point.
+
+**The recurring defect of this milestone: a branch is green against what it was cut from,
+not against what exists.** Three confirmed instances — T5 carrying pre-fix redaction while
+its own tests passed; T8's merge-base resolving to a superseded T2 tip; and T11a never
+having merged T3, T8 or T10 at all (311 → 417 tests once it did). The worktree model bought
+clean concurrent lanes and cheap merges; what it does not give is any signal when the ground
+moves under a branch that is already green. Both halves of that trade are now on record.
+
+---
+
 ## 4. Known issues / open items
 
 * ~~BLOCKER — Docker daemon not running~~ **CLEARED 2026-08-14.** The owner started
@@ -111,6 +144,13 @@ Gate 2 approval.
   trying `--import-mode=importlib` and reverting it, because T3's registry tests depend
   on prepend-mode's `sys.path` insertion. OPS retains the harder half: making CI fail
   loudly on a collection *error* (exit 2), and on the wider "absent is green" family.
+* **DEBT (ruled 2026-08-16, DM):** the frontend has **no test runner** — vitest/jest/
+  testing-library are not in `ARCHITECTURE_V1.md` §14.3's approved list, and the engineer
+  correctly refused to add one on a bugfix rather than smuggling in a dependency. Timing
+  and race logic like `useTurn`'s is exactly what benefits from fake timers. **Deferred to
+  M11 hardening** — choosing a test library is not a decision to take in the last two days
+  of a milestone. Consequence carried knowingly: `T16c` ships verified by review and
+  reasoning, not by a regression test.
 * Docker is still needed before Gate 3: the Alembic migration must be verified once
   against real PostgreSQL (architecture debt D-2).
 * No LLM provider credentials configured in this shell. The Model Router needs

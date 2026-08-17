@@ -128,7 +128,14 @@ class GitHubAdapter:
 
         owner, repo = project.github.owner, project.github.repo
         client = self._injected_client or httpx.AsyncClient(
-            base_url=self._base_url, timeout=self._timeout_s
+            base_url=self._base_url,
+            timeout=self._timeout_s,
+            # ADR-017: a redirected base sends `Authorization: Bearer
+            # <PAT>` onward to whatever host issued the redirect. httpx
+            # already defaults to False; stated explicitly so that
+            # remains a decision, not a coincidence a later "chase the
+            # redirect" change could silently reverse.
+            follow_redirects=False,
         )
         owns_client = self._injected_client is None
         try:

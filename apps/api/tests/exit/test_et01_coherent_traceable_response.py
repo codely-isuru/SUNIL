@@ -9,11 +9,12 @@ Coverage map (docs/M1_BUILD_PLAN.md §7): made passable by T8 + T10 + T11b + T16
 Two tests:
   * `test_et1_fixture_response_traces_to_tool_result` — no live credentials needed;
     drives the whole stack through the local mock upstream server (see
-    `tests/exit/_mock_upstreams.py`). Proves the WIRING: the tool result actually
-    reaches the analysis call, and the analysis call's own output becomes the user-
-    facing message (ADR-015), by scripting exactly what the "model" says and checking
-    it comes back unchanged, while the tool data that was *available* to it is
-    verified present in the persisted `llm_calls` prompt.
+    `tests/exit/_mock_upstreams.py`), wired via a fresh `Settings` instance per
+    ADR-017/018. Proves the WIRING: the tool result actually reaches the analysis
+    call, and the analysis call's own output becomes the user-facing message
+    (ADR-015), by scripting exactly what the "model" says and checking it comes back
+    unchanged, while the tool data that was *available* to it is verified present in
+    the persisted `llm_calls` prompt.
   * `test_et1_live_end_to_end_real_data` — `@pytest.mark.live`. This is the only way to
     honestly test the "not fabricated" / "real data" clause against the real GitHub API
     and the real Claude API. BLOCKED until Day 3 (ANTHROPIC_API_KEY + GITHUB_TOKEN).
@@ -27,10 +28,12 @@ import pytest
 
 from tests.exit._client import (
     app_client,
+    build_live_settings,
+    build_settings,
     login,
     post_chat,
     run_migrations,
-    seed_owner,
+    seed_owner_directly,
 )
 from tests.exit._db import llm_calls_for_request
 from tests.exit._mock_upstreams import anthropic_success
@@ -42,7 +45,7 @@ def test_et1_fixture_response_traces_to_tool_result(
     db_path, database_url, qa_config_dir, monkeypatch, mock_server, request_id
 ):
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
 
     analysis_text = (
@@ -56,13 +59,13 @@ def test_et1_fixture_response_traces_to_tool_result(
     )
     mock_server.script("POST", "/v1/messages", anthropic_success(text=analysis_text))
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client, message="Check on EasyClean Workforce", request_id=request_id
@@ -82,8 +85,7 @@ def test_et1_fixture_response_traces_to_tool_result(
     message = body["message"]
     assert message is not None and message["role"] == "assistant"
     assert message["content"] == analysis_text, (
-        "the assistant message should be the agent's analysis verbatim (ADR-015), "
-        f"got: {message['content']!r}"
+        f"the assistant message should be the agent's analysis verbatim (ADR-015), got: {message['content']!r}"
     )
     assert not message["content"].strip().startswith("{"), (
         "final response looks like raw JSON, not prose"
@@ -111,14 +113,15 @@ def test_et1_live_end_to_end_real_data(
 
     creds = require_live_credentials(live_env)
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
 
-    with app_client(
+    settings = build_live_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
-        extra_env=creds,
-    ) as client:
+        anthropic_api_key=creds["ANTHROPIC_API_KEY"],
+        github_token=creds["GITHUB_TOKEN"],
+    )
+    with app_client(settings=settings) as client:
         login(client)
         started = time.monotonic()
         resp = post_chat(

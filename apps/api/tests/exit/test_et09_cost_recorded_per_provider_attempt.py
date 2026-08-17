@@ -17,7 +17,14 @@ Two tests:
 
 from __future__ import annotations
 
-from tests.exit._client import app_client, login, post_chat, run_migrations, seed_owner
+from tests.exit._client import (
+    app_client,
+    build_settings,
+    login,
+    post_chat,
+    run_migrations,
+    seed_owner_directly,
+)
 from tests.exit._contract import M1_LLM_PURPOSES, NEVER_WRITTEN_IN_M1_PURPOSE
 from tests.exit._db import llm_calls_for_request
 from tests.exit._mock_upstreams import anthropic_success, anthropic_transient_error
@@ -92,7 +99,7 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
     assertion here -- proving this harness would fail loudly if a real retry ever broke
     a hard-coded "exactly 3" elsewhere (A-2's whole point)."""
     run_migrations(database_url, monkeypatch=monkeypatch)
-    seed_owner(db_path)
+    seed_owner_directly(db_path)
     script_clean_github_activity(mock_server)
     mock_server.script("POST", "/v1/messages", anthropic_transient_error(status=500))
     mock_server.script(
@@ -104,13 +111,13 @@ def test_et9_a_scripted_retry_produces_exactly_the_rows_the_script_dictates(
         anthropic_success(text="Quiet week on EasyClean Workforce."),
     )
 
-    with app_client(
+    settings = build_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        monkeypatch=monkeypatch,
         anthropic_base_url=mock_server.base_url,
         github_api_base_url=mock_server.base_url,
-    ) as client:
+    )
+    with app_client(settings=settings) as client:
         login(client)
         resp = post_chat(
             client, message="Check on EasyClean Workforce", request_id=request_id
