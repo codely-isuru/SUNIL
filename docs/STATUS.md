@@ -10,7 +10,7 @@
 | **Branch** | `main` (single-branch rule; feature work lands via short-lived branches → `main`) |
 | **Delivery** | Minions Team 18 (portal `http://localhost:4317`) |
 | **Due** | 2026-08-18 (Milestone 1 vertical slice) · budget ~$150 |
-| **Last updated** | 2026-08-16 |
+| **Last updated** | 2026-08-17 |
 
 ---
 
@@ -38,7 +38,25 @@ prior plan document, and the previous TypeScript/NestJS build is retired.
 
 ## 2. Where we are now
 
-**Stage 5 — Development. RUNNING since 2026-08-14.**
+**Stage 5 — Development: COMPLETE. M1's vertical slice is built, merged and green.**
+
+## ✅ M1 exit tests pass on `main`
+
+```
+513 passed, 0 failed, 6 deselected (live)   — full suite
+ 18 passed                                   — tests/exit, ET-1 … ET-12
+```
+
+Everything is merged to `main`. `POST /api/v1/chat` runs the full roadmap §22
+path — chat → gateway → orchestrator → validated plan → Project Manager agent →
+read-only GitHub tool → analysis → response — with all twelve NFR-020 trace
+stages emitted in order and reconstructable from `audit_events` alone.
+
+**The six deselected tests are the only work M1 has left**, and they need the
+owner's credentials (`docs/SECRETS_SETUP.md`): two live end-to-end exit tests,
+and four that verify the GitHub PAT is genuinely read-only and single-repo —
+because T-17 currently rests on "provisioning is the owner's action", and
+provisioning is not verification.
 
 **✅ GATE 2 CLOSED — 2026-08-14.** The owner reviewed the architecture (9/10) and build plan
 (7.5/10) and approved the direction subject to targeted corrections, all of which are applied
