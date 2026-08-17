@@ -112,12 +112,20 @@ def register_secrets_from_settings(settings: Any) -> None:
 
     Called from `sunil.main`'s lifespan, once at startup.
     """
-    register(settings.anthropic_api_key.get_secret_value(), name="anthropic_api_key")
+    # T25: provider API keys are optional (`SecretStr | None`) — a
+    # provider with no key is simply not registered
+    # (`sunil/providers/registry.py`), and there is nothing to redact for
+    # a secret that was never loaded. `register()` itself already no-ops
+    # on a too-short/falsy *string*, but a bare `None` has no
+    # `.get_secret_value()` at all, so this guards the unwrap itself.
+    if settings.anthropic_api_key is not None:
+        register(settings.anthropic_api_key.get_secret_value(), name="anthropic_api_key")
     register(settings.github_token.get_secret_value(), name="github_token")
     # T23: the second provider's key is exactly as registrable as the
     # first's — §9.1 registers secrets "regardless of their value", not
     # only the ones a given milestone happens to call with.
-    register(settings.openai_api_key.get_secret_value(), name="openai_api_key")
+    if settings.openai_api_key is not None:
+        register(settings.openai_api_key.get_secret_value(), name="openai_api_key")
     register(settings.session_secret.get_secret_value(), name="session_secret")
     register(settings.owner_password.get_secret_value(), name="owner_password")
     # The password embedded in a Postgres DATABASE_URL, if any (ADR-006:
