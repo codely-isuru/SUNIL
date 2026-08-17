@@ -202,6 +202,7 @@ def _fixed_web_origin(monkeypatch: pytest.MonkeyPatch):
     for key, value in {
         "ANTHROPIC_API_KEY": "sk-ant-fake",
         "GITHUB_TOKEN": "github_pat_fake",
+        "OPENAI_API_KEY": "sk-fake-test-value-for-openai",
         "SESSION_SECRET": "fake-secret",
         "OWNER_USERNAME": "test-owner",
         "OWNER_PASSWORD": "fake-password",

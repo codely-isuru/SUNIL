@@ -14,6 +14,7 @@ from sunil.settings import Settings
 _REQUIRED = {
     "ANTHROPIC_API_KEY": "sk-ant-fake",
     "GITHUB_TOKEN": "github_pat_fake",
+    "OPENAI_API_KEY": "sk-fake-test-value-for-openai",
     "SESSION_SECRET": "fake-secret",
     "OWNER_USERNAME": "test-owner",
     "OWNER_PASSWORD": "fake-password",

@@ -41,6 +41,7 @@ _EXPECTED_TABLES = {
 _REQUIRED_ENV = {
     "ANTHROPIC_API_KEY": "sk-ant-fake-test-value",
     "GITHUB_TOKEN": "github_pat_fake-test-value",
+    "OPENAI_API_KEY": "sk-fake-test-value-for-openai",
     "SESSION_SECRET": "fake-test-session-secret",
     "OWNER_USERNAME": "test-owner",
     "OWNER_PASSWORD": "fake-test-owner-password",

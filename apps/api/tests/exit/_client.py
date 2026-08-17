@@ -61,6 +61,7 @@ TEST_OWNER_PASSWORD = "qa-test-password-not-real-Xk9!"
 TEST_SESSION_SECRET = "qa-test-session-secret-32-bytes-minimum-000000"
 CANARY_ANTHROPIC_KEY = "sk-ant-test-canary-do-not-use-for-real-calls"
 CANARY_GITHUB_TOKEN = "github_pat_test-canary-do-not-use-for-real-calls"
+CANARY_OPENAI_KEY = "sk-test-canary-do-not-use-for-real-calls"
 WEB_ORIGIN = "http://localhost:3000"
 
 # Every mandatory (no-default) `Settings` field needs *some* value for a bare
@@ -71,6 +72,7 @@ WEB_ORIGIN = "http://localhost:3000"
 _MIGRATION_ENV_FLOOR: dict[str, str] = {
     "ANTHROPIC_API_KEY": CANARY_ANTHROPIC_KEY,
     "GITHUB_TOKEN": CANARY_GITHUB_TOKEN,
+    "OPENAI_API_KEY": CANARY_OPENAI_KEY,
     "SESSION_SECRET": TEST_SESSION_SECRET,
     "OWNER_USERNAME": TEST_OWNER_USERNAME,
     "OWNER_PASSWORD": TEST_OWNER_PASSWORD,
@@ -188,6 +190,7 @@ def build_settings(
     owner_password: str = TEST_OWNER_PASSWORD,
     anthropic_api_key: str = CANARY_ANTHROPIC_KEY,
     github_token: str = CANARY_GITHUB_TOKEN,
+    openai_api_key: str = CANARY_OPENAI_KEY,
     overrides: dict[str, Any] | None = None,
 ) -> Any:
     """Construct a fresh `sunil.settings.Settings` instance directly — the ADR-018
@@ -208,6 +211,7 @@ def build_settings(
         "sunil_config_dir": str(config_dir),
         "anthropic_api_key": anthropic_api_key,
         "github_token": github_token,
+        "openai_api_key": openai_api_key,
         "session_secret": TEST_SESSION_SECRET,
         "web_origin": WEB_ORIGIN,
         "owner_username": owner_username,

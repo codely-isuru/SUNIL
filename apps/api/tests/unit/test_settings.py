@@ -19,6 +19,7 @@ from sunil.settings import Settings
 REQUIRED_ENV = {
     "ANTHROPIC_API_KEY": "sk-ant-fake-test-value",
     "GITHUB_TOKEN": "github_pat_fake-test-value",
+    "OPENAI_API_KEY": "sk-fake-test-value-for-openai",
     "SESSION_SECRET": "fake-test-session-secret-value",
     "OWNER_USERNAME": "test-owner",
     "OWNER_PASSWORD": "fake-test-owner-password",
@@ -39,6 +40,7 @@ def test_settings_loads_every_required_variable_from_env(
 
     assert settings.anthropic_api_key.get_secret_value() == REQUIRED_ENV["ANTHROPIC_API_KEY"]
     assert settings.github_token.get_secret_value() == REQUIRED_ENV["GITHUB_TOKEN"]
+    assert settings.openai_api_key.get_secret_value() == REQUIRED_ENV["OPENAI_API_KEY"]
     assert settings.session_secret.get_secret_value() == REQUIRED_ENV["SESSION_SECRET"]
     assert settings.owner_username == REQUIRED_ENV["OWNER_USERNAME"]
     assert settings.owner_password.get_secret_value() == REQUIRED_ENV["OWNER_PASSWORD"]
@@ -82,6 +84,7 @@ def test_a_failed_settings_load_never_exposes_an_already_loaded_secret(
     needles = {
         "ANTHROPIC_API_KEY": REQUIRED_ENV["ANTHROPIC_API_KEY"],
         "GITHUB_TOKEN": REQUIRED_ENV["GITHUB_TOKEN"],
+        "OPENAI_API_KEY": REQUIRED_ENV["OPENAI_API_KEY"],
         "SESSION_SECRET": REQUIRED_ENV["SESSION_SECRET"],
         "DATABASE_URL password": "FakeDbPassLeak",
     }
@@ -135,6 +138,7 @@ def test_secrets_are_secretstr_and_never_appear_in_repr_or_str(
     secret_field_values = {
         "anthropic_api_key": REQUIRED_ENV["ANTHROPIC_API_KEY"],
         "github_token": REQUIRED_ENV["GITHUB_TOKEN"],
+        "openai_api_key": REQUIRED_ENV["OPENAI_API_KEY"],
         "session_secret": REQUIRED_ENV["SESSION_SECRET"],
         "owner_password": REQUIRED_ENV["OWNER_PASSWORD"],
         "database_url": fake_db_url,
@@ -212,16 +216,24 @@ def test_base_urls_default_to_the_canonical_hosts(monkeypatch: pytest.MonkeyPatc
     _set_required_env(monkeypatch)
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     monkeypatch.delenv("GITHUB_API_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     settings = Settings(_env_file=None)
 
     assert settings.anthropic_base_url == "https://api.anthropic.com"
     assert settings.github_api_base_url == "https://api.github.com"
+    # Verified against the installed openai==3.1.0 SDK's own default (T23)
+    # — note the `/v1` suffix, unlike Anthropic's bare host.
+    assert settings.openai_base_url == "https://api.openai.com/v1"
 
 
 @pytest.mark.parametrize(
     ("field_name", "env_var"),
-    [("anthropic_base_url", "ANTHROPIC_BASE_URL"), ("github_api_base_url", "GITHUB_API_BASE_URL")],
+    [
+        ("anthropic_base_url", "ANTHROPIC_BASE_URL"),
+        ("github_api_base_url", "GITHUB_API_BASE_URL"),
+        ("openai_base_url", "OPENAI_BASE_URL"),
+    ],
 )
 @pytest.mark.parametrize(
     "loopback_value",
@@ -248,7 +260,11 @@ def test_loopback_base_url_overrides_are_accepted(
 
 @pytest.mark.parametrize(
     ("field_name", "env_var"),
-    [("anthropic_base_url", "ANTHROPIC_BASE_URL"), ("github_api_base_url", "GITHUB_API_BASE_URL")],
+    [
+        ("anthropic_base_url", "ANTHROPIC_BASE_URL"),
+        ("github_api_base_url", "GITHUB_API_BASE_URL"),
+        ("openai_base_url", "OPENAI_BASE_URL"),
+    ],
 )
 def test_non_canonical_non_loopback_base_url_refuses_to_boot(
     monkeypatch: pytest.MonkeyPatch, field_name: str, env_var: str
@@ -267,8 +283,10 @@ def test_the_canonical_value_itself_is_always_accepted(monkeypatch: pytest.Monke
     _set_required_env(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     monkeypatch.setenv("GITHUB_API_BASE_URL", "https://api.github.com")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
     settings = Settings(_env_file=None)
 
     assert settings.anthropic_base_url == "https://api.anthropic.com"
     assert settings.github_api_base_url == "https://api.github.com"
+    assert settings.openai_base_url == "https://api.openai.com/v1"

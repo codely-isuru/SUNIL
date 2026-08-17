@@ -118,13 +118,13 @@ if (-not $envExists) {
 
 # Required variables, per docs/ARCHITECTURE_V1.md section 14.4.
 $requiredKeys = @(
-    "DATABASE_URL", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "SESSION_SECRET",
+    "DATABASE_URL", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "OPENAI_API_KEY", "SESSION_SECRET",
     "SESSION_COOKIE_NAME", "WEB_ORIGIN", "API_HOST", "API_PORT", "LOG_LEVEL",
     "SUNIL_PROGRESS_EVENTS", "SUNIL_CONFIG_DIR", "SUNIL_TURN_DEADLINE_S",
     "OWNER_USERNAME", "OWNER_PASSWORD", "NEXT_PUBLIC_API_BASE_URL"
 )
 # Secret per section 14.4's own "Secret" column - value is never surfaced by this script.
-$secretKeys = @("ANTHROPIC_API_KEY", "GITHUB_TOKEN", "SESSION_SECRET", "OWNER_PASSWORD", "DATABASE_URL")
+$secretKeys = @("ANTHROPIC_API_KEY", "GITHUB_TOKEN", "OPENAI_API_KEY", "SESSION_SECRET", "OWNER_PASSWORD", "DATABASE_URL")
 
 # Presence-only map for secret keys; full (trimmed) value only for the two
 # non-secret keys this script needs to compare (WEB_ORIGIN,

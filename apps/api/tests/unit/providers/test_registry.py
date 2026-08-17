@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from sunil.core.registry.model_catalogue import ModelDefinition, ModelRegistry
 from sunil.providers.anthropic import AnthropicProvider
 from sunil.providers.base import UnknownProviderError
+from sunil.providers.openai import OpenAIProvider
 from sunil.providers.registry import ProviderRegistry, build_provider_registry
 from sunil.settings import Settings
 
@@ -46,6 +47,7 @@ def _fake_settings() -> Settings:
         _env_file=None,
         anthropic_api_key=SecretStr("sk-ant-fake-test-value"),
         github_token=SecretStr("github_pat_fake-test-value"),
+        openai_api_key=SecretStr("sk-fake-test-value-for-openai"),
         session_secret=SecretStr("fake-test-session-secret"),
         owner_username="test-owner",
         owner_password=SecretStr("fake-test-owner-password"),
@@ -79,3 +81,20 @@ def test_build_provider_registry_registers_anthropic_by_default() -> None:
 
     provider = registry.get("anthropic")
     assert isinstance(provider, AnthropicProvider)
+
+
+def test_build_provider_registry_registers_openai_too() -> None:
+    """T23, ADR-003 §4.6's own stated test: 'adding a second provider' is
+    one more `registry.register(...)` line here and nothing else changes
+    upstream. No network call happens here — constructing `AsyncOpenAI` is
+    pure object setup, never an HTTP request."""
+    registry = build_provider_registry(
+        settings=_fake_settings(), model_registry=_fake_model_registry()
+    )
+
+    provider = registry.get("openai")
+    assert isinstance(provider, OpenAIProvider)
+    # Both providers coexist — registering the second one must never
+    # evict or shadow the first.
+    assert isinstance(registry.get("anthropic"), AnthropicProvider)
+    assert set(registry.provider_names()) == {"anthropic", "openai"}

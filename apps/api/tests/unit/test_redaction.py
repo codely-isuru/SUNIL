@@ -265,6 +265,7 @@ def test_register_secrets_from_settings_registers_every_m1_secret() -> None:
         _env_file=None,
         ANTHROPIC_API_KEY="sk-ant-fake-from-settings",
         GITHUB_TOKEN="github_pat_fake-from-settings",
+        OPENAI_API_KEY="sk-fake-openai-from-settings",
         SESSION_SECRET="fake-session-secret-from-settings",
         OWNER_USERNAME="test-owner",
         OWNER_PASSWORD="fake-owner-password-from-settings",
@@ -275,6 +276,7 @@ def test_register_secrets_from_settings_registers_every_m1_secret() -> None:
     for raw in (
         "sk-ant-fake-from-settings",
         "github_pat_fake-from-settings",
+        "sk-fake-openai-from-settings",
         "fake-session-secret-from-settings",
         "fake-owner-password-from-settings",
     ):

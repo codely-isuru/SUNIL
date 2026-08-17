@@ -21,6 +21,12 @@ dependencies = [
     "psycopg[binary]==3.3.4",
     "greenlet==3.5.5",
     "anthropic==0.122.0",
+    # T23 (2026-08-17): owner-authorised addition to the §14.3 approved-
+    # library list (the owner has an OpenAI key, no Anthropic key yet —
+    # docs/SECRETS_SETUP.md §0). Pulls in `httpx2` transitively (its own
+    # HTTP stack, not the `httpx` pinned below) — see
+    # `sunil/providers/openai.py`'s module docstring.
+    "openai==3.1.0",
     "httpx==0.28.1",
     "structlog==26.1.0",
     "itsdangerous==2.2.0",

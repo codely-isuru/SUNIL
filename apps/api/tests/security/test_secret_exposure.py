@@ -75,7 +75,9 @@ def test_no_secretstr_renders_its_value_in_any_common_rendering(
         "model_dump_json()": settings.model_dump_json(),
         "model_dump()": str(settings.model_dump()),
         "model_dump(mode=json)": str(settings.model_dump(mode="json")),
-        "f-string of a field": f"{settings.anthropic_api_key} {settings.database_url}",
+        "f-string of a field": (
+            f"{settings.anthropic_api_key} {settings.openai_api_key} {settings.database_url}"
+        ),
     }
     leaks = {
         name: needle for name, text in renderings.items() for needle in needles if needle in text
@@ -331,11 +333,11 @@ _REAL_SHAPE_PATTERNS = (
 _ALWAYS_PATTERNS = (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),)
 
 # Non-secret values that are legitimately real in `.env.example`: the SQLite
-# default and the two canonical upstream API hosts (ADR-017 — an override must
+# default and the three canonical upstream API hosts (ADR-017 — an override must
 # be the canonical host or loopback, so the canonical value IS the placeholder).
 PLACEHOLDER = re.compile(
     r"^(|REPLACE_ME.*|.*REPLACE_ME|sqlite\+aiosqlite:.*|https?://localhost:\d+|"
-    r"https://api\.github\.com|https://api\.anthropic\.com|"
+    r"https://api\.github\.com|https://api\.anthropic\.com|https://api\.openai\.com/v1|"
     r"127\.0\.0\.1|INFO|false|true|\d+|\./config|sunil_session|isuru)$"
 )
 
@@ -468,6 +470,7 @@ def test_no_module_logs_a_settings_object_wholesale() -> None:
 CANONICAL_BASE_URLS = {
     "anthropic_base_url": "https://api.anthropic.com",
     "github_api_base_url": "https://api.github.com",
+    "openai_base_url": "https://api.openai.com/v1",
 }
 HOSTILE_BASE_URLS = (
     "https://attacker.example.com",
@@ -511,6 +514,7 @@ def test_a_hostile_api_base_url_refuses_to_construct_settings(
     for field_name, env_var in (
         ("anthropic_base_url", "ANTHROPIC_BASE_URL"),
         ("github_api_base_url", "GITHUB_API_BASE_URL"),
+        ("openai_base_url", "OPENAI_BASE_URL"),
     ):
         for hostile in HOSTILE_BASE_URLS:
             monkeypatch.setenv(env_var, hostile)
@@ -539,11 +543,12 @@ def test_the_canonical_and_loopback_base_urls_are_still_accepted(
     for field_name, env_var in (
         ("anthropic_base_url", "ANTHROPIC_BASE_URL"),
         ("github_api_base_url", "GITHUB_API_BASE_URL"),
+        ("openai_base_url", "OPENAI_BASE_URL"),
     ):
         if field_name not in Settings.model_fields:
             pytest.fail(
                 f"RED — control absent, test intact: `Settings.{field_name}` does not exist "
-                "(owed by T6 / T8, ADR-017 section 2)."
+                "(owed by T6 / T8 / T23, ADR-017 section 2)."
             )
         for allowed in (CANONICAL_BASE_URLS[field_name], *LOOPBACK_BASE_URLS):
             monkeypatch.setenv(env_var, allowed)
