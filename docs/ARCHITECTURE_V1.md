@@ -1815,7 +1815,10 @@ for M10's scheduler. Switching the app to Postgres is one env var:
 
 Backend: `fastapi` 0.141.1 · `uvicorn` 0.52.3 · `pydantic` 2.13.4 · `pydantic-settings` 2.15.0 ·
 `sqlalchemy` 2.0.52 · `alembic` 1.19.1 · `aiosqlite` 0.22.1 · `psycopg[binary]` 3.3.4 ·
-`greenlet` 3.5.5 · `anthropic` 0.122.0 · `httpx` 0.28.1 · `structlog` 26.1.0 · `itsdangerous` 2.2.0 ·
+`greenlet` 3.5.5 · `anthropic` 0.122.0 · **`openai` 3.1.0 (owner-authorised 2026-08-17 — T23:
+the owner has an OpenAI key and no Anthropic key yet, docs/SECRETS_SETUP.md §0; pulls in
+`httpx2` transitively, its own HTTP stack distinct from the `httpx` pinned below)** ·
+`httpx` 0.28.1 · `structlog` 26.1.0 · `itsdangerous` 2.2.0 ·
 `pyyaml` 6.0.3. Dev: `pytest` 9.1.1 · `pytest-asyncio` 1.4.0 · `ruff`.
 Password hashing uses **stdlib `hashlib.scrypt`** — verified working on this interpreter; no
 `passlib`, no `bcrypt`.
@@ -1832,6 +1835,7 @@ ADR-005, ADR-009).
 | `DATABASE_URL` | `sqlite+aiosqlite:///./var/sunil.db` | db/session | contains one when Postgres |
 | `ANTHROPIC_API_KEY` | `sk-ant-REPLACE_ME` | providers/anthropic | **yes** |
 | `GITHUB_TOKEN` | `github_pat_REPLACE_ME` | tools/github | **yes** |
+| `OPENAI_API_KEY` | `sk-REPLACE_ME` | providers/openai (T23) | **yes** |
 | `SESSION_SECRET` | `REPLACE_ME_32_BYTES` | SessionMiddleware | **yes** |
 | `SESSION_COOKIE_NAME` | `sunil_session` | SessionMiddleware | no |
 | `WEB_ORIGIN` | `http://localhost:3000` | CORS + origin check | no |
@@ -1842,6 +1846,7 @@ ADR-005, ADR-009).
 | `SUNIL_TURN_DEADLINE_S` | `40` | orchestrator turn deadline (§5.3); re-read per app (§3.2.1) | no |
 | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | `providers/anthropic` — passed as `base_url=`. **Non-canonical values must be loopback** (§9.7) | no |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | `tools/github` — request prefix. **Non-canonical values must be loopback** (§9.7) | no |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | `providers/openai` (T23) — passed as `base_url=`. Note the `/v1` suffix, unlike Anthropic's bare host. **Non-canonical values must be loopback** (§9.7) | no |
 | `OWNER_USERNAME` / `OWNER_PASSWORD` | `isuru` / `REPLACE_ME` | seed script only | **yes** |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | `apps/web` | no |
 

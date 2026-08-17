@@ -49,6 +49,34 @@ models:
     output_usd_per_mtok: "5"
     supports_structured_output: true
 
+  # T23 (2026-08-17) — the second registered provider (ADR-003 §4.6). The
+  # model id itself IS verified: `gpt-5.1-2025-11-13` is a real, pinned
+  # entry read directly from the installed `openai==3.1.0` SDK's own
+  # `openai.types.shared.chat_model.ChatModel` Literal, not invented.
+  # `supports_structured_output: true` is also verified — the SDK exposes
+  # `response_format={"type": "json_schema", ...}` with a `strict` flag
+  # (see `sunil/providers/openai.py`'s module docstring for the caveat:
+  # the conformance guarantee is opt-in and a narrower schema subset than
+  # Anthropic's, not unconditional constrained decoding).
+  #
+  # ****PLACEHOLDER — NOT VERIFIED****: context_window, max_output and
+  # both per-token prices below are NOT sourced from anything checkable in
+  # this environment (the SDK ships no such static metadata, and there is
+  # no network access here to a pricing page). Zero is used for both
+  # prices deliberately, so an unverified number can never be mistaken for
+  # a real one and silently misreported as a cost (reported to the DM —
+  # T23 report — rather than guessed). Replace all four values, and this
+  # comment, the day they are confirmed against the real OpenAI pricing
+  # page, the same way `pricing_version` above records when the Anthropic
+  # numbers were checked.
+  gpt-5.1-2025-11-13:
+    provider: openai
+    context_window: 0
+    max_output: 0
+    input_usd_per_mtok: "0"
+    output_usd_per_mtok: "0"
+    supports_structured_output: true
+
 capabilities:
   # Used by both the orchestrator's plan-generation call (purpose=plan) and
   # the Project Manager agent's analysis call (purpose=analysis) — M1's
@@ -66,3 +94,20 @@ capabilities:
     model: claude-opus-5
     max_tokens: 2048
     timeout_s: 25
+
+  # T23, ADR-003 §4.6: proves the second provider is fully wired end to
+  # end (registry -> model catalogue -> a capability) without disturbing
+  # the M1 hot path. No M1 agent points `preferred_capability`/
+  # `escalation_capability` at this name yet — `general_reasoning` above
+  # stays on Anthropic. A future engineer who does repoint a
+  # structured-output-using capability here first needs
+  # `core/orchestrator/plan_schema.py`'s `steps[].tool` property added to
+  # that object's own `required` list — see `sunil/providers/openai.py`'s
+  # module docstring point 5 for why (OpenAI's strict-schema mode requires
+  # every property to be listed in `required`; Anthropic's envelope does
+  # not).
+  general_reasoning_openai:
+    provider: openai
+    model: gpt-5.1-2025-11-13
+    max_tokens: 1024
+    timeout_s: 20

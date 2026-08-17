@@ -7,6 +7,13 @@
 # cost arithmetic checks a real pinned table, not an invented one. `claude-sonnet-5` is
 # the M1 default for both live capabilities (§5.3). Quoted price strings match the real
 # file's own convention (avoids float-to-Decimal precision surprises).
+#
+# T23 (2026-08-17): `gpt-5.1-2025-11-13` / `general_reasoning_openai` mirror the real
+# `config/models.yaml`'s new entries so this fixture stays a faithful copy of the shape
+# the loader actually validates cross-registry (agents/tools/projects) against, not a
+# narrower one that would pass here and fail against the real file. Its four numeric
+# fields are the SAME unverified placeholder as the real file (0 — see that file's own
+# comment); this is not an independent second guess at a real price.
 version: 1
 pricing_version: "2026-08-14"
 
@@ -27,6 +34,14 @@ models:
     output_usd_per_mtok: "25"
     supports_structured_output: true
 
+  gpt-5.1-2025-11-13:
+    provider: openai
+    context_window: 0
+    max_output: 0
+    input_usd_per_mtok: "0"
+    output_usd_per_mtok: "0"
+    supports_structured_output: true
+
 capabilities:
   general_reasoning:
     provider: anthropic
@@ -39,3 +54,9 @@ capabilities:
     model: claude-opus-5
     max_tokens: 2048
     timeout_s: 25
+
+  general_reasoning_openai:
+    provider: openai
+    model: gpt-5.1-2025-11-13
+    max_tokens: 1024
+    timeout_s: 20

@@ -30,9 +30,10 @@ registered providers is the V1 target state regardless — the Model Router sele
 capability. This is also the first real test of ADR-003's claim that a provider can be added
 without touching an agent.
 
-**So the credential you need first is `SUNIL_OPENAI_API_KEY`.** The Anthropic section below
-stays accurate for when you add that key; neither is required for the 513 tests that already
-pass on fixtures.
+**So the credential you need first is `OPENAI_API_KEY`** (no `SUNIL_` prefix — confirmed
+against `.env.example`/`ARCHITECTURE_V1.md` §14.4 by T23, per this section's own rule below:
+"if they disagree, `.env.example` wins"). The Anthropic section below stays accurate for when
+you add that key; neither is required for the 547 tests that already pass on fixtures.
 
 ---
 
@@ -52,11 +53,31 @@ through its Model Router; the subscription that runs Claude Code cannot be used 
 Add to `.env`:
 
 ```
-SUNIL_ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-*(Confirm the exact variable name against `.env.example` once T1 lands — `ARCHITECTURE_V1.md`
-§14.4 is the inventory of record. If they disagree, `.env.example` wins and tell me.)*
+---
+
+## 1.5. OpenAI API key — the one to add first (§0)
+
+**Where:** <https://platform.openai.com/api-keys> → *Create new secret key*.
+
+**Name it** something identifiable, e.g. `sunil-v1-dev`, same as the Anthropic key above.
+
+**Scope/limits:** same reasoning as §1 — a modest project-level spend cap bounds the damage if
+the key ever leaks. T23 wires exactly one capability (`general_reasoning_openai`,
+`config/models.yaml`) at this provider so far; no M1 chat turn calls it yet.
+
+Add to `.env`:
+
+```
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+`OPENAI_BASE_URL` is optional — it defaults to the value above and only needs setting to
+override it (the same ADR-017 loopback-or-canonical rule as `ANTHROPIC_BASE_URL`/
+`GITHUB_API_BASE_URL` applies).
 
 ---
 
@@ -91,7 +112,7 @@ deny it regardless.
 Add to `.env`:
 
 ```
-SUNIL_GITHUB_TOKEN=github_pat_...
+GITHUB_TOKEN=github_pat_...
 ```
 
 **Why fine-grained and not the classic PAT already on this machine:** the classic token in
