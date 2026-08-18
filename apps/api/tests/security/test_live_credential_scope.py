@@ -118,10 +118,28 @@ def _client(token: SecretStr, base_url: str) -> httpx.Client:
 # job — this is the positive half of "what can this credential actually do".
 _REQUIRED_READS = ("commits", "pulls", "issues")
 
-# Read endpoints that GitHub gates behind **write-level** permission:
-# `collaborators` requires push, `hooks` requires admin. Probing these answers
-# "does this token hold more than read?" without going near a mutating verb.
-_WRITE_GATED_READS = ("collaborators", "hooks")
+# Resources M1 does not need, each with the fine-grained permission that
+# gates it, verified against GitHub's "Permissions required for fine-grained
+# personal access tokens" reference rather than inferred from one observed
+# 403 — a 403 tells you the request was refused, never which permission
+# refused it.
+#
+#   /hooks           -> Webhooks
+#   /actions/secrets -> Secrets
+#   /deployments     -> Deployments
+#   /environments    -> Actions
+#
+# `collaborators` was here and has been removed: it is gated by **Metadata**,
+# which every fine-grained token carries, so it returns 200 for a correctly
+# scoped read-only token and could never be satisfied. That was the same
+# defect as the old `permissions` role block one layer along — an endpoint
+# whose gate is not the permission it appears to test.
+_UNNEEDED_RESOURCE_READS = {
+    "hooks": "Webhooks",
+    "actions/secrets": "Secrets",
+    "deployments": "Deployments",
+    "environments": "Actions",
+}
 
 # Every probe in this file is an HTTP GET. That is the safety property, and it
 # is structural rather than a promise: no GitHub REST GET mutates state, so
@@ -166,23 +184,33 @@ def test_every_probe_in_this_file_is_a_get() -> None:
     assert _ALLOWED_METHOD == "GET"
 
 
-def test_the_github_token_can_do_exactly_what_m1_needs_and_no_more() -> None:
-    """T-17, measured as **capability** rather than role.
+def test_the_github_token_reads_what_m1_needs_and_no_other_resource() -> None:
+    """T-17, measured as **capability** rather than role — and named for what
+    it can actually prove.
 
-    The previous version asserted on the `permissions` block of
-    `GET /repos/{owner}/{repo}`. That block reports the *authenticated user's*
-    role on the repository, not the token's grants: against a real fine-grained
-    token it returned `admin: True, push: True` while `/commits` and `/issues`
-    both returned 403 "Resource not accessible by personal access token". It
-    could therefore neither pass for a correctly-scoped token nor fail for the
-    right reason on an over-scoped one — the field simply does not vary with
-    token scope.
+    Two earlier versions of this test measured the wrong thing:
 
-    Capability is asked of the endpoints themselves, in both directions,
-    because either half alone is satisfiable by a broken token: a token with no
-    access at all passes the negative half, and an admin token passes the
-    positive half. Together they mean "exactly the reads M1 performs, and
-    nothing gated behind write".
+    1. It asserted on the `permissions` block of `GET /repos/{owner}/{repo}`,
+       which reports the *authenticated user's* role. Against a real token it
+       said `admin: True` while `/commits` returned 403.
+    2. It then probed `/collaborators` as a "write-gated" endpoint. That is
+       gated by **Metadata**, which every fine-grained token carries, so it
+       returns 200 for a correctly scoped read-only token.
+
+    **What this test does not claim.** No `GET` can demonstrate that a token
+    cannot *write*: every GET is gated by a read permission of some kind, and
+    whether GitHub's fine-grained levels make write imply read is not
+    something I could confirm from the permissions reference. Proving absence
+    of write would require attempting a write, which is forbidden here — these
+    run against the owner's real repositories. So the negative half asserts
+    only what a refusal genuinely shows: **the token cannot read these
+    resources at all**, which bounds what a leak of it would expose.
+
+    The residual is therefore explicit: nothing here distinguishes
+    `Contents: read` from `Contents: write` on the three resources M1 does
+    need. That distinction lives in the token's own configuration, is the
+    owner's to set, and `THREAT_MODEL.md` T-17 should say so rather than
+    implying this test covers it.
     """
     settings = _settings()
     token = _require(settings.github_token, "GITHUB_TOKEN")
@@ -191,25 +219,27 @@ def test_the_github_token_can_do_exactly_what_m1_needs_and_no_more() -> None:
         required = {
             name: _probe(client, f"/repos/{EXPECTED_REPO}/{name}") for name in _REQUIRED_READS
         }
-        write_gated = {
-            name: _probe(client, f"/repos/{EXPECTED_REPO}/{name}") for name in _WRITE_GATED_READS
+        unneeded = {
+            name: _probe(client, f"/repos/{EXPECTED_REPO}/{name}")
+            for name in _UNNEEDED_RESOURCE_READS
         }
 
     refused_reads = sorted(name for name, status in required.items() if status != 200)
     assert not refused_reads, (
-        f"GITHUB_TOKEN cannot read {refused_reads} on {EXPECTED_REPO} "
-        f"(statuses: {required}). M1's GitHub tool calls exactly these three endpoints, so it "
-        "cannot function. Grant Contents, Pull requests and Issues: read on that repository."
+        f"GITHUB_TOKEN cannot read {refused_reads} on {EXPECTED_REPO} (statuses: {required}). "
+        "M1's GitHub tool calls exactly these three endpoints, so it cannot function. "
+        "Grant Contents, Pull requests and Issues: read on that repository."
     )
 
-    # 403/404 both mean "not permitted"; GitHub uses 404 to avoid confirming
-    # existence for some resources. Anything else — 200 above all — means the
-    # token holds more than the read access T-17 records.
-    over_scoped = sorted(name for name, status in write_gated.items() if status not in (403, 404))
-    assert not over_scoped, (
-        f"GITHUB_TOKEN can reach write-gated endpoints {over_scoped} on {EXPECTED_REPO} "
-        f"(statuses: {write_gated}). THREAT_MODEL T-17 records this token as read-only; "
-        "re-issue it with Contents, Pull requests and Issues set to read and nothing else."
+    # 403 and 404 both mean refused; GitHub uses 404 to avoid confirming
+    # existence for some resources. Anything else means the token can read a
+    # resource M1 never asks for.
+    reachable = sorted(name for name, status in unneeded.items() if status not in (403, 404))
+    assert not reachable, (
+        "GITHUB_TOKEN can read resources M1 does not need: "
+        + ", ".join(f"{name} (gated by {_UNNEEDED_RESOURCE_READS[name]})" for name in reachable)
+        + f". Statuses: {unneeded}. Remove those permissions so the token grants only "
+        "Contents, Pull requests and Issues: read."
     )
 
 
