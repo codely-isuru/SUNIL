@@ -1,7 +1,7 @@
 # SUNIL V1 — Threat Model
 
 **Author:** Solution Architect, Minions Team 18 · **Status:** reviewed at Gate 2; updated 2026-08-14
-after the owner's architecture review; **§12 (voice) added 2026-08-19 for M9** · **Date:** 2026-08-14
+after the owner's architecture review; **§12 (voice) added 2026-08-19 for M9, amended the same day for the two-vendor split** · **Date:** 2026-08-14
 **Scope:** V1, with **M1** (built and live-verified 2026-08-19) assessed as built, and **M9** assessed
 as *designed* in §12 — not built. Every §12 status is what the design commits to.
 **Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) — see its amendment log A-1…A-18 — and
@@ -248,7 +248,7 @@ list may be described as present until its milestone ships.
 | DC-15 | **Enforcement of `full_local_only`** — export and training pipelines that actually refuse to move a record marked local-only | V3 | ADR-014. M1 has one machine and no export path; the value is recorded, not enforced, and debt D-13 says so |
 | DC-16 | **Retention enforcement** — a purge job acting on `retention_class` | M11 | ADR-014, debt D-11. The classification is captured from M1; nothing deletes anything yet |
 | DC-17 | **Approval before a spoken instruction executes a write.** M9's auto-send is safe *only* while every reachable tool operation is read-only. When write-capable tools land, a misheard command becomes an executed command | **M5** | ADR-020. The answer is the `ASK_USER` path (DC-2), not a voice-specific control. `SUNIL_VOICE_AUTO_SEND` exists so the default can be flipped in one config edit on that day |
-| DC-18 | **Purge of `var/voice/`** under `SUNIL_VOICE_AUDIO_RETENTION=local_file` | M11 | ADR-021. Same gap `retention_class` already has (D-11); voice is not exempted from it |
+| ~~DC-18~~ | ~~Purge of `var/voice/`~~ — **WITHDRAWN 2026-08-19.** ADR-021 Amendment 1: `local_file` is not built, the setting does not exist, and nothing is retained | — | Kept struck through rather than deleted, so the register shows a control that was removed by *removing the feature*, not by lowering a claim |
 | DC-19 | **Rate limiting on the voice endpoints** | M11 | M1/M9 have one user and no limiter anywhere in the system. The speak endpoint's bounded cache caps the common case, not a determined loop |
 
 ---
@@ -331,36 +331,45 @@ status the design commits to, and the tests in §12.3 are what will make each on
 ```
         ┌──── the owner's machine ────────────────────────────────┐
  mic ───┤ browser :3000  ══TB1══▶  FastAPI :8000                  │
-        └────────────────────────────────┬────────────────────────┘
-                                    TB8  ║
-                                         ▼
-                            api.openai.com/v1/audio/*
+        └───────────────────────────┬─────────────┬───────────────┘
+                              TB8   ║        TB9  ║
+                                    ▼             ▼
+                   api.openai.com/v1/audio/  api.elevenlabs.io/v1/text-to-speech/
+                     transcriptions              (ADR-026)
 ```
 
 | ID | Boundary | Crossing |
 |---|---|---|
-| **TB8** | API ↔ speech vendor | TLS 443 outbound. **A recording of the room the owner is sitting in leaves the machine here** |
+| **TB8** | API ↔ **transcription** vendor (OpenAI) | TLS 443 outbound. **A recording of the room the owner is sitting in leaves the machine here** |
+| **TB9** | API ↔ **synthesis** vendor (ElevenLabs) | TLS 443 outbound. **SUNIL's own answer text** leaves here — TB2's disclosure profile, not TB8's, which is why the interlock does not extend to it (ADR-022 Am. 1) |
 
-TB8 is drawn separately from TB2 (API ↔ LLM) deliberately. They share a host, a key and a validator,
-and they do **not** share a disclosure profile: prompts are text the owner composed and could have
-been read from `var/sunil.db` anyway; audio exists nowhere else on the machine. ADR-017's acceptance of
-the loopback exception was argued on the first fact and does not transfer to the second — which is
-precisely why ADR-022 exists rather than the guard simply being reused in silence.
+**TB8 is drawn separately from TB2 (API ↔ LLM), and TB9 separately from TB8, and both separations do
+work.** TB8 vs TB2: prompts are text the owner composed and could have been read from `var/sunil.db`
+anyway; **audio exists nowhere else on the machine.** ADR-017's acceptance of the loopback exception
+was argued on the first fact and does not transfer to the second — which is why ADR-022 exists rather
+than the guard being reused in silence.
 
-**A8 is added to the asset list:** *captured microphone audio and its transcript* — biometric, verbatim,
-unredactable, and containing whatever was said in the room.
+TB9 vs TB8: what crosses TB9 outbound is **SUNIL's own answer text, already in `messages.content`**. Run
+the same test on it and it comes back TB2's profile, not TB8's — so the interlock **deliberately does
+not extend there** (ADR-022 Amendment 1, M9-A4). *The interlock exists for the microphone, not for the
+word "voice".* A flag guarding nothing dilutes the one that guards something.
+
+**A8 is added to the asset list:** *captured microphone audio and its transcript* — biometric,
+verbatim, unredactable, and containing whatever was said in the room. **A9:** *the ElevenLabs API key*
+— directly monetisable, billed to the owner, same class as A1.
 
 ### 12.2 Threats
 
 | ID | Threat | Control in M9 | Status |
 |---|---|---|---|
-| T-35 | **Microphone audio egress to an unintended host.** ADR-017's loopback exception now admits live audio, not just prompts | Canonical-or-loopback validator, unchanged (ADR-017) **plus** ADR-022's interlock: a loopback base URL disables voice unless `SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS` is separately set. Checked at startup and per request; the destination is logged at boot | **Mitigated.** Residual: the owner deliberately enabling both, which now takes two conscious acts, both logged |
+| T-35 | **Microphone audio egress to an unintended host.** ADR-017's loopback exception now admits live audio, not just prompts | Canonical-or-loopback validator, unchanged (ADR-017, now four upstreams) **plus** ADR-022's interlock: a loopback `OPENAI_BASE_URL` disables **transcription** unless `SUNIL_VOICE_ALLOW_LOOPBACK_STT` is separately set. Checked at startup and per request; both destinations logged at boot | **Mitigated.** Residual: the owner deliberately enabling both, which takes two conscious acts, both logged |
 | T-36 | **Denial of wallet through the speak endpoint** — repeated or arbitrary synthesis | The endpoint takes a `message_id`, never text, so it is not a TTS oracle; ownership is checked (404, not 403); a bounded RAM cache serves replays; `SameSite=Lax` withholds the cookie cross-site so an embedded `<audio>` on a hostile page gets 401 and spends nothing | **Mitigated for the reachable cases.** No rate limiter exists anywhere in the system — DC-19 |
 | T-37 | **False provenance** — a client labels typed text `input_modality="voice"`, contaminating a future corpus with a claim nothing can re-derive | The server accepts the flag only when a `speech_calls` row exists with `direction=stt`, `status=ok`, the same `request_id`, and `user_id` equal to the session owner; otherwise 422 **before** any turn machinery runs | **Mitigated** — ET-16 |
 | T-38 | **Injection into the transcript via the STT `prompt=` parameter.** It is free text that steers the model; anything derived from a message, a tool result or a prior transcript would let external content shape words the orchestrator then treats as the owner's own | The parameter is never set by any code path, and an AST test over `sunil/speech/` asserts the keyword is never passed | **Mitigated** |
 | T-39 | **Unbounded upload** — a lying `Content-Length`, or a 500 MB body | Allow-listed `Content-Type` (415) and `Content-Length` cap (413) **before** a byte is read, **and** a running byte count while iterating `request.stream()` that aborts past the limit — never `await request.body()`, which trusts the header | **Mitigated** |
 | T-40 | **The vendor retains the audio.** SUNIL's discard policy governs SUNIL's disk, not OpenAI's | None available architecturally. The owner chose a cloud STT vendor knowingly; R§16 Epic 5's local voice is the answer | **Accepted, by explicit roadmap design. Deferred → V2** |
-| T-41 | **Spoken secrets** — the owner reads a password aloud, or a third party is audible, while a recording runs | Audio is discarded by default (ADR-021) and **is not redactable at all**: §8.3 walks strings, and no mechanism removes a spoken key from a waveform. The transcript passes through §8.3 like any other text, which catches `sk-…`-shaped tokens but not a spoken passphrase | **Partial, and stated as Partial.** The mitigation is the default retention policy, not detection |
+| T-41 | **Spoken secrets** — the owner reads a password aloud, or a third party is audible, while a recording runs | Audio is discarded — **always**, since M9-A2 withdrew `local_file`; there is no column, path, setting or code that could retain it — and **is not redactable at all**: §8.3 walks strings, and no mechanism removes a spoken key from a waveform. The transcript passes through §8.3 like any other text, catching `sk-…`/`sk_…`-shaped tokens but not a spoken passphrase | **Partial, and stated as Partial.** The mitigation is that nothing retains the audio, not detection |
+| **T-43** | **The synthesis vendor retains SUNIL's answer text.** ElevenLabs' `enable_logging` defaults to **`true`**, and the answer may carry private-repository content projected into it. Zero Retention Mode (`enable_logging=false`) *"may only be used by enterprise customers"* per their own documentation | SUNIL sends `enable_logging=false` on **every** synthesis request, unconditionally — it costs nothing and is honoured if the account is eligible | **Requested, not controlled, and counted as nothing.** On a non-Enterprise plan it does not apply, and no claim in this model depends on it. The owner should know before signing up (ADR-026 §3) |
 | T-42 | **Microphone available over an insecure origin.** `getUserMedia` needs a secure context; `http://localhost` qualifies, anything else over plain HTTP silently yields nothing | None needed today (single-machine, loopback). Hosting SUNIL means TLS, and the session cookie's `https_only=False` moves at the same time — debt **D-14** | **Not reachable today; recorded so hosting does not rediscover it** |
 
 ### 12.3 Tests that make §12 checkable
@@ -368,7 +377,8 @@ unredactable, and containing whatever was said in the room.
 | Test | Threat | Requirement |
 |---|---|---|
 | `test_non_loopback_api_base_override_refuses_to_boot` (existing) | T-35 | ADR-017, unchanged by M9 |
-| `test_loopback_base_url_without_optin_disables_voice` | **T-35** | ADR-022, **ET-18** |
+| `test_loopback_openai_base_url_without_optin_disables_transcription` | **T-35** | ADR-022 Am. 1, **ET-18** |
+| `test_loopback_elevenlabs_base_url_needs_no_optin` | **T-35** | ADR-022 Am. 1 — asserts the asymmetry **deliberately**, so a later "tidy-up" adding a symmetric flag fails and has to read the reasoning |
 | `test_voice_endpoints_send_nothing_when_interlock_unset` | T-35 | ADR-022, ET-18 |
 | `test_speak_rejects_a_message_owned_by_another_user` | **T-36** | ADR-025, **ET-17** |
 | `test_speak_cache_hit_makes_no_upstream_call` | T-36 | ADR-025 |
@@ -377,6 +387,9 @@ unredactable, and containing whatever was said in the room.
 | `test_lying_content_length_is_still_capped` | **T-39** | ADR-025 |
 | `test_disallowed_audio_content_type_is_rejected` | T-39 | ADR-025 |
 | `test_no_audio_bytes_are_persisted_during_a_voice_turn` | T-41 | ADR-021, **ET-15** |
+| `test_speech_service_imports_neither_open_nor_pathlib` | T-41 | ADR-021 Am. 1 — makes "discarded" structural rather than behavioural |
+| `test_elevenlabs_request_sets_enable_logging_false` | **T-43** | ADR-026 §3 — asserts the request is made, **not** that retention is prevented |
+| `test_elevenlabs_request_sends_xi_api_key_and_no_authorization_header` | T-24 | ADR-026 §1 |
 | `test_speech_call_metadata_only_stores_no_transcript` | T-41 | ADR-021 |
 | `test_only_providers_and_speech_may_import_a_vendor_sdk` (amended) | DC-10 | ADR-019 |
 | `test_only_the_voice_route_may_import_sunil_speech` | DC-10 | ADR-019 — R§6's sentence, as a test |
@@ -391,8 +404,58 @@ Security owns T-35 … T-41 and the two DC-10 rules (task **T35** of the M9 plan
   memory or from OS socket buffers, and it says nothing about the vendor's retention — T-40.
 - **`SUNIL_VOICE_ENABLED` is a delivery switch, not a security control**, and is not counted as one
   anywhere above. The controls are ADR-022's items 1, 2, 3 and 5.
+- **`enable_logging=false` is a request, not a control.** It is sent on every synthesis call and no
+  claim in this model depends on it being honoured — T-43.
 - **Auto-send is not a control.** It is a product default whose safety rests entirely on M1's tool
   scope being read-only, and that property expires — DC-17.
 - **M9's frontend has no regression test**, because the frontend still has no test runner (M1 debt,
   M11). The push-to-talk state machine is verified by review and by browser-level exit tests, which is
   weaker.
+
+---
+
+## 13. M2 — Streaming and cancellation (added 2026-08-19)
+
+**Scope:** M2 as designed in [`ARCHITECTURE_M2_STREAMING.md`](ARCHITECTURE_M2_STREAMING.md), decided by
+ADR-027 … ADR-029. Assessed as *designed*, not built.
+
+**No new trust boundary.** M2 changes the *representation* crossing TB1 (browser ↔ API), not the set of
+boundaries. That is itself a result of the transport decision: ADR-027 rejected WebSocket partly
+because it would have created a crossing with **no CORS, no `X-SUNIL-Client` and a hand-written
+`Origin` check** — a new boundary in all but name.
+
+| ID | Threat | Control | Status |
+|---|---|---|---|
+| T-44 | **A long-lived streaming request holds a DB session and a provider socket.** A handful of abandoned turns could exhaust the pool | The turn's session is request-scoped and released in a `finally`; the provider stream is closed with `async with`; a disconnect cancels within ~1 s (heartbeat-bounded). One user, one concurrent turn | **Mitigated for M2's scope, and the scope is the reason** — no connection cap exists. DC-19's rate-limit gap covers it from M11 |
+| T-45 | **Partial answers leak through a failed turn.** A stream dying after 200 tokens has shown the owner text no `messages` row will hold | Deliberate and made visible: the terminal frame states the outcome and the client marks the message incomplete. The partial text **is** persisted on the `llm_calls` row, so the trace is not silently short | **Accepted, and surfaced** rather than hidden |
+| **T-46** | **Token frames bypass the redaction hook.** §8.3 scrubs `llm_calls.response_*` **before insert** — and a token frame reaches the browser *before any insert happens*. **M1 had a control here that M2 would have quietly lost** | Secrets are never placed in a prompt (§9.1), so a model reproducing one would have had to be told it — but that is a weaker guarantee than "redaction covers the response". **`scrub()` therefore runs on each delta before it is framed.** Cost is a dict walk over ~20 characters | **Mitigated by moving the hook.** Recorded prominently because the honest default was to miss it — the threat was found by asking what the hook actually covers, not by assuming it still did |
+| T-47 | **Cancellation as a denial-of-wallet amplifier** — repeated start/cancel burns plan-call spend with nothing to show | Every attempt is costed into `llm_calls` regardless, so the spend is visible rather than invisible. No cap exists | **Accepted, visible, uncapped.** DC-5 (spend cap, M3) unchanged — cancellation reduces waste, it is not a budget control |
+| T-48 | **NDJSON frame injection** — untrusted tool content in a `token` frame breaking framing, or forging a `done` | Frames are built with `json.dumps`, **never string concatenation**, so a newline inside a string is escaped by the serialiser. The client parses each line with `JSON.parse` and **ignores unknown `type` values** | **Mitigated** |
+| T-49 | **Cancellation used to skip an audit trail** — abort late to avoid recording what happened | A cancelled turn is a **recorded** turn: no rollback, terminal task state, `final_response` emitted, `llm_calls` row written with real usage (ADR-029, ET-24). Rolling back on cancel was explicitly rejected | **Mitigated** |
+
+### 13.1 What §13 does not claim
+
+- **Streaming does not make a turn faster**, so it changes no timeout, no deadline and no NFR-060
+  exposure. Total turn time is unchanged.
+- **Cancellation does not abort an in-flight tool call.** The GitHub adapter's reads are already
+  bounded by a 15 s timeout, and interrupting an external read buys nothing — it has left the machine.
+  Cancellation stops SUNIL *starting* more work, not from having started some.
+- **Cancellation does not refund.** A turn cancelled during analysis has already paid for its plan call
+  and its generated tokens, and FR-029 requires that spend be recorded rather than dropped.
+- **Cancellation promptness is uvicorn-version-dependent** (debt D-19): `uvicorn==0.52.3` declares ASGI
+  `spec_version "2.3"`, so Starlette runs a concurrent disconnect listener; a version declaring 2.4+
+  detects on next send, and the heartbeat becomes the only thing keeping cancel prompt.
+
+### 13.2 Tests that make §13 checkable
+
+| Test | Threat | Requirement |
+|---|---|---|
+| `test_registered_secret_never_appears_in_a_token_frame` | **T-46** | NFR-001/005 on the live path |
+| `test_registered_secret_is_still_scrubbed_in_the_persisted_row` | T-46 | ET-10, unchanged |
+| `test_token_text_with_newlines_and_quotes_yields_one_parseable_line` | T-48 | ADR-027 §4 |
+| `test_client_ignores_unknown_frame_types` | T-48 | ADR-027 §4 |
+| `test_abort_writes_a_terminal_cancelled_task` | T-49 | **ET-23** |
+| `test_cancelled_turn_still_writes_its_llm_call_row` | T-49, T-47 | **ET-24** |
+| `test_streamed_usage_matches_non_streamed_usage` | — (cost integrity) | **ET-25** |
+
+Security owns T-46 … T-49 (task **T51**); QA owns ET-19 … ET-25 (task **T50**).

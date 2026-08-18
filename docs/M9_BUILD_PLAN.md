@@ -1,13 +1,28 @@
-# M9 — Voice: build plan (T27 … T38)
+# M9 — Voice: build plan (T27 … T39)
 
-**Author:** Solution Architect, Minions Team 18 · **Date:** 2026-08-19
-**Architecture:** [`docs/ARCHITECTURE_M9_VOICE.md`](ARCHITECTURE_M9_VOICE.md) — `M9§n` below.
-**Decisions:** ADR-019 … ADR-025. **Requirements of record:** `ARCHITECTURE_M9_VOICE.md` §14 until the
+> **⚠️ M9 IS NO LONGER THE NEXT BUILD.** The owner reversed the order on 2026-08-19: **M2 (streaming)
+> ships first** — see [`docs/M2_BUILD_PLAN.md`](M2_BUILD_PLAN.md). This plan is amended and correct,
+> and it is executed *after* M2 lands. Task numbers T27…T39 are M9's and do not collide with M2's,
+> which uses T40…T51.
+
+**Author:** Solution Architect, Minions Team 18 · **Date:** 2026-08-19 · **Amended:** 2026-08-19 (M9-A2 … M9-A5)
+**Architecture:** [`docs/ARCHITECTURE_M9_VOICE.md`](ARCHITECTURE_M9_VOICE.md) — `M9§n` below, and read
+its **amendment log** first.
+**Decisions:** ADR-019 … ADR-026, including ADR-019 Am. 1, ADR-021 Am. 1, ADR-022 Am. 1, ADR-024 Am. 1. **Requirements of record:** `ARCHITECTURE_M9_VOICE.md` §14 until the
 BA merges it into `REQUIREMENTS_V1.md` §4.11.
 **Git workflow (Delivery Manager's document, in force):** [`GIT_WORKFLOW.md`](GIT_WORKFLOW.md) —
 one branch per task, `task/T<n>-<slug>`, cut from current `main`, never committed to `main`.
 
 ---
+
+## 0a. What the owner's 2026-08-19 decisions changed in this plan
+
+| Amendment | Effect here |
+|---|---|
+| **M9-A2** — `local_file` withdrawn, `SUNIL_VOICE_AUDIO_RETENTION` deleted | **T27** loses a setting, a column (`audio_path`) and a warning paragraph. **T30** loses a filesystem branch entirely — it does not gain a no-op one. **T35** gains an easier assertion: `var/` must be byte-identical across a voice turn, with no configuration under which that could differ |
+| **M9-A3** — synthesis moves to ElevenLabs | **T29 splits into T29a (OpenAI STT) and T29b (ElevenLabs TTS)** — two adapters, one protocol, and they can be built in parallel. **T28** carries two vendors and the `billing_unit`/`unit_price` scheme. **T27** adds `ELEVENLABS_API_KEY` + `ELEVENLABS_BASE_URL` and the `billing_unit`/`billed_units` columns. Still **zero new dependencies** — `httpx` is already pinned |
+| **M9-A4** — the interlock is narrowed to the STT leg and renamed | **T27** renames the setting; **T32** applies it to `/voice/transcribe` only; **T35**'s egress test asserts the **asymmetry** deliberately, not by omission |
+| **M9-A5** — M2 ships first, so pipelining is in M9 scope | **T30** gains `synthesize_stream()` and a sentence-boundary chunker; **T32**'s speak endpoint forwards N syntheses rather than one; **T38 is replaced** by the plan-fact utterance (ADR-024 Am. 1). The client side is unchanged — that half of the seam held |
 
 ## 0. The three rules M1 learned the hard way
 
@@ -42,8 +57,9 @@ one that is not on this list.
 | `config/speech.yaml` | **T28** |
 | `apps/api/sunil/core/registry/speech.py` | **T28** |
 | `apps/api/sunil/core/registry/loader.py` | **T28** |
-| `apps/api/sunil/speech/{__init__,base,openai_speech,registry}.py` | **T29** |
-| `apps/api/sunil/speech/service.py` | **T30** |
+| `apps/api/sunil/speech/{__init__,base,openai_speech,registry}.py` | **T29a** |
+| `apps/api/sunil/speech/elevenlabs_speech.py` | **T29b** |
+| `apps/api/sunil/speech/{service.py,chunker.py}` | **T30** |
 | `apps/api/sunil/api/schemas.py` | **T31** |
 | `apps/api/sunil/api/routes/chat.py` | **T31** |
 | `apps/api/sunil/api/routes/voice.py` | **T32** |
@@ -54,7 +70,7 @@ one that is not on this list.
 | `apps/api/tests/security/test_import_boundaries.py`, `tests/security/test_voice_egress.py`, `tests/security/test_voice_capture.py` | **T35** |
 | `apps/api/tests/exit/_speech_double.py`, `tests/exit/test_et13_*.py` … `test_et18_*.py` | **T36** |
 | `apps/api/tests/integration/test_voice_latency_live.py`, `docs/worklog/2026-08-2x-m9-latency.md` | **T37** |
-| `apps/api/sunil/speech/ack.py`, `apps/web/src/lib/spokenAck.ts` | **T38** (optional) |
+| `apps/api/sunil/speech/plan_utterance.py`, `apps/web/src/lib/planUtterance.ts` | **T39** (optional — replaces T38) |
 | Unit tests under `tests/unit/**` | the task that owns the module under test; basenames listed per task |
 
 **Documents nobody on this milestone edits:** `docs/STATUS.md`, `docs/GIT_WORKFLOW.md` (Delivery
@@ -65,16 +81,18 @@ Manager's), `docs/ARCHITECTURE_V1.md` §14.3 (no dependency changes — M9§13).
 ## 2. Dependency graph and the critical path
 
 ```
-T27 ──┬─► T28 ──► T29 ──► T30 ──┬─► T31 ──► T32 ──► T34 ──► T36
-      │                          │            ▲       ▲
-      │                          └────────────┘       │
-      └─────────────────────────────► T33 ────────────┘
-                                                       └─► T37
-T35 depends on T29 + T32 (it tests their boundaries)
-T38 depends on T30 + T32, and is optional
+                     ┌─► T29a ─┐
+T27 ──► T28 ─────────┤         ├─► T30 ──► T31 ──► T32 ──► T34 ──► T36 ──► T37
+      │              └─► T29b ─┘                     ▲
+      └────────────────────► T33 ────────────────────┘
+
+T29b needs only T29a's `base.py`, not the whole task — the two adapters build in parallel.
+T35 depends on T29a + T29b + T32 (it tests their boundaries).
+T39 depends on T30 + T32, and is optional.
 ```
 
-**Critical path: T27 → T28 → T29 → T30 → T31 → T32 → T34 → T36.** T33 (the capture hook) has real
+**Critical path: T27 → T28 → T29a → T30 → T31 → T32 → T34 → T36.** The vendor split (M9-A3) did **not**
+lengthen it: T29b runs beside T29a, and both finish before T30 needs them. T33 (the capture hook) has real
 slack and can run beside the backend from day one, because it talks to `/voice/capabilities` and
 `/voice/transcribe` — both frozen in M9§6 before either exists.
 
@@ -97,7 +115,9 @@ an Architect ruling, not a lane decision.
   `ContentSource` member: a transcript is `OWNER`, a synthesis input is `SUNIL_GENERATED`.
 * `SpeechCall` model exactly per M9§11.1, inheriting `CaptureColumns`, with
   `enum_check_constraint("direction", …)` and `_capture_check_constraints("speech_calls")` like every
-  peer table.
+  peer table. **Includes `billing_unit` (`audio_second|character`, CHECK-constrained) and
+  `billed_units` `Numeric(12,3)`** (M9-A3) — two units across three vendor/leg combinations, so cost is
+  `billed_units × unit_price` with no vendor branch in code. **No `audio_path` column** (M9-A2).
 * `Message.input_modality`: `String(10)` NOT NULL default `'text'`, CHECK `IN ('text','voice')`.
 * `db/capture.py`: `resolve_capture()` handles `SPEECH_CALL`; the writer nulls `transcript` under
   `none`/`metadata_only` on the **same writer path** the other kinds already use — no second mechanism.
@@ -105,51 +125,77 @@ an Architect ruling, not a lane decision.
   CHECK. Downgrade drops both. Obeys §7.2 portability (no dialect-specific types).
 * `main.py`: `EXPECTED_ALEMBIC_HEAD = "0002"`. **Nothing else in this file** — the lifespan wiring is
   T32's, and T32 starts after this merges.
-* `settings.py`: the seven `SUNIL_VOICE_*` fields of M9§8.2 with their defaults, plus a model-level
-  validator implementing the **egress interlock** (M9§8.1 item 2): if `openai_base_url` is loopback and
-  `sunil_voice_allow_loopback_egress` is false, voice is *unavailable* — expose it as a computed
-  `voice_available: bool`, do **not** raise. Raising would stop QA booting an app with a speech double,
-  and ADR-017's boot-refusal already covers the case that must be fatal.
+* `settings.py`: the six `SUNIL_VOICE_*` fields of M9§8.2 with their defaults, **plus
+  `elevenlabs_api_key: SecretStr | None` and `elevenlabs_base_url`** — the latter added to
+  `_CANONICAL_BASE_URLS` as `https://api.elevenlabs.io` (**no `/v1` suffix**, unlike OpenAI's) and
+  covered by the existing `_validate_base_url`, which now guards four upstreams with one function.
+  Register the new key with `redaction.register()` **and** add an `sk_[A-Za-z0-9]{20,}` entry to §8.3's
+  pattern list — ElevenLabs' documented prefix is one character from OpenAI's.
+  Then a model-level validator implementing the **STT interlock** (M9§8.1 item 2, M9-A4): if
+  `openai_base_url` is loopback and `sunil_voice_allow_loopback_stt` is false, **transcription** is
+  unavailable — expose it as a computed `stt_available: bool`, do **not** raise. Raising would stop QA
+  booting an app with a transcription double, and ADR-017's boot-refusal already covers the case that
+  must be fatal. **There is no equivalent flag for synthesis, and that is deliberate** (M9-A4) — do not
+  add one "for symmetry".
+* **`SUNIL_VOICE_AUDIO_RETENTION` does not exist** (M9-A2). If you find yourself adding it, re-read
+  ADR-021 Amendment 1.
 * `config/capture.yaml`: a `speech_call` block, `capture_policy: metadata_only`, `sensitivity:
   internal`, `retention_class: standard`, with the M9§7.2 reasoning as a comment.
-* `.env.example`: the seven variables, and **the M9§7.3 warning sentence next to
-  `SUNIL_VOICE_AUDIO_RETENTION`** in full.
+* `.env.example`: the six `SUNIL_VOICE_*` variables plus `ELEVENLABS_API_KEY` and
+  `ELEVENLABS_BASE_URL`, placeholders only. **No retention variable and no warning paragraph** —
+  M9-A2 removed the mode, so there is nothing to warn about.
 
 **Tests** (`tests/unit/test_voice_settings.py`, `tests/unit/test_speech_call_model.py`,
 `tests/unit/test_migration_0002.py`, additions to `tests/unit/test_db_capture.py`):
 `speech_call` resolves to `metadata_only` from the real config · a `metadata_only` decision writes
 `transcript IS NULL` and `transcript_chars` non-null · `training_eligible` stays derived · the
-`direction` CHECK rejects a third value · `input_modality` rejects a third value and defaults to
-`'text'` · `0002` upgrades and downgrades cleanly on SQLite · **canonical base URL → `voice_available`
-true; loopback + interlock false → false; loopback + interlock true → true; a non-canonical
-non-loopback URL still refuses to construct `Settings`** (ADR-017 unchanged).
+`direction` CHECK rejects a third value · `billing_unit` CHECK rejects a third value ·
+`input_modality` rejects a third value and defaults to `'text'` · `0002` upgrades and downgrades
+cleanly on SQLite · **canonical `openai_base_url` → `stt_available` true; loopback + interlock false →
+false; loopback + interlock true → true; a non-canonical non-loopback URL still refuses to construct
+`Settings`** (ADR-017 unchanged) · **a loopback `elevenlabs_base_url` does NOT affect `stt_available`
+and needs no flag** — assert it explicitly, so a later "tidy-up" that adds symmetry fails a test
+(M9-A4) · `ELEVENLABS_API_KEY`'s value never appears in a log line (ET-10's mechanism, new secret).
 **Satisfies:** FR-208, FR-209, NFR-052 (schema half). **Exit tests:** ET-14, ET-15, ET-18 (foundations).
 
 ### T30 — `SpeechService`: retry, deadline, persistence, cost, capture
 
-**Deps:** T27, T29. **On the critical path.**
-**Owns:** `apps/api/sunil/speech/service.py`.
+**Deps:** T27, T29a, T29b. **On the critical path.**
+**Owns:** `apps/api/sunil/speech/service.py`, `apps/api/sunil/speech/chunker.py`.
 
-**Build:** `SpeechService.transcribe(...)` and `.synthesize(...)`, each taking already-validated
-inputs and a `sessionmaker`, and each:
+**Build:** `SpeechService.transcribe(...)`, `.synthesize(...)` and — new under M9-A5 —
+`.synthesize_stream(...)`, each taking already-validated inputs and a `sessionmaker`, and each:
 * resolving the capability from the speech registry (T28) — never naming a vendor;
 * running **one retry on transient only** (A-16's rule: no-status connection/timeout, 408, 429, any
   5xx are transient; **everything else, including any exception class this plan does not name, is
   permanent**);
 * writing **one `speech_calls` row per attempt**, including the failed one, via `resolve_capture()`;
-* computing cost from `config/speech.yaml` (STT per audio-second, TTS per input character) and
-  stamping `pricing_version`;
-* honouring `SUNIL_VOICE_AUDIO_RETENTION` — under `local_file`, writing `var/voice/<request_id>.<ext>`
-  with mode `0600` and recording `audio_path`; under `discard`, **no filesystem call exists on the
-  path at all**, not a no-op wrapper;
+* computing cost as **`billed_units × unit_price`** from `config/speech.yaml`, stamping
+  `pricing_version` and writing `billing_unit`/`billed_units`. **There is no `if direction == "stt"`
+  branch** — the unit is named data, not inferred from the leg (M9-A3, ADR-019 Am. 1). A code review
+  that finds such a branch should reject the task;
+* **no filesystem call exists anywhere on this path** (M9-A2). Not a guarded one, not a no-op wrapper —
+  `SpeechService` does not import `pathlib` or `open`;
 * returning a streaming async iterator for synthesis, never a buffered `bytes`.
 
-**Tests** (`tests/unit/speech/test_speech_service.py`): two rows on one transient retry, one on
-success, one on a permanent failure with `status="error"` and an `error_kind` · cost arithmetic against
-a pinned price table · `metadata_only` nulls `transcript` while keeping `transcript_chars` ·
-`local_file` writes exactly one file with the expected mode and records the path; `discard` writes none
-(assert on a tmp-path tree that stays empty) · a synthesis longer than `max_speak_chars` is truncated at
-a sentence boundary and sets `truncated=True`.
+**`chunker.py` (new, M9-A5)** — `sentence_chunks(tokens: AsyncIterator[str]) -> AsyncIterator[str]`:
+emits on `.`, `!` or `?` followed by whitespace or end-of-stream, with a **minimum chunk of 24
+characters** so `"e.g."` or `"v2.5"` does not trigger a four-character synthesis, and a **maximum of
+`SUNIL_VOICE_MAX_SPEAK_CHARS`** so a model that never punctuates still flushes. It is a pure async
+generator over strings with no vendor, no HTTP and no database — which is what makes it the one piece
+of M9 that is trivially unit-testable in isolation, and it should have the densest tests in the
+milestone.
+
+**Tests** (`tests/unit/speech/test_speech_service.py`, `tests/unit/speech/test_sentence_chunker.py`):
+two rows on one transient retry, one on success, one on a permanent failure with `status="error"` and
+an `error_kind` · cost arithmetic for **both** billing units against a pinned price table · a synthesis
+row records `billing_unit="character"` and a transcription row `audio_second` · `metadata_only` nulls
+`transcript` while keeping `transcript_chars` · **`discard` is unconditional: run a full transcribe
+against a `tmp_path` tree and assert it is byte-identical afterwards, and assert `service.py`'s source
+imports neither `open` nor `pathlib`** · a synthesis longer than `max_speak_chars` truncates at a
+sentence boundary and sets `truncated=True` · the chunker emits on `. ! ?`, does **not** emit inside
+`"e.g."`, `"v2.5"` or `"Dr. Smith"`, flushes an unpunctuated 3,000-character stream, and emits the tail
+when the stream ends mid-sentence.
 **Satisfies:** FR-207, FR-209, FR-210, NFR-052. **Exit tests:** ET-14, ET-15.
 
 ### T31 — The chat surface: `input_modality`, its provenance check, and the voice envelopes
@@ -181,18 +227,22 @@ third modality value → 422 from Pydantic · `message_received.detail` carries 
 
 ### T32 — The voice routes and the app wiring
 
-**Deps:** T27, T28, T29, T30, T31 — **and T27 must be merged before this branch is cut** (§0 rule 1,
+**Deps:** T27, T28, T29a, T29b, T30, T31 — **and T27 must be merged before this branch is cut** (§0 rule 1,
 `main.py`). **On the critical path.**
 **Owns:** `apps/api/sunil/api/routes/voice.py`, `apps/api/sunil/api/routes/__init__.py`,
 `apps/api/sunil/main.py` (second owner, sequentially).
 
 **Build:** the four endpoints of M9§6, with the guard order of M9§4.2 **exactly as listed** —
-session → client header → enabled (404) → egress interlock (503) → content type (415) → length (413)
-→ streamed read with a running byte cap. Plus:
+session → client header → enabled (404) → **STT interlock (503, `/voice/transcribe` only — M9-A4)** →
+content type (415) → length (413) → streamed read with a running byte cap. **`/voice/speak` has no
+interlock check**; adding one there is a defect, not a hardening (ADR-022 Amendment 1). Plus:
 * `GET /voice/speak/{message_id}`: **no client-header requirement** (an `<audio>` element cannot send
   one — M9§4.5) and therefore an ownership check that is not optional: assistant role, conversation
   owned by the session user, else **404**. `StreamingResponse(media_type="audio/mpeg")` forwarding
-  `iter_bytes()` chunk by chunk.
+  chunks. **Under M9-A5 the upstream is N syntheses concatenated, not one** — the response is a single
+  chunked `audio/mpeg` body either way, which is the half of the original seam that held: the client is
+  unchanged. Each sentence-level synthesis writes its own `speech_calls` row, so N syntheses are N rows
+  and the cost arithmetic stays true with no schema change.
 * The bounded RAM cache on `app.state` — 8 entries / 16 MiB / 10 min TTL. **This is the named descope
   lever for this task:** dropping it costs a re-synthesis on replay and nothing else.
 * `main.py`'s lifespan: build the speech registry, call `validate_speech_capabilities()`, hang
@@ -218,58 +268,139 @@ unavailable is not a boot failure (T25's pattern).
 **Owns:** `config/speech.yaml`, `apps/api/sunil/core/registry/speech.py`,
 `apps/api/sunil/core/registry/loader.py`.
 
-**Build:** a sixth-and-seventh registry file following `model_catalogue.py`'s shape exactly:
-`version`, `pricing_version`, `capabilities: {transcription, synthesis}` → `{provider, model,
-timeout_s, language | voice | instructions, price…}`. Strings → typed values at load; an unknown value
-refuses to boot (§10.2). **Cross-validate against the speech provider registry**, and validate the
-configured `voice` against the SDK's `Voice` Literal — M9§4.5's ⚠️ note: the alias admits bare `str`,
-so an unlisted voice type-checks and 400s at runtime instead.
-**Prices ship as clearly-marked zeros with the `config/models.yaml` OpenAI comment repeated verbatim in
-spirit** — they are not verifiable from any local source, and a guessed price is worse than a zero
-(debt D-15). Pin `gpt-4o-mini-transcribe` and `gpt-4o-mini-tts`, both read from the installed SDK's
-`AudioModel` / `SpeechModel` Literals.
+**Build:** a seventh registry file following `model_catalogue.py`'s shape exactly: `version`,
+`pricing_version`, `capabilities: {transcription, synthesis}` → `{provider, model, timeout_s,
+billing_unit, unit_price, …}`. Strings → typed values at load; an unknown value refuses to boot
+(§10.2). **Cross-validate against the speech provider registry.**
+
+**Two vendors (M9-A3):**
+
+```yaml
+capabilities:
+  transcription:
+    provider: openai
+    model: gpt-4o-mini-transcribe      # from the installed SDK's AudioModel Literal
+    language: en
+    timeout_s: 20
+    billing_unit: audio_second
+    unit_price: "0"                    # PLACEHOLDER — see below
+  synthesis:
+    provider: elevenlabs
+    model: eleven_flash_v2_5           # ~75ms, 40k char cap, 0.5 credits/char (vendor's figures)
+    voice_id: REPLACE_ME               # the owner's choice — never a value read from a blog post
+    voice_settings: {stability: 0.5, similarity_boost: 0.75}
+    output_format: mp3_44100_128
+    timeout_s: 20
+    billing_unit: character
+    unit_price: "0"                    # PLACEHOLDER
+  # synthesis_openai: kept commented, carrying the exact shape `synthesis` had before ADR-026,
+  # so reverting the vendor is a config edit and never a code change (T24's pattern).
+```
+
+**`billing_unit` + `unit_price` are the mechanism that keeps vendor arithmetic out of code** (ADR-019
+Amendment 1): `SpeechService` computes `billed_units × unit_price` and never asks which leg it is on.
+
+**Prices ship as clearly-marked zeros** with `config/models.yaml`'s OpenAI comment repeated in spirit —
+not verifiable from any local source, and a guessed price is worse than a zero (debt D-15).
+**`voice_id` ships as `REPLACE_ME`** and the owner supplies it (§9): pinning a "premade" voice id read
+from a third-party page is exactly the class of unverified constant this project writes zeros for.
+**Do not validate `voice_id` by calling the vendor at startup** — that would make booting SUNIL depend
+on a vendor being reachable, against ADR-016's restart model. Validate it is present and non-empty; a
+422 at first synthesis maps to `error_kind="unknown_voice"` (T29b).
 
 **Tests** (`tests/unit/registry/test_speech_registry.py`, plus a case in the existing
 `test_real_config.py`): loads the real file · unknown capability → named startup error · unknown
-provider → named startup error · a voice outside the SDK Literal → named startup error · a model
-outside the SDK Literal → named startup error.
-**Satisfies:** FR-209 (pricing half), ADR-016.
+provider → named startup error · a model outside its vendor's known set → named startup error · an
+unknown `billing_unit` → named startup error · **an empty `voice_id` → named startup error, and the
+message says which config key and which owner action fixes it** · the commented `synthesis_openai`
+block is not loaded and does not affect cross-validation.
+**Satisfies:** FR-209 (pricing half), ADR-016, ADR-026.
 
-### T29 — The `SpeechProvider` protocol and the OpenAI speech adapter
+### T29a — The `SpeechProvider` protocol and the OpenAI transcription adapter
 
-**Deps:** T27, T28. **On the critical path.**
+**Deps:** T27, T28. **On the critical path.** Splits from the original T29 under M9-A3.
 **Owns:** `apps/api/sunil/speech/{__init__.py,base.py,openai_speech.py,registry.py}`.
 
 **Build:**
 * `base.py`: `SpeechProvider` Protocol (`name`, `async transcribe(...)`,
-  `async synthesize(...) -> AsyncIterator[bytes]`), the request/result dataclasses, and
-  `SpeechError`/`SpeechTransientError`/`SpeechPermanentError`. **No vendor import.**
-* `openai_speech.py` — **the only module here permitted to `import openai`**:
+  `async synthesize(...) -> AsyncIterator[bytes]`, `async synthesize_stream(...) -> AsyncIterator[bytes]`),
+  the request/result dataclasses, and `SpeechError`/`SpeechTransientError`/`SpeechPermanentError`.
+  **No vendor import.** A provider that cannot do a leg raises `SpeechCapabilityUnsupported` — OpenAI's
+  adapter implements all three; a future transcription-only vendor would not.
+* `openai_speech.py` — one of the two modules permitted a vendor import:
   * `AsyncOpenAI(api_key=…, base_url=settings.openai_base_url, max_retries=0, timeout=…)`,
     `base_url` **explicit** (ADR-017 — a hard-coded canonical literal would outrank the test seam,
     which is precisely the defect that discipline caught in M1).
   * `transcriptions.create(file=(filename, data, content_type), model=…, response_format="json",
     language=…, temperature=0)`. **The filename is derived from the allow-listed content type**, never
     from the client. **`prompt=` is never passed** (T-38).
-  * `speech.with_streaming_response.create(...)` used as an async context manager, forwarding
-    `iter_bytes()`. **Not** `await create(...)`, whose `iter_bytes()` is synchronous over an already
-    buffered body and would look like streaming while streaming nothing.
+  * Reads `usage` defensively: `Transcription.usage` is `Optional` and is a **discriminated union** of
+    `UsageTokens` and `UsageDuration`. Set `billing_unit="audio_second"` and `billed_units` from
+    `usage.duration.seconds` when present, else from the advisory `X-Audio-Duration-Ms` header, else
+    write `billed_units=0` and an `error_kind` note — never invent a duration.
+  * Keeps its **synthesis** path implemented and tested (`speech.with_streaming_response.create(...)`
+    as an async context manager, forwarding `iter_bytes()`; **not** `await create(...)`, whose
+    `iter_bytes()` is synchronous over an already-buffered body and would look like streaming while
+    streaming nothing; and `AsyncResponseContextManager` has no `__await__`). **It is not wired to a
+    capability**, exactly as `general_reasoning_anthropic` is not — so reverting ADR-026 is a config
+    edit, never a code change.
   * Error classification **by `status_code`** (A-16), never by class name.
 * `registry.py`: `build_speech_registry(settings, speech_registry)` — a vendor with no key is simply
   not registered — and `validate_speech_capabilities(...)`, which raises
   `RegistryCrossValidationError` naming **every** problem, the capability, the vendor and the env var
   that would fix it (T25's message shape).
 
-**Tests** (`tests/unit/speech/test_openai_speech_adapter.py`, `tests/unit/speech/test_speech_registry_build.py`),
-all against a **loopback HTTP double** driven by `OPENAI_BASE_URL` (ADR-017's transport seam — a
-protocol fake would only assert the fake): the adapter sends the model, format and language it was
-configured with · a 429 → `SpeechTransientError`, a 400 → `SpeechPermanentError`, an unnamed 503 →
-transient · `base_url` is honoured (assert the double was hit, not `api.openai.com`) · synthesis yields
-multiple chunks · **`prompt` never appears in any outbound request body** · no key → not registered ·
-a reachable capability with no key → named boot failure.
-**Satisfies:** FR-202, FR-206, NFR-013. **Exit tests:** ET-18.
+**Tests** (`tests/unit/speech/test_openai_speech_adapter.py`,
+`tests/unit/speech/test_speech_registry_build.py`), all against a **loopback HTTP double** driven by
+`OPENAI_BASE_URL` (ADR-017's transport seam — a protocol fake would only assert the fake): the adapter
+sends the model, format and language it was configured with · a 429 → `SpeechTransientError`, a 400 →
+`SpeechPermanentError`, an unnamed 503 → transient · `base_url` is honoured (assert the double was hit,
+not `api.openai.com`) · **`prompt` never appears in any outbound request body** · a `UsageDuration`
+response sets `billed_units`; a response with `usage=None` falls back to the header; neither invents a
+number · no key → not registered · a reachable capability with no key → named boot failure.
+**Satisfies:** FR-202, NFR-013. **Exit tests:** ET-18.
 **Watch:** `sunil/speech/` and `sunil/providers/` are the only packages that may import a vendor SDK.
 T35 tests it; CI (T21) runs that test on every merge.
+
+### T29b — The ElevenLabs synthesis adapter
+
+**Deps:** T27, T28, and **T29a's `base.py` merged** (it consumes the protocol, it does not define it).
+**Parallel with T30 once `base.py` exists.** New under M9-A3.
+**Owns:** `apps/api/sunil/speech/elevenlabs_speech.py`.
+
+**Build:** `httpx.AsyncClient` — **no SDK, no new dependency** (`httpx` 0.28.1 is already pinned and
+already used in exactly this shape by `tools/github/adapter.py`).
+
+* `POST {elevenlabs_base_url}/v1/text-to-speech/{voice_id}/stream`, `base_url` **explicit** from
+  `Settings` (ADR-017), `follow_redirects=False` like the GitHub client — a redirect would bounce the
+  key onward.
+* Header **`xi-api-key`**, *not* `Authorization: Bearer`. An adapter written by analogy with T29a's
+  will 401 on every call; this line is why the plan says it twice.
+* Query `output_format=mp3_44100_128` and **`enable_logging=false`** — Zero Retention Mode, requested
+  unconditionally and **claimed nowhere** (T-43; it is Enterprise-only).
+* **Do not send `optimize_streaming_latency`** — deprecated in the vendor's own documentation.
+* Body `{"text", "model_id", "voice_settings", "language_code"}`; `model_id` and voice settings come
+  from `config/speech.yaml`, never from a literal.
+* Stream with `client.stream("POST", …)` and `aiter_bytes()`. **On a `>=400` status you must
+  `await response.aread()` before inspecting the body** — an unread streaming response has no content.
+* `billing_unit="character"`, `billed_units=len(text)`.
+* `provider_request_id` from `request-id`/`x-request-id` **if present, else `NULL`** — no such header
+  is documented (debt D-18). Do not invent one.
+* Error classification **by `status_code`** (A-16). A 401 is permanent (bad key); a 422 naming an
+  unknown voice maps to `error_kind="unknown_voice"` so a mis-configured `voice_id` is legible.
+
+**Tests** (`tests/unit/speech/test_elevenlabs_adapter.py`), against a **loopback HTTP double** driven
+by `ELEVENLABS_BASE_URL`: the outbound request carries `xi-api-key` and **never** an `Authorization`
+header · `enable_logging=false` is present on every call · `optimize_streaming_latency` is **absent** ·
+the double receives the configured `model_id` and `voice_id` · a chunked body yields more than one
+chunk to the caller · a 429 → transient, a 400 → permanent, an unnamed 502 → transient · a 422 →
+`error_kind="unknown_voice"` · `billed_units == len(text)` · a redirect is **not** followed · the key's
+value never appears in a log line.
+**Satisfies:** FR-206, FR-207, NFR-013. **Exit tests:** ET-14.
+**Watch:** every fact above came from the vendor's published reference, **not from a live call** (debt
+D-18). The first task run with a real key must confirm the auth header, the streaming behaviour and the
+response headers, and report any difference as a defect against this plan rather than fixing it
+silently.
 
 ---
 
@@ -327,7 +458,7 @@ permission denied, no device, and unsupported recorder.
 
 ### T35 — Import boundaries, egress, and the capture claim (SEC)
 
-**Deps:** T29, T32.
+**Deps:** T29a, T29b, T32.
 **Owns:** `apps/api/tests/security/test_import_boundaries.py`,
 `apps/api/tests/security/test_voice_egress.py`, `apps/api/tests/security/test_voice_capture.py`.
 
@@ -340,11 +471,21 @@ permission denied, no device, and unsupported recorder.
   `tools/` cannot reach speech at all. This is R§6's sentence turned into a test.
 * **New:** no module under `sunil/speech/` passes `prompt=` to a transcription call (AST walk for the
   keyword, not a substring grep) — T-38.
-* Egress: a non-canonical, non-loopback `OPENAI_BASE_URL` refuses to boot (ADR-017, unchanged);
-  loopback + interlock unset → every voice endpoint 503 and **the double receives nothing**; loopback +
-  interlock set → allowed.
-* Capture: a complete voice turn under defaults leaves `speech_calls.transcript IS NULL`,
-  `audio_path IS NULL`, and **an empty `var/voice/` tree**.
+* **New:** no module under `sunil/speech/` sends an `Authorization` header to ElevenLabs, and none
+  sends `optimize_streaming_latency` — both are AST/keyword walks over `elevenlabs_speech.py`, and both
+  encode a fact that was verified once and would otherwise be re-guessed by the next person.
+* Egress, **including the asymmetry M9-A4 introduced, asserted rather than left implicit**:
+  * a non-canonical, non-loopback `OPENAI_BASE_URL` or `ELEVENLABS_BASE_URL` refuses to boot
+    (ADR-017, unchanged, now four upstreams);
+  * loopback `OPENAI_BASE_URL` + `SUNIL_VOICE_ALLOW_LOOPBACK_STT` unset → `/voice/transcribe` 503 and
+    **the double receives nothing**; set → allowed;
+  * **loopback `ELEVENLABS_BASE_URL` with no flag at all → synthesis is allowed.** This test exists so
+    that a future "tidy-up" adding a second flag for symmetry fails, and has to come and read ADR-022
+    Amendment 1 to find out why the asymmetry is deliberate.
+* Capture: a complete voice turn leaves `speech_calls.transcript IS NULL` and **`var/` byte-identical**.
+  There is no `audio_path` column and no `var/voice/` tree to check (M9-A2) — assert instead that
+  `sunil/speech/service.py` imports neither `open` nor `pathlib`, which is the property that makes
+  "discarded" structural rather than behavioural.
 **Satisfies:** NFR-013, NFR-052, NFR-002. **Exit tests:** ET-15, ET-18.
 
 ### T36 — Exit tests ET-13 … ET-18 and the speech double (QA)
@@ -355,10 +496,14 @@ permission denied, no device, and unsupported recorder.
 `test_et16_voice_provenance_required.py`, `test_et17_speak_ownership.py`,
 `test_et18_voice_egress_interlock.py`.
 
-**Build:** `_speech_double.py` is a loopback HTTP server scripting `/audio/transcriptions` and
-`/audio/speech`, driven by `OPENAI_BASE_URL` exactly as `_mock_upstreams.py` already does for the other
-two upstreams — the same seam, so the **real adapter code** is what runs. It must be able to script: a
-normal transcript, an empty transcript, a 429-then-success, a permanent 400, and a chunked audio body.
+**Build:** `_speech_double.py` is a loopback HTTP server scripting **both vendors** — OpenAI's
+`/audio/transcriptions` (driven by `OPENAI_BASE_URL`) and ElevenLabs'
+`/v1/text-to-speech/{voice_id}/stream` (driven by `ELEVENLABS_BASE_URL`) — exactly as
+`_mock_upstreams.py` already does for the other upstreams, so the **real adapter code** is what runs.
+It must be able to script: a normal transcript, an empty transcript, a 429-then-success, a permanent
+400, a 422 naming an unknown voice, and a chunked audio body delivered in several parts. It must also
+**assert what it received**, so the security tests can check the `xi-api-key` header, the absence of
+`Authorization`, and `enable_logging=false`.
 Each exit test is written **red first**, per M9§14.3's statements verbatim.
 ET-13 is the load-bearing one: it runs the same request twice, once typed and once spoken, and asserts
 the two twelve-stage traces are identical in stage set and order, and that the spoken turn has exactly
@@ -381,14 +526,33 @@ observed value and its date, and close debt D-16. Also answer the one open quest
 whether `stream_format="audio"` actually yields early bytes, or whether leg 7 collapses into 7b.
 **Satisfies:** NFR-062.
 
-### T38 — OPTIONAL: the spoken acknowledgement (the descope lever)
+### T39 — OPTIONAL: the plan-fact utterance (replaces T38 as the descope lever)
 
 **Deps:** T30, T32. **Drop this first if M9 comes under schedule pressure** — the earcon plus the
-on-screen transcript already carry the message (M9§9.2d).
-**Owns:** `apps/api/sunil/speech/ack.py`, `apps/web/src/lib/spokenAck.ts`.
-**Build:** `GET /api/v1/voice/ack` serving a once-synthesised `"Okay."` from the same bounded RAM
-cache, warmed lazily and asynchronously on the first `/voice/capabilities` call; if it is not warm when
-needed the client simply skips it — no blocking, no failure mode. Gated on `SUNIL_VOICE_ACK="spoken"`.
+on-screen transcript already carry the interaction (M9§9.2a).
+**Owns:** `apps/api/sunil/speech/plan_utterance.py`, `apps/web/src/lib/planUtterance.ts`.
+
+**Replaces T38's `"Okay."` acknowledgement**, because M9-A5 changed which gap needs filling. With
+sentence pipelining, the first spoken word of the answer arrives at ~5.3 s and the transcript at ~1 s;
+the gap that remains is **2.5 s → 5.3 s**, and the honest thing to put in it is the fact SUNIL learns at
+`plan_created`.
+
+**Build:** when a validated plan resolves a project, synthesise and play
+*"Checking {project_display_name}."* — the **same fact** `WorkIndicator` already renders on screen from
+`plan_created.detail.project_display_name` (§3.4). Gated on `SUNIL_VOICE_ACK="spoken"`.
+
+**Three rules, and they are what separate this from the thing ADR-024 rejected:**
+1. It states a **fact from a validated plan**, never a claim about progress. *"Working out a plan…"*
+   stays rejected; *"Checking the workforce repo."* is permitted. If you cannot name the source row for
+   what is being said, do not say it.
+2. **Never spoken when the plan was rejected** or when `project_display_name` is absent — silence is
+   correct, and a generic fallback would reintroduce exactly the progress claim rule 1 forbids.
+3. **Cancelled if the answer's first sentence is ready before it finishes**, so SUNIL never talks over
+   itself.
+
+**Tests** (`tests/unit/speech/test_plan_utterance.py`): fires once on a resolved plan; **never** fires
+on `plan_rejected` or `unknown_project`; never fires when the detail key is absent; is cancelled when
+the first answer sentence arrives first.
 
 ---
 
@@ -397,29 +561,43 @@ needed the client simply skips it — no blocking, no failure mode. Gated on `SU
 | Exit test | Proved by |
 |---|---|
 | ET-13 — twelve stages, spoken == typed | T31, T32, T34, T36 |
-| ET-14 — two `speech_calls` rows, costed | T27, T30, T36 |
-| ET-15 — no audio persisted | T27, T30, T35, T36 |
+| ET-14 — two `speech_calls` rows, costed, **both billing units** | T27, T29a, T29b, T30, T36 |
+| ET-15 — no audio persisted, **unconditionally** | T27, T30, T35, T36 |
 | ET-16 — voice provenance required | T31, T36 |
 | ET-17 — speak ownership enforced | T32, T36 |
-| ET-18 — egress interlock holds | T27, T29, T32, T35, T36 |
-| NFR-062 — latency, measured not modelled | T37 |
+| ET-18 — STT interlock holds, **and synthesis is deliberately not gated** | T27, T29a, T29b, T32, T35, T36 |
+| NFR-062 — latency, measured not modelled | T40 (M2, leg 6a), then T37 |
 
 Every M9 FR in `ARCHITECTURE_M9_VOICE.md` §14.1 is claimed by at least one task above; FR-213/FR-214
-(COULD) are T34 and T32 respectively and are the two safe descopes after T38.
+(COULD) are T34 and T32 respectively and are the two safe descopes after T39.
 
 ---
 
-## 8. Before build starts — the owner's decisions
+## 8. The owner's four decisions — all taken 2026-08-19
 
-These are not build decisions and no engineer should take them. Listed in
-`ARCHITECTURE_M9_VOICE.md`'s report and repeated here so the lane leads can see the gate:
+Recorded here as settled, so no lane reopens them:
 
-1. **Auto-send, or transcript-review-then-send?** The plan defaults to auto-send with the reasoning and
-   the expiry condition in M9§5.3.
-2. **`local_file` audio retention: implement it, or leave `discard` as the only mode?** M9§7.3 states
-   exactly what turning it on means.
-3. **Is the OpenAI voice choice his?** `config/speech.yaml` pins `alloy`; it is a one-line config
-   change and he may have a preference.
-4. **Does M9 wait for M2?** M9§9.3 is explicit that the conversational feel needs streaming. Shipping
-   M9 first delivers a working voice interface with a ~7 s answer; shipping M2 first and then M9
-   delivers ~3 s but later.
+1. **Auto-send** — confirmed as designed (M9-A1), including that its safety expires at M5 (DC-17).
+2. **Retention** — `discard` only. `local_file` is **not built** and `SUNIL_VOICE_AUDIO_RETENTION`
+   does not exist (M9-A2, ADR-021 Amendment 1).
+3. **Build order** — **M2 ships before M9** (M9-A5). Sentence pipelining is therefore M9 scope, not a
+   later retrofit. ⚠️ The owner took this decision expecting "~3 s"; the corrected figure is **~5.3 s**
+   (M9§9.1, ADR-024 Amendment 1), and he should see it before M9 starts.
+4. **Vendors** — synthesis on **ElevenLabs**, transcription stays on **OpenAI** (M9-A3, ADR-026).
+
+## 9. What the owner must create before T29b can be built or tested for real
+
+`ELEVENLABS_API_KEY` is the only new secret. It is needed by **T29b** to verify against a live
+endpoint and by **T37** to measure; every earlier task builds and tests against a loopback double, so
+**nothing before T29b is blocked by its absence.**
+
+| # | What he creates | Where it goes | Note |
+|---|---|---|---|
+| 1 | An **ElevenLabs account** | — | — |
+| 2 | A **plan decision**. Their free tier is credit-limited and carries **no commercial-use rights and an attribution requirement**; the entry paid tier does. SUNIL answers questions about Codely work, so this is a business-use call, not a technical one | — | **ESTIMATE:** plan allowances quoted by secondary sources disagree; he should read the current pricing page rather than trust a number from here |
+| 3 | An **API key** from the ElevenLabs dashboard | `.env` → `ELEVENLABS_API_KEY` | Sent as `xi-api-key`. Never in code, never in a prompt, registered with `redaction.register()` on boot |
+| 4 | A **chosen voice**, and its `voice_id` | `config/speech.yaml` → `capabilities.synthesis.voice_id` | Ships as `REPLACE_ME`; the registry refuses to boot on the placeholder rather than 422-ing at first use |
+| 5 | **Awareness, not an action:** ElevenLabs' `enable_logging` defaults to `true`, so **the vendor retains SUNIL's answer text**. SUNIL sends `enable_logging=false` on every call, but Zero Retention Mode *"may only be used by enterprise customers"* — so on any normal plan it will not apply | — | Threat **T-43**. Recorded so the retention posture is a decision he made, not one he discovers |
+
+Nothing else changes for him: `OPENAI_API_KEY` and `OPENAI_BASE_URL` are unchanged, and no other
+credential is added.

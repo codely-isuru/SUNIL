@@ -79,3 +79,32 @@ Designer owns.
   structurally correct so multi-user does not need to retrofit it.
 - The frontend must tolerate the channel being absent. `useTurn()` implements both variants behind one
   interface, so the fallback is a runtime branch rather than a rebuild.
+
+---
+
+## Superseded by ADR-027 — 2026-08-19
+
+**Status: SUPERSEDED.** M2 streams NDJSON frames from the chat POST itself, selected by content
+negotiation, and the twelve stage events ride that same stream as `{"type":"stage",…}` frames.
+
+**Nothing is lost, because none of this was built.** T12 was pre-classified OPTIONAL / post-M1 and never
+landed — verified 2026-08-19: there is no `StreamingResponse`, no `TraceBus` and no event-stream route
+anywhere in `apps/api/sunil/`. `SUNIL_PROGRESS_EVENTS` exists in `settings.py` and nothing reads it; it
+is deleted by M2's T46, along with the frontend's `openProgressEvents()` and its `useTurn` call site,
+which point at an endpoint that never existed (debt D-22).
+
+**What this ADR got right and ADR-027 keeps:** the events are already produced, timestamped and
+persisted for NFR-020, so publishing them costs almost nothing; a fabricated progress display would
+contradict §33.10; the API sends `stage` enums only and the 12→4 phase map stays in the frontend; and
+progress must never be able to change the turn's outcome.
+
+**What ADR-027 changes, and why:** this ADR's `TraceBus` — a replay buffer, an ownership claim, a TTL
+and a documented POST/SSE race — exists **only because the stream was a different connection from the
+work**. Streaming from the POST deletes that machinery rather than solving it, and it yields a real
+cancellation signal, which this ADR could not.
+
+**And ADR-027 accepts the option this ADR rejected.** Its own rejected-alternatives table said of
+streaming from the POST: *"Genuinely elegant … Rejected because it changes the POST response from a
+JSON object to a stream, which invalidates the exit tests QA is writing from FR-020 right now and would
+need an SRS amendment three days out."* Content negotiation answers that objection, and the three-day
+deadline that made it decisive has passed.

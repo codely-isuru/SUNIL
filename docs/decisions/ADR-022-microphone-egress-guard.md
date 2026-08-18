@@ -31,6 +31,7 @@ The speech adapter is constructed from `settings.openai_base_url`, which already
 host, one validator, one place to review — **no new setting means no new hole**.
 
 **2. NEW — the interlock. A loopback base URL disables voice unless separately opted into.**
+*(Amendment 1 narrows this to the transcription leg and renames the flag `SUNIL_VOICE_ALLOW_LOOPBACK_STT`. The block below is the original wording, kept because a changed decision is a recorded change.)*
 
 ```
 openai_base_url canonical                                        → voice available
@@ -94,3 +95,82 @@ cannot reach speech at all.
   Accepted by explicit roadmap design; R§16 Epic 5's local voice is the answer and it is V2.
 * `THREAT_MODEL.md` gains **§12** — a new boundary **TB8** (API ↔ speech vendor), a new asset **A8**
   (captured audio and its transcript), threats T-35…T-42, and DC-17…DC-19.
+
+---
+
+## Amendment 1 — a third destination, and the interlock is narrowed to the leg it was argued for
+
+**Date:** 2026-08-19 · **Origin:** ADR-026 (synthesis moves to ElevenLabs)
+**Status:** Accepted · **Applies to:** decision items 1 and 2, and the config inventory.
+
+### 1. `ELEVENLABS_BASE_URL` joins the ADR-017 validator, unchanged
+
+A third canonical host, the same one validator, the same rule: **canonical, or loopback, or the
+application does not boot.**
+
+```python
+_CANONICAL_BASE_URLS = {
+    "anthropic_base_url":  "https://api.anthropic.com",
+    "github_api_base_url": "https://api.github.com",
+    "openai_base_url":     "https://api.openai.com/v1",
+    "elevenlabs_base_url": "https://api.elevenlabs.io",     # NEW — note: no /v1 suffix
+}
+```
+
+`ELEVENLABS_API_KEY` is a `SecretStr | None` and joins the redaction registry. Its documented prefix
+(`sk_…`) is close enough to OpenAI's `sk-` that §8.3's pattern list should gain an explicit
+`sk_[A-Za-z0-9]{20,}` entry rather than relying on the registered-value match alone — belt and braces,
+the same posture ET-10 already takes.
+
+A redirected ElevenLabs base URL leaks the **`xi-api-key` header**, not `Authorization: Bearer`. Same
+class of theft, different header name; the guard does not care, and neither does this amendment beyond
+recording that the adapter must not be written to assume one shape.
+
+### 2. **The microphone interlock does NOT extend to the synthesis leg** — and this is the substantive ruling
+
+`SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS` is renamed **`SUNIL_VOICE_ALLOW_LOOPBACK_STT`** and gates only the
+transcription leg.
+
+The Delivery Manager asked whether the interlock's reasoning applies to synthesis. **It does not, and
+saying so is more honest than extending a control by reflex.** The original argument was specific:
+
+> ADR-017 accepted the loopback exception because a hostile local process *"could already read
+> `.env`"*, so loopback added no meaningful exposure. That reasoning holds for prompts. **It does not
+> hold for microphone audio, which exists nowhere else on the machine.**
+
+Now apply the same test to the synthesis leg. What crosses it outbound is **the text of SUNIL's own
+answer** — already persisted in `messages.content`, already readable from `var/sunil.db` by any
+process that can reach the file. That is TB2's disclosure profile exactly, and ADR-017 already
+reasoned about it and accepted it. What comes back is audio SUNIL asked to be generated. **Neither
+direction carries anything that exists nowhere else.** So the extra consent has nothing to protect,
+and a flag guarding nothing is worse than no flag: it dilutes the one that does protect something.
+
+Stated as a rule: **the interlock exists for the microphone, not for the word "voice".** Renaming it to
+say `STT` removes the ambiguity that let this question arise at all.
+
+| Leg | Outbound content | Guard |
+|---|---|---|
+| `transcription` | **the owner's microphone audio** — exists nowhere else | ADR-017 validator **+ `SUNIL_VOICE_ALLOW_LOOPBACK_STT`** |
+| `synthesis` | SUNIL's own answer text, already in `messages.content` | ADR-017 validator alone |
+
+**Consequence, stated so it is not mistaken for an oversight:** with `ELEVENLABS_BASE_URL` pointed at
+loopback, a local process receives SUNIL's answer text and the ElevenLabs key with no second flag.
+That is deliberate, it is identical to what `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` have always
+permitted, and it is covered by the existing residual **T-24** rather than by a new one.
+
+It also makes QA's life correct rather than merely easier: an exit test for synthesis needs a loopback
+double and one setting, while an exit test for transcription needs a loopback double and **two** —
+which is exactly the asymmetry the threat model claims.
+
+### 3. The startup egress line names both destinations
+
+```
+voice.egress stt=openai base_url=https://api.openai.com/v1 canonical=true model=gpt-4o-mini-transcribe
+             tts=elevenlabs base_url=https://api.elevenlabs.io canonical=true model=eleven_flash_v2_5
+             retention=discard zero_retention_requested=true
+```
+
+### 4. `SUNIL_VOICE_AUDIO_RETENTION` is gone from the inventory
+
+Withdrawn by ADR-021 Amendment 1. `retention=discard` above is a statement of fact, not of
+configuration.

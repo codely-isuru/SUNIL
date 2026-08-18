@@ -83,3 +83,95 @@ dependency means in practice.
   single figure over six legs hides which one regressed.
 * Barge-in, wake word and offline voice remain V2 (R§16 Epic 5). M9 gives a stop button, not voice
   interruption.
+
+---
+
+## Amendment 1 — M2 ships first, and my "~2.5–3.5 s" was wrong
+
+**Date:** 2026-08-19 · **Origin:** the owner's decision to build M2 before M9, taken on this ADR's
+own §9.3 argument · **Status:** Accepted · **Applies to:** the "what needs M2" section. The
+recommendation to build streaming first stands; **the number I used to justify it does not.**
+
+### The correction, first, because it may change the owner's mind
+
+This ADR said that with M2's token streaming, *"release → first spoken word ≈ 2.5–3.5 s instead of
+~7 s."* **That estimate is wrong, and it is wrong in the direction that flatters my own
+recommendation.**
+
+It assumed the answer begins generating when the turn begins. It does not. An M1 turn is
+**three sequential legs** (ADR-015, §3.4): a plan call, a tool call, then the analysis call — and the
+analysis call *is* the answer. Token streaming accelerates only the third leg. Everything before the
+first token of the analysis is untouched by it.
+
+```
+release ─ 0.1s ─ upload ─ STT ~1.0s ─┬─ plan ──── tool ──── analysis ─────────────┐
+                                     │   (streaming changes nothing here)  ^      │
+                                     │                                     |      │
+                                     └─────────────────────── first token ─┘      │
+                                                       first SENTENCE ─ TTS ─ speak
+```
+
+Honest revised arithmetic, with every component labelled:
+
+| Leg | Time | Basis |
+|---|---|---|
+| Release → blob → upload | 0.06–0.18 s | ESTIMATE |
+| STT (OpenAI `gpt-4o-mini-transcribe`) | 0.6–1.5 s | ESTIMATE |
+| Plan call + GitHub read + analysis-to-first-**sentence** | **3.0–4.5 s** | **Derived, not measured** — see below |
+| TTS to first byte (ElevenLabs `eleven_flash_v2_5`, ~75 ms model latency) | 0.2–0.5 s | ESTIMATE, ADR-026 |
+| Playback start | 0.05–0.15 s | ESTIMATE |
+| **Release → first spoken word** | **≈ 3.9–6.8 s; ~5.3 s typical** | |
+
+Against ~7.5 s without streaming, that is a **~2 s improvement, not a ~4 s one.**
+
+**And the "3.0–4.5 s" row is the weakest number in this document.** The 5.8 s turn was measured as a
+*total*; the split between plan, tool and analysis was never measured separately, so that row is
+apportioned from §5.1's budget model rather than observed. It is the single most valuable measurement
+M2 can take, and it is now a task in its own right (`M2_BUILD_PLAN.md` T40), taken **before** the
+streaming work rather than after, so the design is aimed at the leg that is actually large.
+
+### The floor, and why no amount of streaming goes below it
+
+`STT + plan + tool + first sentence of analysis + TTS-first-byte`. Roughly **4–5 s**, and it is set by
+the **two-LLM-stage pipeline shape** (ADR-015), not by the transport. Streaming cannot cross it. Only
+changing what happens before the answer exists can — and the two candidates are M6's agent loop
+(which makes it *worse*) and speaking something true earlier.
+
+### The one new option M2 creates, and how it differs from what this ADR rejected
+
+The original decision rejected speaking progress, on the ground that *"a spoken phase label is a claim
+about progress that the four-phase model deliberately does not make."* That rejection stands.
+
+**Speaking a fact read from a validated plan is a different thing.** At `plan_created` — roughly
+2.5 s into the turn — SUNIL knows, from a plan that has passed all five validation layers, which
+project it is about to check. *"Checking the workforce repo."* asserts nothing the system does not
+know; it is the identical fact the `WorkIndicator` already renders on screen as *"Checking {Project}…"*
+from `plan_created.detail.project_display_name` (§3.4). It fills the 2.5 s → 5.3 s gap with something
+true, and it costs one short synthesis of ~30 characters.
+
+| Rejected (still rejected) | Permitted (new) |
+|---|---|
+| *"Working out a plan…"*, *"Putting your answer together…"* | *"Checking the workforce repo."* |
+| A claim about **progress**, which nothing measures | A statement of **fact**, from a validated plan, already displayed |
+
+It is **optional** and it is the descope lever it replaces: if it is dropped, the earcon plus the
+on-screen transcript still carry the interaction. It must never be spoken when the plan was rejected,
+and it must be cancelled if the answer's first sentence is ready before it finishes.
+
+### What the reordering costs M9, and why the owner's decision is still right
+
+**Sentence-level pipelining moves from "M2's additive work" into M9's own scope.** When M9 is built,
+streaming will already exist, so M9 must consume it on day one rather than buffer the answer and
+synthesise once. That is a real scope increase to M9 — a sentence-boundary chunker, a
+`synthesize_stream()` adapter path, and a chunked response whose upstream is N syntheses rather than
+one — and `M9_BUILD_PLAN.md` carries it.
+
+**The decision is nevertheless right, and on firmer ground than the latency number.** Retrofitting
+pipelining into a shipped M9 means rewriting the synthesis path, the response path and the client's
+playback assumptions after they have exit tests pointed at them. Doing it once is cheaper than doing
+it twice, and that argument does not depend on whether the saving is 2 s or 4 s.
+
+**But the owner reversed the order to get voice "landing once at ~3 s", and it will not be ~3 s.** He
+should see the corrected number and confirm, because if ~5.3 s and ~7.5 s feel equally like waiting,
+then shipping M9 first and taking the streaming benefit later is the better trade and this
+amendment is the argument for reopening it.

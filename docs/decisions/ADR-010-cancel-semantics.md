@@ -52,3 +52,20 @@ cooperative cancellation is a flag check inside that one method plus a `cancelle
   conversation. M1 has no history view (FR-025 is M2), so this is invisible now; M2's history work
   must decide whether to filter it. Recorded so it is not discovered as a bug.
 - **Debt D-4:** cooperative server-side cancel + `cancelled` task state, owed at M2.
+
+---
+
+## Superseded in part by ADR-029 — 2026-08-19
+
+**Status: superseded in part.** The M1 decision — cancel is client-side only, and the abort seam exists
+unwired — was correct for M1 and its reasoning is unchanged: a synchronous POST gives the server no
+cancellation signal it can act on, and inventing one would have meant a cancel endpoint, a cancellation
+token and a polling loop, three days from a milestone.
+
+**ADR-027 changes the premise.** With the answer streaming from the POST, a client abort is a TCP
+close, and a TCP close is a signal the server can act on. **ADR-029 wires the seam this ADR left**:
+disconnect cancels the turn, `TaskStatus.CANCELLED` becomes a real terminal state (migration `0002`),
+and `ChatResponse.outcome` gains `"cancelled"`.
+
+This is recorded as a partial supersession rather than a replacement so the M1 decision keeps its
+context: **DC-7 and debt D-4 are closed by ADR-029, not by this ADR having been wrong.**
