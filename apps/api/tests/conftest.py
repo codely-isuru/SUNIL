@@ -1,31 +1,38 @@
 """Shared fixtures for the whole apps/api/tests suite.
 
-Everything in this file is deliberately free of any `sunil.*` import, so this file
-itself always collects cleanly regardless of how much of the backend exists yet.
-Anything that *does* need `sunil` (building the app, running migrations, calling the
-orchestrator) is a plain function called from inside a test body via
+Everything in this file is deliberately free of any `sunil.*` import at module level,
+so this file itself always collects cleanly regardless of how much of the backend
+exists yet. Anything that *does* need `sunil` (building the app, running migrations,
+calling the orchestrator) is a plain function called from inside a test body via
 `tests._helpers.import_or_fail`, never a fixture — see that module's docstring for why.
+
+`live_env`/`require_live_settings` below are the one exception to "never a fixture" for
+a `sunil` import, and only a lazy, function-body-local one guarded so a missing
+`sunil.settings` degrades to "no live credentials" rather than an error — see that
+fixture's own docstring.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 
 def pytest_configure(config: pytest.Config) -> None:
     # Registered here (not in a pyproject.toml/pytest.ini we don't own) so `--strict-markers`
     # never trips on `live`, and so T21's CI can `-m "not live"` deselect exactly the tests
-    # that need ANTHROPIC_API_KEY / GITHUB_TOKEN, per docs/M1_BUILD_PLAN.md T21.
+    # that need real credentials, per docs/M1_BUILD_PLAN.md T21.
     config.addinivalue_line(
         "markers",
-        "live: needs real ANTHROPIC_API_KEY and/or GITHUB_TOKEN and live network access; "
-        'CI deselects these with `-m "not live"`. Skipped (not failed) when secrets are absent.',
+        "live: needs GITHUB_TOKEN plus whichever provider key(s) the test itself names "
+        "(see require_live_settings) and live network access; CI deselects these with "
+        '`-m "not live"`. Skipped (not failed) when a required secret is absent.',
     )
 
 
@@ -128,39 +135,103 @@ def qa_config_dir() -> Path:
 
 
 @pytest.fixture
-def live_env() -> dict[str, str] | None:
-    """Real ANTHROPIC_API_KEY / GITHUB_TOKEN / OPENAI_API_KEY from the ambient OS
-    environment, if all three are present. `None` means live-marked tests must skip
-    (see `require_live_credentials` below) -- this is the one place that decides
-    "blocked on secrets" vs "can run".
+def live_env() -> Any | None:
+    """The application's own view of live configuration: a real, unmodified
+    `sunil.settings.Settings()` instance, read from `.env` at the repo root exactly the
+    way the running app reads it. `None` means every `live`-marked test must skip (via
+    `require_live_settings` below) -- this is the one place that decides "blocked on
+    secrets/config" vs "can run".
 
-    T24: `OPENAI_API_KEY` joined the requirement here because `general_reasoning`
-    (`config/models.yaml`) now resolves to `openai` -- a live end-to-end turn needs
-    this key to reach the hot path at all, not only Anthropic's/GitHub's. All three
-    are required together (conservative) rather than loosening Anthropic/GitHub to
-    optional, since both ET-1 and ET-11's live variants still read GitHub, and a
-    future capability may still route through Anthropic.
+    **Read through `Settings`, never `os.environ`** (constraint from the Delivery
+    Manager, 2026-08-18): nothing exports these into the process environment -- they
+    live in `.env` and `pydantic-settings` reads the file by path
+    (`Settings.model_config["env_file"]`, an absolute, repo-root-relative path set in
+    `sunil/settings.py` -- `Path(__file__).resolve().parents[3] / ".env"`, so this
+    resolves correctly regardless of pytest's cwd). An `os.environ`-based version is
+    blind to a credential that is plainly present in `.env` -- exactly the defect
+    `tests/security/test_live_credential_scope.py` had before it was rebuilt; see that
+    file's own module docstring for the incident.
+
+    T26 added an autouse fixture that neutralises `Settings.model_config["env_file"]`
+    for `tests/unit/` ONLY (`tests/unit/conftest.py`, a new file scoped to that
+    directory, not an edit to this one) -- deliberately not this root conftest, per
+    that fixture's own docstring, because everything under `tests/exit/` and
+    `tests/security/` already builds its own `Settings` through an explicit,
+    `_env_file=None`-disabled seam and has no bare `Settings()`/`create_app()` call
+    site depending on the real file the way `tests/unit/test_main_app.py` does. A bare
+    `Settings()` called from here is unaffected by that fixture and still reads the
+    real file — verified directly (not assumed) against a throwaway `.env` during this
+    fix; the temporary file never held anything but obviously-fake canary values and
+    was deleted immediately after.
+
+    Returns the whole `Settings` object, never a raw string or a dict of raw strings:
+    every credential field on it is `SecretStr`, whose `repr` is `**********`. Handing
+    back the object rather than unwrapped values means nothing downstream can
+    accidentally interpolate, log, or `assert` on a raw secret — structurally, not by
+    care. This is the exact property `test_live_credential_scope.py` had to be rebuilt
+    to have, after `assert github and anthropic, "..."` rendered a live GitHub token
+    through pytest's assertion-rewriting the moment `ANTHROPIC_API_KEY` correctly
+    became optional (T25) and that assertion started failing; the token was revoked
+    and rotated. `require_live_settings` below follows the same rule this file's
+    logger-isolation fixture already follows for a different class of bug: fix the
+    class structurally, not the two instances that happened to exhibit it.
+
+    `None` only if `sunil.settings` does not exist yet, or a real `.env` exists but
+    fails to construct a valid `Settings` at all (e.g. missing a mandatory field
+    unrelated to which LLM provider is configured, such as `SESSION_SECRET`) — i.e.
+    "cannot run this live test right now", never surfaced as a fixture error: every
+    other test in the suite is equally unable to run in the first case, and the
+    second is still "blocked on configuration", not a code defect this test should
+    report as red.
     """
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    github_token = os.environ.get("GITHUB_TOKEN")
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if anthropic_key and github_token and openai_key:
-        return {
-            "ANTHROPIC_API_KEY": anthropic_key,
-            "GITHUB_TOKEN": github_token,
-            "OPENAI_API_KEY": openai_key,
-        }
-    return None
+    try:
+        from sunil.settings import Settings
+    except ImportError:
+        return None
+    try:
+        return Settings()
+    except ValidationError:
+        return None
 
 
-def require_live_credentials(live_env: dict[str, str] | None) -> dict[str, str]:
-    """Call from inside a `live`-marked test body. Skips (does not fail) when secrets
-    are absent -- per the brief, tests blocked purely on missing Day-3 secrets are a
-    different state to a RED test blocked on missing code, and must be reported as such.
+def require_live_settings(live_env: Any | None, *, providers: tuple[str, ...] = ()) -> Any:
+    """Call from inside a `live`-marked test body. Skips (never fails) unless
+    `GITHUB_TOKEN` and every named provider's key are present on the real `Settings` —
+    e.g. `require_live_settings(live_env, providers=("openai",))`.
+
+    A per-provider ask, not a fixed trio (T25, 2026-08-18 fix): `ANTHROPIC_API_KEY` is
+    now optional, and neither of ET-1/ET-11's live variants uses the Anthropic
+    provider directly — `general_reasoning` resolves to `openai`
+    (`config/models.yaml`, T24) — so neither test may block on a key it does not use.
+    `GITHUB_TOKEN` is unconditional: the tool is not optional for M1
+    (`sunil/settings.py`'s own field description). A future test that genuinely needs
+    the Anthropic provider names it explicitly (`providers=("anthropic",)`) rather
+    than this function guessing on every caller's behalf.
+
+    Every check below unwraps a `SecretStr` only inline, inside a boolean expression —
+    never bound to a local, never interpolated into the skip message, never an
+    `assert` operand. This is the same structural rule
+    `tests/security/test_live_credential_scope.py` follows (see that file's module
+    docstring for why it is a rule rather than a style preference). Returns the
+    `Settings` instance itself, never a raw string, so a test body that goes on to
+    call `build_live_settings()` can only ever pass along a `SecretStr`.
     """
     if live_env is None:
         pytest.skip(
-            "blocked on secrets, not on code: needs a real ANTHROPIC_API_KEY, GITHUB_TOKEN "
-            "and OPENAI_API_KEY in the environment. Not a red test result."
+            "blocked on secrets/config, not on code: sunil.settings does not exist yet, "
+            "or a real .env exists but Settings() could not construct from it. "
+            "Not a red test result."
+        )
+    missing: list[str] = []
+    if not live_env.github_token.get_secret_value():
+        missing.append("GITHUB_TOKEN")
+    for provider in providers:
+        key = getattr(live_env, f"{provider}_api_key", None)
+        if key is None or not key.get_secret_value():
+            missing.append(f"{provider.upper()}_API_KEY")
+    if missing:
+        pytest.skip(
+            "blocked on secrets, not on code: needs "
+            f"{', '.join(missing)} in .env at the repo root. Not a red test result."
         )
     return live_env
