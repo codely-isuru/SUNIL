@@ -1,9 +1,11 @@
 # SUNIL V1 — Threat Model
 
 **Author:** Solution Architect, Minions Team 18 · **Status:** reviewed at Gate 2; updated 2026-08-14
-after the owner's architecture review · **Date:** 2026-08-14
-**Scope:** V1, with **M1** (build started 2026-08-14, **due 2026-08-18**) assessed as built.
-**Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) — see its amendment log A-1…A-9.
+after the owner's architecture review; **§12 (voice) added 2026-08-19 for M9** · **Date:** 2026-08-14
+**Scope:** V1, with **M1** (built and live-verified 2026-08-19) assessed as built, and **M9** assessed
+as *designed* in §12 — not built. Every §12 status is what the design commits to.
+**Companion:** [`docs/ARCHITECTURE_V1.md`](ARCHITECTURE_V1.md) — see its amendment log A-1…A-18 — and
+[`docs/ARCHITECTURE_M9_VOICE.md`](ARCHITECTURE_M9_VOICE.md) for §12's design.
 
 **Changes from the first issue:** T-22 (training-corpus capture) and T-23 (config mount) added;
 DC-14/15/16 added; the `ValidatedPlan` "unforgeable" claim withdrawn (ADR-004 Amendment 1); §5.1
@@ -245,6 +247,9 @@ list may be described as present until its milestone ships.
 | DC-14 | **Stored-plan verification before privileged execution** — the Tool Manager re-reads `plans` by `meta.validated_plan_id` and refuses unless the row carries `validated = true` | **M5** | ADR-004 Amendment 1. Redundant inside a single in-process turn; becomes real when approval (M5) or scheduling (M10) separates validation from execution in time or process. The `ExecutionMetadata` seam is built in M1 |
 | DC-15 | **Enforcement of `full_local_only`** — export and training pipelines that actually refuse to move a record marked local-only | V3 | ADR-014. M1 has one machine and no export path; the value is recorded, not enforced, and debt D-13 says so |
 | DC-16 | **Retention enforcement** — a purge job acting on `retention_class` | M11 | ADR-014, debt D-11. The classification is captured from M1; nothing deletes anything yet |
+| DC-17 | **Approval before a spoken instruction executes a write.** M9's auto-send is safe *only* while every reachable tool operation is read-only. When write-capable tools land, a misheard command becomes an executed command | **M5** | ADR-020. The answer is the `ASK_USER` path (DC-2), not a voice-specific control. `SUNIL_VOICE_AUTO_SEND` exists so the default can be flipped in one config edit on that day |
+| DC-18 | **Purge of `var/voice/`** under `SUNIL_VOICE_AUDIO_RETENTION=local_file` | M11 | ADR-021. Same gap `retention_class` already has (D-11); voice is not exempted from it |
+| DC-19 | **Rate limiting on the voice endpoints** | M11 | M1/M9 have one user and no limiter anywhere in the system. The speak endpoint's bounded cache caps the common case, not a determined loop |
 
 ---
 
@@ -312,3 +317,82 @@ shows up as a coverage change in review rather than as silence.
 *Corrected 2026-08-14: three rows above previously named task T18 as Security's. Security's lane is
 **T19**; T18 is QA's exit-test harness. The `M1_BUILD_PLAN.md` ownership table was always right and
 this document was wrong.*
+
+---
+
+## 12. M9 — Voice (added 2026-08-19)
+
+**Scope of this section:** M9 as designed in [`ARCHITECTURE_M9_VOICE.md`](ARCHITECTURE_M9_VOICE.md),
+decided by ADR-019 … ADR-025. It is assessed as *designed*, not as built; every status below is the
+status the design commits to, and the tests in §12.3 are what will make each one checkable.
+
+### 12.1 The new boundary, and why it is not just TB2 again
+
+```
+        ┌──── the owner's machine ────────────────────────────────┐
+ mic ───┤ browser :3000  ══TB1══▶  FastAPI :8000                  │
+        └────────────────────────────────┬────────────────────────┘
+                                    TB8  ║
+                                         ▼
+                            api.openai.com/v1/audio/*
+```
+
+| ID | Boundary | Crossing |
+|---|---|---|
+| **TB8** | API ↔ speech vendor | TLS 443 outbound. **A recording of the room the owner is sitting in leaves the machine here** |
+
+TB8 is drawn separately from TB2 (API ↔ LLM) deliberately. They share a host, a key and a validator,
+and they do **not** share a disclosure profile: prompts are text the owner composed and could have
+been read from `var/sunil.db` anyway; audio exists nowhere else on the machine. ADR-017's acceptance of
+the loopback exception was argued on the first fact and does not transfer to the second — which is
+precisely why ADR-022 exists rather than the guard simply being reused in silence.
+
+**A8 is added to the asset list:** *captured microphone audio and its transcript* — biometric, verbatim,
+unredactable, and containing whatever was said in the room.
+
+### 12.2 Threats
+
+| ID | Threat | Control in M9 | Status |
+|---|---|---|---|
+| T-35 | **Microphone audio egress to an unintended host.** ADR-017's loopback exception now admits live audio, not just prompts | Canonical-or-loopback validator, unchanged (ADR-017) **plus** ADR-022's interlock: a loopback base URL disables voice unless `SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS` is separately set. Checked at startup and per request; the destination is logged at boot | **Mitigated.** Residual: the owner deliberately enabling both, which now takes two conscious acts, both logged |
+| T-36 | **Denial of wallet through the speak endpoint** — repeated or arbitrary synthesis | The endpoint takes a `message_id`, never text, so it is not a TTS oracle; ownership is checked (404, not 403); a bounded RAM cache serves replays; `SameSite=Lax` withholds the cookie cross-site so an embedded `<audio>` on a hostile page gets 401 and spends nothing | **Mitigated for the reachable cases.** No rate limiter exists anywhere in the system — DC-19 |
+| T-37 | **False provenance** — a client labels typed text `input_modality="voice"`, contaminating a future corpus with a claim nothing can re-derive | The server accepts the flag only when a `speech_calls` row exists with `direction=stt`, `status=ok`, the same `request_id`, and `user_id` equal to the session owner; otherwise 422 **before** any turn machinery runs | **Mitigated** — ET-16 |
+| T-38 | **Injection into the transcript via the STT `prompt=` parameter.** It is free text that steers the model; anything derived from a message, a tool result or a prior transcript would let external content shape words the orchestrator then treats as the owner's own | The parameter is never set by any code path, and an AST test over `sunil/speech/` asserts the keyword is never passed | **Mitigated** |
+| T-39 | **Unbounded upload** — a lying `Content-Length`, or a 500 MB body | Allow-listed `Content-Type` (415) and `Content-Length` cap (413) **before** a byte is read, **and** a running byte count while iterating `request.stream()` that aborts past the limit — never `await request.body()`, which trusts the header | **Mitigated** |
+| T-40 | **The vendor retains the audio.** SUNIL's discard policy governs SUNIL's disk, not OpenAI's | None available architecturally. The owner chose a cloud STT vendor knowingly; R§16 Epic 5's local voice is the answer | **Accepted, by explicit roadmap design. Deferred → V2** |
+| T-41 | **Spoken secrets** — the owner reads a password aloud, or a third party is audible, while a recording runs | Audio is discarded by default (ADR-021) and **is not redactable at all**: §8.3 walks strings, and no mechanism removes a spoken key from a waveform. The transcript passes through §8.3 like any other text, which catches `sk-…`-shaped tokens but not a spoken passphrase | **Partial, and stated as Partial.** The mitigation is the default retention policy, not detection |
+| T-42 | **Microphone available over an insecure origin.** `getUserMedia` needs a secure context; `http://localhost` qualifies, anything else over plain HTTP silently yields nothing | None needed today (single-machine, loopback). Hosting SUNIL means TLS, and the session cookie's `https_only=False` moves at the same time — debt **D-14** | **Not reachable today; recorded so hosting does not rediscover it** |
+
+### 12.3 Tests that make §12 checkable
+
+| Test | Threat | Requirement |
+|---|---|---|
+| `test_non_loopback_api_base_override_refuses_to_boot` (existing) | T-35 | ADR-017, unchanged by M9 |
+| `test_loopback_base_url_without_optin_disables_voice` | **T-35** | ADR-022, **ET-18** |
+| `test_voice_endpoints_send_nothing_when_interlock_unset` | T-35 | ADR-022, ET-18 |
+| `test_speak_rejects_a_message_owned_by_another_user` | **T-36** | ADR-025, **ET-17** |
+| `test_speak_cache_hit_makes_no_upstream_call` | T-36 | ADR-025 |
+| `test_voice_modality_requires_a_matching_stt_row` | **T-37** | ADR-020, **ET-16** |
+| `test_speech_package_never_passes_a_transcription_prompt` | **T-38** | ADR-019 (AST walk, not a substring grep) |
+| `test_lying_content_length_is_still_capped` | **T-39** | ADR-025 |
+| `test_disallowed_audio_content_type_is_rejected` | T-39 | ADR-025 |
+| `test_no_audio_bytes_are_persisted_during_a_voice_turn` | T-41 | ADR-021, **ET-15** |
+| `test_speech_call_metadata_only_stores_no_transcript` | T-41 | ADR-021 |
+| `test_only_providers_and_speech_may_import_a_vendor_sdk` (amended) | DC-10 | ADR-019 |
+| `test_only_the_voice_route_may_import_sunil_speech` | DC-10 | ADR-019 — R§6's sentence, as a test |
+| `test_voice_turn_emits_exactly_twelve_audit_events` | T-33 | ADR-023, **ET-13** |
+
+Security owns T-35 … T-41 and the two DC-10 rules (task **T35** of the M9 plan, in
+`apps/api/tests/security/`). QA owns ET-13 … ET-18 (task **T36**).
+
+### 12.4 What §12 explicitly does not claim
+
+- **"Discarded" means no code path writes it.** It does not mean the bytes are scrubbed from process
+  memory or from OS socket buffers, and it says nothing about the vendor's retention — T-40.
+- **`SUNIL_VOICE_ENABLED` is a delivery switch, not a security control**, and is not counted as one
+  anywhere above. The controls are ADR-022's items 1, 2, 3 and 5.
+- **Auto-send is not a control.** It is a product default whose safety rests entirely on M1's tool
+  scope being read-only, and that property expires — DC-17.
+- **M9's frontend has no regression test**, because the frontend still has no test runner (M1 debt,
+  M11). The push-to-talk state machine is verified by review and by browser-level exit tests, which is
+  weaker.
