@@ -38,7 +38,32 @@ prior plan document, and the previous TypeScript/NestJS build is retired.
 
 ## 2. Where we are now
 
-**Stage 5 — Development: COMPLETE. M1's vertical slice is built, merged and green.**
+**M1 — COMPLETE AND LIVE-VERIFIED. Next phase: M9 (Voice).**
+
+## ✅ M1 verified against real credentials, real data, a real model
+
+```
+564 fixture tests   passing
+  7 live tests      passing   (2 honest skips: no private control repo; one env-scoped)
+```
+
+A real turn, driven through the browser on 2026-08-19:
+
+```
+request_id 70a19c8c-…    turn completed in 5.8s (target: 30s p95)
+stages     : 12                     <- ET-6, in order, from audit_events
+tool_calls : github / list_recent_activity / allow / validated_plan_id present   <- ET-4
+llm_calls  : plan 260->126, analysis 2676->209    (one row per provider attempt)  <- ET-9
+task       : completed / project_manager                                         <- ET-3
+```
+
+SUNIL read `codely-isuru/easy_clean_workforce` and reported the Sentry integration state,
+the refreshed staging environment, and — unprompted — flagged an "unowned" dependency
+install worth auditing plus outstanding owner-side gate items. Real analysis of real
+commits, not a summary of fixtures.
+
+**Provider note:** the hot path runs OpenAI (`gpt-5.1`); the Anthropic provider is built,
+tested and one config line away. Both keys are live.
 
 ## ✅ M1 exit tests pass on `main`
 
