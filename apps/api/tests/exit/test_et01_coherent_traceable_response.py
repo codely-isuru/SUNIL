@@ -17,7 +17,9 @@ Two tests:
     the persisted `llm_calls` prompt.
   * `test_et1_live_end_to_end_real_data` — `@pytest.mark.live`. This is the only way to
     honestly test the "not fabricated" / "real data" clause against the real GitHub API
-    and the real Claude API. BLOCKED until Day 3 (ANTHROPIC_API_KEY + GITHUB_TOKEN).
+    and the real model provider. Needs `GITHUB_TOKEN` and `OPENAI_API_KEY` (T24:
+    `general_reasoning` resolves to `openai`; `ANTHROPIC_API_KEY` is optional since
+    T25 and unused by this test — see `tests/conftest.py::require_live_settings`).
 """
 
 from __future__ import annotations
@@ -105,18 +107,22 @@ def test_et1_fixture_response_traces_to_tool_result(
 def test_et1_live_end_to_end_real_data(
     db_path, database_url, qa_config_dir, monkeypatch, live_env, request_id
 ):
-    from tests.conftest import require_live_credentials
+    from tests.conftest import require_live_settings
 
-    creds = require_live_credentials(live_env)
+    # Per-provider ask (2026-08-18 fix), not a fixed trio: this turn only ever reaches
+    # `openai` (`general_reasoning`, `config/models.yaml`, T24). `anthropic_api_key` is
+    # whatever `live_env` holds -- possibly `None`, since it is optional (T25) -- and is
+    # never required here.
+    live_settings = require_live_settings(live_env, providers=("openai",))
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
 
     settings = build_live_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        anthropic_api_key=creds["ANTHROPIC_API_KEY"],
-        github_token=creds["GITHUB_TOKEN"],
-        openai_api_key=creds["OPENAI_API_KEY"],
+        github_token=live_settings.github_token,
+        anthropic_api_key=live_settings.anthropic_api_key,
+        openai_api_key=live_settings.openai_api_key,
     )
     with app_client(settings=settings) as client:
         login(client)

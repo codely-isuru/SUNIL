@@ -11,7 +11,9 @@ this structural rather than best-effort: an unrecognised project name has a lega
 non-executing representation, so the model is never forced to invent an identifier.
 The fixture test scripts that sentinel directly; the live test asks about a genuinely
 unconfigured project name against the real, schema-constrained model and expects the
-same structural outcome with zero fault injection needed at all.
+same structural outcome with zero fault injection needed at all. Needs `GITHUB_TOKEN`
+and `OPENAI_API_KEY` (T24: `general_reasoning` resolves to `openai`; `ANTHROPIC_API_KEY`
+is optional since T25 and unused by this test).
 
 Also checks the `GET /api/v1/projects` endpoint the frozen contract added (A-14):
 "same element shape as failure.known_projects" — cheap to verify here since both are
@@ -101,18 +103,22 @@ def test_et11_unknown_project_plan_sentinel_yields_graceful_failure(
 def test_et11_live_unconfigured_project_is_graceful_no_fault_injection_needed(
     db_path, database_url, qa_config_dir, monkeypatch, live_env, request_id
 ):
-    from tests.conftest import require_live_credentials
+    from tests.conftest import require_live_settings
 
-    creds = require_live_credentials(live_env)
+    # Per-provider ask (2026-08-18 fix): this turn only ever reaches `openai`
+    # (`general_reasoning`, `config/models.yaml`, T24) -- `anthropic_api_key` is
+    # whatever `live_env` holds (possibly `None`, optional since T25) and is never
+    # required here.
+    live_settings = require_live_settings(live_env, providers=("openai",))
     run_migrations(database_url, monkeypatch=monkeypatch)
     seed_owner_directly(db_path)
 
     settings = build_live_settings(
         database_url=database_url,
         config_dir=qa_config_dir,
-        anthropic_api_key=creds["ANTHROPIC_API_KEY"],
-        github_token=creds["GITHUB_TOKEN"],
-        openai_api_key=creds["OPENAI_API_KEY"],
+        github_token=live_settings.github_token,
+        anthropic_api_key=live_settings.anthropic_api_key,
+        openai_api_key=live_settings.openai_api_key,
     )
     with app_client(settings=settings) as client:
         login(client)

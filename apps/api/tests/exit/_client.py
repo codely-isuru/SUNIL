@@ -22,10 +22,11 @@ exactly the questions this file's previous revision flagged):
      running this exact helper against the real, current `migrations/env.py`) while
      everything that builds an *app* goes through `build_settings()` + `app_client()`
      instead.
-  2. **`ANTHROPIC_BASE_URL` / `GITHUB_API_BASE_URL` are real `Settings` fields**
-     (`anthropic_base_url`, `github_api_base_url`), passed explicitly as `base_url=`/a
-     path prefix by the adapters — never left to SDK-internal env reading (ADR-017).
-     Both carry a loopback-or-canonical guard: a non-canonical value must resolve to
+  2. **`ANTHROPIC_BASE_URL` / `GITHUB_API_BASE_URL` / `OPENAI_BASE_URL` are real
+     `Settings` fields** (`anthropic_base_url`, `github_api_base_url`,
+     `openai_base_url`), passed explicitly as `base_url=`/a path prefix by the adapters
+     — never left to SDK-internal env reading (ADR-017). Each carries a
+     loopback-or-canonical guard: a non-canonical value must resolve to
      `localhost`/`127.0.0.0/8`/`::1` or `Settings` refuses to construct. This harness's
      local scripted server binds `127.0.0.1`, so it always satisfies the guard. The
      negative case (a non-loopback override refusing to boot) is Security's named test
@@ -41,6 +42,17 @@ below must send `X-SUNIL-Client: web` — `auth.py`'s login/logout routes both c
 protection is deliberately not chat-only. A version of this helper without that header
 gets a real 403 from the real route, which is exactly the kind of thing running against
 the actual merged code (rather than a fixture assumption) catches.
+
+T23/T24 (2026-08-17): a second provider (openai) registered, and `general_reasoning`
+(`config/models.yaml`) repointed to it — `build_settings()`/`build_live_settings()`
+below carry the matching `openai_base_url`/`openai_api_key` fields.
+
+T25 fix (2026-08-18, Delivery Manager): `ANTHROPIC_API_KEY` is optional on the real
+`Settings` (owner has no Anthropic key; the hot path does not need one).
+`build_live_settings()`'s `anthropic_api_key` follows suit — see that function's own
+docstring — and every credential `build_live_settings()` accepts is typed
+`SecretStr`, matching what `tests/conftest.py::live_env` now hands back, never a raw
+`str` a live test would have had to unwrap itself.
 """
 
 from __future__ import annotations
@@ -53,6 +65,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 
 from tests._helpers import import_or_fail
 
@@ -69,6 +82,10 @@ WEB_ORIGIN = "http://localhost:3000"
 # does per ADR-018 §5. `run_migrations()` sets these as a floor so a fresh `Settings()`
 # never fails on a field it doesn't actually use for a migration, regardless of which
 # other env vars a given test has already set for its own app-under-test.
+# `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` are both optional on the real `Settings` (T25),
+# so they are not mandatory-floor entries -- included here anyway, at their canary
+# values, only so nothing accidentally reads a real `.env` value for either through
+# this path; `run_migrations()` already forces `_env_file` off downstream of these.
 _MIGRATION_ENV_FLOOR: dict[str, str] = {
     "ANTHROPIC_API_KEY": CANARY_ANTHROPIC_KEY,
     "GITHUB_TOKEN": CANARY_GITHUB_TOKEN,
@@ -189,9 +206,9 @@ def build_settings(
     turn_deadline_s: int | None = None,
     owner_username: str = TEST_OWNER_USERNAME,
     owner_password: str = TEST_OWNER_PASSWORD,
-    anthropic_api_key: str = CANARY_ANTHROPIC_KEY,
-    github_token: str = CANARY_GITHUB_TOKEN,
-    openai_api_key: str = CANARY_OPENAI_KEY,
+    anthropic_api_key: str | SecretStr | None = CANARY_ANTHROPIC_KEY,
+    github_token: str | SecretStr = CANARY_GITHUB_TOKEN,
+    openai_api_key: str | SecretStr | None = CANARY_OPENAI_KEY,
     overrides: dict[str, Any] | None = None,
 ) -> Any:
     """Construct a fresh `sunil.settings.Settings` instance directly — the ADR-018
@@ -203,6 +220,12 @@ def build_settings(
     `ScriptedHTTPServer`), so the accompanying guard (§9.7, T-24) never rejects a
     legitimate test call. The negative case is Security's (T19) named test, not
     duplicated here.
+
+    `anthropic_api_key`/`github_token`/`openai_api_key` accept either a raw `str` (the
+    canary defaults every mock-based test gets automatically) or an existing
+    `SecretStr` — `build_live_settings()` below passes the latter, straight through
+    from `tests/conftest.py::live_env`'s real `Settings` object, so a live test never
+    has to unwrap one itself. Pydantic accepts either shape for a `SecretStr` field.
     """
     Settings = import_or_fail(
         "sunil.settings.Settings", blocked_on="T1 (Settings, ADR-017/018 fields)"
@@ -240,10 +263,10 @@ def build_settings(
         )
         raise  # unreachable; pytest.fail raises, but keeps type checkers honest
 
-    # If T1 hasn't yet added anthropic_base_url/github_api_base_url, pydantic-settings'
-    # `extra="ignore"` would otherwise swallow the kwarg silently rather than raising --
-    # catch that here so the failure is attributed correctly instead of surfacing later
-    # as an opaque AttributeError deep inside create_app().
+    # If T1 hasn't yet added anthropic_base_url/github_api_base_url/openai_base_url,
+    # pydantic-settings' `extra="ignore"` would otherwise swallow the kwarg silently
+    # rather than raising -- catch that here so the failure is attributed correctly
+    # instead of surfacing later as an opaque AttributeError deep inside create_app().
     for requested, attr_name in (
         (anthropic_base_url, "anthropic_base_url"),
         (github_api_base_url, "github_api_base_url"),
@@ -264,24 +287,33 @@ def build_live_settings(
     *,
     database_url: str,
     config_dir: Path,
-    anthropic_api_key: str,
-    github_token: str,
-    openai_api_key: str,
+    github_token: SecretStr,
+    anthropic_api_key: SecretStr | None = None,
+    openai_api_key: SecretStr | None = None,
 ) -> Any:
     """Same as `build_settings()`, but for `@pytest.mark.live` tests: real credentials,
     and `anthropic_base_url`/`github_api_base_url`/`openai_base_url` left at their
     canonical defaults so the real APIs are actually called.
 
-    T24: `openai_api_key` is required (not defaulted to the CANARY value
-    `build_settings()` uses elsewhere) because `general_reasoning` now resolves to
-    `openai` -- a live turn with a fake key would reach the real API and get a real
-    401, not a meaningful proof of anything.
+    Fix (2026-08-18, Delivery Manager): `anthropic_api_key` is optional here too,
+    matching the real `sunil.settings.Settings` (T25) -- a live test that does not use
+    the Anthropic provider (neither ET-1 nor ET-11's live variant does;
+    `general_reasoning` resolves to `openai`, `config/models.yaml`, T24) must not be
+    forced to invent one. `github_token` stays required -- the tool is not optional
+    for M1. Whether enough of `anthropic_api_key`/`openai_api_key` is actually present
+    for a given test's turn to reach a model is `tests/conftest.py::require_live_settings`'s
+    job, checked before a test ever calls this function -- this one only threads
+    through whatever it is given.
+
+    Every parameter here is typed `SecretStr` (not `str`): the only caller is a live
+    test passing along whatever `live_env` (a real `Settings` instance) already holds,
+    so nothing in this call chain ever unwraps a credential to a raw string.
     """
     return build_settings(
         database_url=database_url,
         config_dir=config_dir,
-        anthropic_api_key=anthropic_api_key,
         github_token=github_token,
+        anthropic_api_key=anthropic_api_key,
         openai_api_key=openai_api_key,
     )
 
