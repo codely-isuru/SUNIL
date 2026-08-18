@@ -7,8 +7,24 @@ document unless prefixed `R§` (roadmap) or `M9§` (this one).
 R§16 Epic 5 (V2), R§23 Step 12.
 **Requirements:** [`docs/REQUIREMENTS_V1.md`](REQUIREMENTS_V1.md) §4.11 — **one line, FR-200, COULD.**
 M9§1 says why that is not enough to build from, and states the set it must become.
-**Decisions:** ADR-019 … ADR-025 in [`docs/decisions/`](decisions/). **Threat model:**
+**Decisions:** ADR-019 … ADR-026 in [`docs/decisions/`](decisions/). **Threat model:**
 [`docs/THREAT_MODEL.md`](THREAT_MODEL.md) §12 (added by this milestone).
+
+---
+
+## Amendment log
+
+The owner reviewed this design on **2026-08-19** and made four decisions. Two change it. The
+corrections are applied in place below; each is listed here because a changed decision is a recorded
+change, never a silent edit — the convention `ARCHITECTURE_V1.md`'s A-1…A-18 follows.
+
+| # | Amendment | Origin | Where |
+|---|---|---|---|
+| M9-A1 | **Auto-send confirmed as designed**, including that its safety expires when write-capable tools land (DC-17). No change | owner, 2026-08-19 | §5.3, unchanged |
+| M9-A2 | **`local_file` audio retention is withdrawn, and `SUNIL_VOICE_AUDIO_RETENTION` is deleted rather than defaulted** — a setting with one legal value is not a setting. "Discarded" is now enforced by the absence of any column, path, setting or code that could write the bytes. DC-18 is withdrawn; the reasoning about why `redacted_full` is unachievable for audio is kept verbatim, because it will be re-proposed | owner, 2026-08-19 | §7, §8.2, §11.1, §14, ADR-021 Am. 1 |
+| M9-A3 | **Synthesis moves to ElevenLabs; transcription stays on OpenAI.** Two speech vendors behind the one `SpeechProvider` protocol, selected by the two capabilities that already exist. Verified against ElevenLabs' published API reference on 2026-08-19; unverifiable figures marked ESTIMATE. **Still zero new dependencies** — `httpx` 0.28.1 is already pinned and already used in this exact shape | owner, 2026-08-19 | §3, §4.5, §6.3, §8, §9, §11.1, §13, **ADR-026**, ADR-019 Am. 1, ADR-022 Am. 1 |
+| M9-A4 | **The microphone interlock is narrowed to the transcription leg** and renamed `SUNIL_VOICE_ALLOW_LOOPBACK_STT`. What crosses the synthesis leg is SUNIL's own answer text — already in `messages.content`, already readable from `var/sunil.db` — which is TB2's disclosure profile, and ADR-017 has already reasoned about and accepted that. **The interlock exists for the microphone, not for the word "voice"** | derived from M9-A3 | §8.1, ADR-022 Am. 1 |
+| M9-A5 | **M2 (streaming) ships before M9**, on §9.3's own argument — so sentence-level pipelining moves *into* M9's scope instead of being M2's additive follow-on. **And §9.3's "~2.5–3.5 s" is withdrawn as wrong**: streaming accelerates only the third leg of a three-leg turn, so the honest figure is **~3.9–6.8 s, ~5.3 s typical**. The owner reversed the order expecting "~3 s" and should see the correction | owner 2026-08-19, corrected by the Architect | §9, ADR-024 Am. 1 |
 
 ---
 
@@ -183,7 +199,8 @@ roughly thirty lines and duplication is the cheaper half of that trade.
 apps/api/sunil/
 ├── speech/                     NEW — the vendor-adapter package for media
 │   ├── base.py                 SpeechProvider Protocol + dataclasses + error hierarchy
-│   ├── openai_speech.py        the ONLY module here permitted to `import openai`
+│   ├── openai_speech.py        STT (OpenAI). One of two modules permitted a vendor import
+│   ├── elevenlabs_speech.py    TTS (ElevenLabs, M9-A3) — httpx, no SDK, no new dependency
 │   ├── registry.py             build_speech_registry(), validate_speech_capabilities()
 │   └── service.py              SpeechService: retry, deadline, speech_calls rows, cost, capture
 ├── core/registry/speech.py     NEW — loads and cross-validates config/speech.yaml
@@ -193,7 +210,7 @@ apps/api/sunil/
 ├── db/models.py                CHANGED — SpeechCall table, Message.input_modality
 ├── db/capture.py               CHANGED — resolves the new CaptureKind
 ├── capture.py                  CHANGED — CaptureKind.SPEECH_CALL
-├── settings.py                 CHANGED — seven voice settings (M9§8.2)
+├── settings.py                 CHANGED — six voice settings + ElevenLabs key/base URL (M9§8.2)
 └── main.py                     CHANGED — alembic head 0002; speech registry in the lifespan
 
 config/speech.yaml              NEW — capability → {provider, model, timeout, pricing}
@@ -423,18 +440,64 @@ and the endpoint answers 401 having synthesised nothing and spent nothing. Layer
    free and caps repeat spend. It holds audio in memory, never on disk — consistent with M9§7's "no
    persistence path".
 
+**Synthesis is ElevenLabs (M9-A3, ADR-026).** Verified against ElevenLabs' published API reference on
+2026-08-19 — no SDK, because this is plain JSON over HTTPS and `httpx` 0.28.1 is already pinned in
+§14.3 and already used in exactly this shape by `tools/github/adapter.py`:
+
 ```python
-# streamed straight through, chunk by chunk
-async with client.audio.speech.with_streaming_response.create(
-        input=text, model=capability.model, voice=capability.voice,
-        response_format="mp3", stream_format="audio",
-        instructions=capability.instructions,      # ignored by tts-1/tts-1-hd; we use gpt-4o-mini-tts
+# sunil/speech/elevenlabs_speech.py — httpx, not a vendor SDK
+async with client.stream(
+    "POST",
+    f"{settings.elevenlabs_base_url}/v1/text-to-speech/{capability.voice_id}/stream",
+    params={"output_format": "mp3_44100_128",
+            "enable_logging": "false"},          # Zero Retention Mode — requested, NOT claimed (§12 T-43)
+    headers={"xi-api-key": key, "Content-Type": "application/json"},
+    json={"text": text, "model_id": capability.model,          # eleven_flash_v2_5
+          "voice_settings": capability.voice_settings},
+    timeout=capability.timeout_s,
 ) as upstream:
-    async for chunk in upstream.iter_bytes():
+    if upstream.status_code >= 400:
+        await upstream.aread()                   # body must be read before it can be inspected
+        _classify_and_raise(upstream)            # by status_code (A-16), never by class name
+    async for chunk in upstream.aiter_bytes():
         yield chunk
 ```
 
-Verified against the installed `openai==3.1.0`:
+Verified facts, and the three that would otherwise have been assumed:
+
+* **The auth header is `xi-api-key`, not `Authorization: Bearer`.** An adapter written by analogy with
+  the OpenAI one would 401 on every call.
+* **`optimize_streaming_latency` is deprecated** in ElevenLabs' own documentation. It is absent from
+  this design only because the surface was checked before it was specified.
+* **`enable_logging` defaults to `true`**, meaning the vendor retains the request — which is the text
+  of SUNIL's answer. `false` requests Zero Retention Mode and their documentation says it *"may only be
+  used by enterprise customers"*. **SUNIL sends `false` unconditionally and counts it as nothing** —
+  threat T-43.
+* `output_format` defaults to `mp3_44100_128`; MP3 is what `<audio>` plays progressively, so the
+  default is also the right choice, and it is set explicitly rather than relied upon.
+* `eleven_flash_v2_5`: ~75 ms model latency (**ESTIMATE** — the vendor's published figure, not observed
+  here), **40,000** character maximum, 0.5 credits per character.
+  `eleven_multilingual_v2` caps at 10,000 characters.
+* No per-request id response header is documented. The adapter reads `request-id`/`x-request-id` when
+  present and stores `NULL` otherwise, rather than inventing one.
+
+**⚠️ `SUNIL_VOICE_MAX_SPEAK_CHARS` (default 2000) is no longer defending against a 4096 hard cap** —
+`eleven_flash_v2_5` accepts 40,000. It stays, for two better reasons: cost is billed per character, and
+nobody wants six minutes of synthesised speech from one answer. It is now a *product* limit, not a
+vendor limit, and §14's FR-210 is reworded to say so.
+
+**Had synthesis stayed on OpenAI**, the call would have been the following, and it is kept here because
+`config/speech.yaml` keeps the OpenAI block commented in place so reverting is a config edit
+(ADR-026's T24-style pattern). Both facts below were verified against the installed `openai==3.1.0`
+and both are traps:
+
+```python
+async with client.audio.speech.with_streaming_response.create(
+        input=text, model="gpt-4o-mini-tts", voice="alloy",
+        response_format="mp3", stream_format="audio") as upstream:
+    async for chunk in upstream.iter_bytes():
+        yield chunk
+```
 
 * `client.audio.speech.with_streaming_response.create(...)` returns an
   `AsyncResponseContextManager[AsyncStreamedBinaryAPIResponse]`, and
@@ -446,19 +509,20 @@ Verified against the installed `openai==3.1.0`:
   it must be `async with`. This is the mistake an engineer makes by pattern-matching the non-streaming
   call above it, and it fails immediately rather than subtly, which is the good case.
 * `SpeechModel` is `Literal["tts-1", "tts-1-hd", "gpt-4o-mini-tts", "gpt-4o-mini-tts-2025-12-15"]`;
-  `config/speech.yaml` pins **`gpt-4o-mini-tts`**.
-* `response_format` ∈ `mp3 | opus | aac | flac | wav | pcm`; `stream_format` ∈ `sse | audio`, and the
+  `response_format` ∈ `mp3 | opus | aac | flac | wav | pcm`; `stream_format` ∈ `sse | audio`, and the
   SDK notes `sse` is unsupported on `tts-1`/`tts-1-hd`.
-* ⚠️ **One SDK inconsistency worth knowing:** the `Voice` type alias is
+* ⚠️ The `Voice` type alias is
   `Union[str, Literal["alloy","ash","ballad","coral","echo","sage","shimmer","verse","marin","cedar"], VoiceID]`,
   but the *docstring* on the same parameter also lists `fable`, `onyx` and `nova`. Because the alias
-  admits bare `str`, an unlisted voice type-checks and may still 400 at runtime. `config/speech.yaml`
-  therefore pins a voice **from the Literal** (`alloy`), and the registry validates the configured
-  value against that Literal at startup rather than at first synthesis.
-* ⚠️ **`input` is capped at 4096 characters** by the API. `SUNIL_VOICE_MAX_SPEAK_CHARS` (default
-  **2000**) truncates at a sentence boundary below that hard limit; the full answer stays on screen and
-  the response carries `X-Speech-Truncated: true` so the UI can say so (FR-210). Without this a long
-  answer is a 400 from the vendor at the worst possible moment.
+  admits bare `str`, an unlisted voice type-checks and may still 400 at runtime — so a revert to OpenAI
+  must pin a voice from the Literal and validate it at startup.
+* ⚠️ OpenAI's `input` is capped at **4096 characters**, where `eleven_flash_v2_5` allows 40,000. A
+  revert therefore re-tightens `SUNIL_VOICE_MAX_SPEAK_CHARS`'s ceiling from a product choice back to a
+  vendor limit. Recorded because it is the one thing about the revert that is *not* free.
+
+`X-Speech-Truncated: true` is set on the response whenever the answer exceeded
+`SUNIL_VOICE_MAX_SPEAK_CHARS`, whichever vendor is configured, so the UI can say the spoken version was
+shortened (FR-210).
 
 **Invariant: a TTS failure never fails a turn.** The answer already exists, is persisted, and is on
 screen. A failed synthesis surfaces as a muted-playback state on that message, and the `speech_calls`
@@ -619,7 +683,7 @@ three specific ways, and the policy has to answer for that** — ADR-021.
 
 | Artefact | What happens | Configurable |
 |---|---|---|
-| **The captured audio bytes** | **Discarded at the end of the request.** One request-scoped `bytes` object, handed to the STT client, dropped when the response returns. **There is no column and no default file path that can hold it** | `SUNIL_VOICE_AUDIO_RETENTION` = **`discard`** (default) \| `local_file` |
+| **The captured audio bytes** | **Discarded at the end of the request.** One request-scoped `bytes` object, handed to the STT client, dropped when the response returns. **There is no column, no file path, no setting and no code that could write them anywhere** | **No. There is no retention setting** (M9-A2) |
 | **The transcript** | Becomes `messages.content` for the user's turn — exactly as a typed message would — governed by the existing `message` capture kind (`redacted_full / internal / standard`) | via `config/capture.yaml` as today |
 | **The transcript's second copy in `speech_calls`** | **Not written by default.** The `speech_call` kind defaults to **`metadata_only`**: duration, bytes, model, latency, cost, error kind — no content | `config/capture.yaml` → `speech_call` |
 | **The synthesised reply audio** | Streamed to the browser; held in a bounded RAM cache for ≤10 min; **never written to disk or to the database** | not configurable |
@@ -636,15 +700,35 @@ leave the other in place. `metadata_only` keeps the shape and drops the duplicat
 `speech_call: redacted_full` is genuinely implemented — it writes `speech_calls.transcript` — and is
 useful for debugging a bad transcription, which is why it is a real config value and not decoration.
 
-### 7.3 `local_file`, and exactly what turning it on means
+### 7.3 There is no retention mode, and that is the whole of it (M9-A2)
 
-`SUNIL_VOICE_AUDIO_RETENTION=local_file` writes the clip to `var/voice/<request_id>.<ext>` (mode
-`0600`; `var/` is already gitignored) and records the path in `speech_calls.audio_path`, which is
-`NULL` under the default. It is implemented so the setting is a real choice rather than theatre, and
-because reproducing a bad transcription is otherwise impossible. **Turning it on means accepting that
-anything spoken is on disk verbatim, unredactable and unredacted, including anything said by accident.**
-That sentence is in `.env.example` next to the setting. Nothing purges it — the same gap
-`retention_class` already has (debt D-11, M11) — and it is not exempted from that gap.
+**The owner ruled on 2026-08-19 that `local_file` is not to be built and the mode is not to exist.**
+`SUNIL_VOICE_AUDIO_RETENTION` is therefore **deleted, not defaulted** — a setting with one legal value
+is not a setting, it is a comment with a parser, and keeping it would imply a second mode exists and
+invite someone to add one without re-reading ADR-021.
+
+Consequences, all of them simplifications:
+
+* `var/voice/` is never created. `speech_calls.audio_path` is **not added** to the schema.
+* **"Discarded" is now enforced by absence.** There is no column, no path, no setting and no code that
+  could write the bytes. That is the strongest form the guarantee can take, and it is now the only
+  form M9 offers.
+* **DC-18 is withdrawn** from the deferred-controls register — there is nothing to purge.
+* T27's `.env.example` work loses one variable and one warning paragraph; T30's `SpeechService` loses
+  a filesystem branch entirely, rather than gaining a no-op one.
+
+**What is genuinely lost, recorded rather than glossed:** the ability to replay the exact audio when a
+transcript alone does not explain a mis-transcription. `speech_call: redacted_full` covers almost every
+such case by storing the transcript, and it remains a real, implemented config value for exactly that
+purpose. The residual — a failure only the waveform explains — is accepted.
+
+**The argument that survives, because someone will re-propose retention** (for a personal voice model
+under R§18, for debugging, or for an evaluation set): §7's opening still holds — §8.3's redaction walks
+strings, **nothing removes a spoken key from a waveform**, so `redacted_full` is unachievable for audio
+and a policy value that cannot be honoured must not be offered; and a recording of the owner is
+biometric. The answer to a future proposal is that paragraph, not "the owner said no in August", and
+any such proposal arrives as its own ADR with its own table, its own consent conversation and its own
+purge job.
 
 ### 7.4 The vocabulary addition, following Amendment 1 exactly
 
@@ -690,27 +774,51 @@ process that receives audio gains something that exists nowhere else on the mach
 
 ### 8.1 The control — ADR-022
 
-1. **The existing validator covers speech unchanged.** The speech adapter is constructed from
-   `settings.openai_base_url`, which already has `_check_openai_base_url` on it. A non-canonical,
-   non-loopback value still refuses to boot. **No new base-URL setting is introduced, so no new hole
-   is introduced** — one canonical host, one validator, one place to review.
-2. **NEW — the interlock: a loopback base URL disables voice unless separately opted into.**
+1. **The existing validator covers both speech vendors, unchanged.** The STT adapter is constructed
+   from `settings.openai_base_url` and the TTS adapter from `settings.elevenlabs_base_url`; the same
+   `_validate_base_url` function guards all four upstreams. A non-canonical, non-loopback value still
+   refuses to boot. **One validator, one place to review** — M9-A3 adds a canonical host to its table,
+   not a second mechanism.
+2. **NEW — the interlock, and it gates the transcription leg only (M9-A4).**
 
    ```
-   openai_base_url is canonical            → voice available
+   openai_base_url is canonical            → transcription available
    openai_base_url is loopback
-        and SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS is false (default) → voice endpoints return 503
-        and SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS is true            → voice available (QA's harness)
+        and SUNIL_VOICE_ALLOW_LOOPBACK_STT is false (default) → /voice/transcribe returns 503
+        and SUNIL_VOICE_ALLOW_LOOPBACK_STT is true            → transcription available (QA's harness)
    anything else                           → the app does not boot (ADR-017, unchanged)
+
+   elevenlabs_base_url                     → ADR-017's validator alone. No interlock.
    ```
 
    The reasoning is one sentence: **"a local test double may receive my prompts" and "a local process
    may receive my microphone" are different consents, and one flag should not grant both.** The
    interlock is checked at startup (logged) *and* per request (so flipping it needs a restart, which is
    ADR-016's model). Exit test **ET-18**.
-3. **A single startup line naming where audio goes**, following ADR-017's "both are logged at startup,
+
+   **And the same test, applied honestly to synthesis, says no interlock is warranted there.** What
+   crosses that leg outbound is the text of SUNIL's own answer — already persisted in
+   `messages.content`, already readable from `var/sunil.db` by any process that can reach the file.
+   That is TB2's disclosure profile exactly, and ADR-017 has already reasoned about it and accepted it.
+   Nothing on that leg exists nowhere else, so the extra consent has nothing to protect, and **a flag
+   guarding nothing is worse than no flag: it dilutes the one that does.** The interlock exists for the
+   microphone, not for the word "voice" — which is why it is now named `…_STT`.
+
+   *Consequence, stated so it is not read as an oversight:* with `ELEVENLABS_BASE_URL` pointed at
+   loopback, a local process receives SUNIL's answer text and the ElevenLabs key with no second flag.
+   That is deliberate, it is identical to what `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` have always
+   permitted, and it is covered by the existing residual **T-24** rather than by a new one. It also
+   makes QA's asymmetry correct rather than merely convenient: a synthesis exit test needs a loopback
+   double and one setting; a transcription exit test needs a double and **two** — which is exactly what
+   the threat model claims.
+3. **A single startup line naming both destinations**, following ADR-017's "both are logged at startup,
    which is how a wrong one becomes visible immediately":
-   `voice.egress base_url=https://api.openai.com/v1 canonical=true stt=gpt-4o-mini-transcribe tts=gpt-4o-mini-tts retention=discard`
+
+   ```
+   voice.egress stt=openai     base_url=https://api.openai.com/v1 canonical=true model=gpt-4o-mini-transcribe
+                tts=elevenlabs base_url=https://api.elevenlabs.io canonical=true model=eleven_flash_v2_5
+                retention=discard zero_retention_requested=true
+   ```
 4. **`SUNIL_VOICE_ENABLED` ships `false`** and is flipped to `true` when the last M9 task lands and is
    verified — the same pattern `SUNIL_PROGRESS_EVENTS` used (§8.4). **It is a delivery switch, not a
    security control**, and it is not presented as one: the controls are items 1–3 and 5.
@@ -721,17 +829,26 @@ process that receives audio gains something that exists nowhere else on the mach
 | Variable | Example | Used by | Secret |
 |---|---|---|---|
 | `SUNIL_VOICE_ENABLED` | `false` | voice routes — delivery switch, ships `false` (M9§8.1 item 4) | no |
-| `SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS` | `false` | voice routes — **the interlock**; must be `true` for a loopback speech double | no |
-| `SUNIL_VOICE_AUDIO_RETENTION` | `discard` | `speech/service.py` — `discard` \| `local_file`. See the warning in M9§7.3 | no |
+| `SUNIL_VOICE_ALLOW_LOOPBACK_STT` | `false` | `/voice/transcribe` — **the interlock**; must be `true` for a loopback *transcription* double. **Renamed and narrowed by M9-A4** — it does not gate synthesis | no |
 | `SUNIL_VOICE_AUTO_SEND` | `true` | `/voice/capabilities` — flip to `false` when write-capable tools land (DC-17) | no |
 | `SUNIL_VOICE_MAX_UPLOAD_BYTES` | `2097152` | `/voice/transcribe` — 413 above this | no |
-| `SUNIL_VOICE_MAX_SPEAK_CHARS` | `2000` | `/voice/speak` — truncate at a sentence boundary below the API's 4096 hard cap | no |
+| `SUNIL_VOICE_MAX_SPEAK_CHARS` | `2000` | `/voice/speak` — a **product** limit on spoken length (cost, and nobody wants six minutes of speech), no longer a vendor cap: `eleven_flash_v2_5` allows 40,000 | no |
 | `SUNIL_VOICE_ACK` | `earcon` | `/voice/capabilities` — `earcon` \| `spoken` \| `none` (T38) | no |
+| **`ELEVENLABS_API_KEY`** | `sk_REPLACE_ME` | `speech/elevenlabs_speech.py` — sent as **`xi-api-key`**, not `Authorization: Bearer`. Optional: absent → the vendor is not registered and synthesis is unavailable (T25's pattern) | **yes** |
+| **`ELEVENLABS_BASE_URL`** | `https://api.elevenlabs.io` | `speech/elevenlabs_speech.py` — passed explicitly. **Non-canonical values must be loopback** (§9.7, ADR-017). Note: no `/v1` suffix, unlike OpenAI's | no |
 
-No new secret, no new base URL, no new outbound destination. `OPENAI_API_KEY` and `OPENAI_BASE_URL` are
-reused — one key per vendor, exactly as R§6's "the reasoning model does not need to be the same
-service" is honoured by *adding a second speech provider with its own credentials later*, following
-ADR-003 §4.6's recipe, not by splitting one vendor's key in two.
+**`SUNIL_VOICE_AUDIO_RETENTION` is gone** (M9-A2) — deleted, not defaulted.
+
+**One new secret and one new base URL** (M9-A3), both under the mechanisms that already exist:
+`ELEVENLABS_API_KEY` joins the §8.3 redaction registry — and, because its documented `sk_…` prefix is
+one character from OpenAI's `sk-`, §8.3's high-signal pattern list should gain an explicit
+`sk_[A-Za-z0-9]{20,}` entry rather than relying on registered-value matching alone. `ELEVENLABS_BASE_URL`
+joins ADR-017's single canonical-or-loopback validator, which now covers four upstreams with one
+function.
+
+**One key per vendor, still.** R§6's "the reasoning model does not need to be the same service used for
+STT or TTS" is now *demonstrated* rather than asserted — and so is the stronger claim it implies, that
+the STT service need not be the TTS service either (ADR-026, ADR-019 Amendment 1).
 
 ### 8.3 The cross-validation rule
 
@@ -766,14 +883,31 @@ measured from what is estimated, and says plainly which fixes belong to M9 and w
 | 3 | Guards, body read, `speech_calls` insert | **<20 ms** | Same shape as existing route work |
 | 4 | **STT round trip** — `gpt-4o-mini-transcribe`, 5 s of audio, non-streaming | **0.6–1.5 s** | **ESTIMATE — unverifiable here. T37 measures it** |
 | 5 | Client renders transcript, POSTs `/api/v1/chat` | **<30 ms** | |
-| 6 | **The turn** | **5.8 s** | **MEASURED**, one real run. Median and p95 unknown — §5.2's honesty applies unchanged |
-| 7 | **TTS to first audio byte**, streamed | **0.3–0.8 s** | **ESTIMATE — T37 measures it** |
-| 7b | *(TTS to last byte, non-streamed, ~500 chars)* | *1.0–2.5 s* | ESTIMATE — the fallback if streaming does not deliver |
+| 6 | **The turn, complete** | **5.8 s** | **MEASURED**, one real run. Median and p95 unknown — §5.2's honesty applies unchanged |
+| 6a | *of which:* plan + tool + analysis-to-first-**sentence** | **3.0–4.5 s** | **DERIVED, NOT MEASURED** — apportioned from §5.1's budget model. **The weakest number in this document**; M2's T27a measures the split |
+| 7 | **TTS to first audio byte** — ElevenLabs `eleven_flash_v2_5`, ~75 ms model latency | **0.2–0.5 s** | **ESTIMATE** — the vendor's published figure, not observed here. T37 measures it |
+| 7b | *(TTS to last byte, whole answer, ~500 chars)* | *0.8–2.0 s* | ESTIMATE — the fallback if chunked forwarding does not deliver |
 | 8 | Browser decode + playback start | **50–150 ms** | ESTIMATE |
 
-**Release → first word of the answer ≈ 6.9–8.5 s; call it ~7.5 s typical.**
-Against 5.8 s of text today, **voice adds ~1.1–2.7 s**, and the felt cost is worse than the arithmetic,
-because in a text turn the user is *reading* and in a voice turn the user is *waiting in silence*.
+**Two numbers, because the owner reversed the build order (M9-A5) and only one of them is the one he
+was told:**
+
+| Scenario | Release → first spoken word |
+|---|---|
+| **M9 alone, answer buffered then synthesised** (the original design) | **≈ 6.9–8.5 s; ~7.5 s typical** |
+| **M9 on top of M2's streaming, sentence-pipelined** (what will actually be built) | **≈ 3.9–6.8 s; ~5.3 s typical** |
+
+**The ~5.3 s figure is a correction, and it corrects me.** §9.3 originally claimed streaming would take
+this to "~2.5–3.5 s". That was wrong, and wrong in the direction that flattered my own recommendation:
+it assumed the answer begins generating when the turn begins. It does not. An M1 turn is **three
+sequential legs** — plan call, tool call, analysis call — and the analysis call *is* the answer
+(ADR-015). Streaming accelerates only the third. Leg 6a is everything streaming cannot touch, and it is
+the largest single component of the voice path.
+
+**The floor, and why nothing in M9 or M2 goes below it:** `STT + plan + tool + first sentence of
+analysis + TTS-first-byte` ≈ **4–5 s**. It is set by the two-LLM-stage pipeline shape (ADR-015), not by
+the transport. The only ways under it are changing what happens *before* the answer exists — and one of
+the two candidates, M6's agent loop, makes it worse.
 
 ### 9.2 What M9 can do about it
 
@@ -807,39 +941,58 @@ The existing `WorkIndicator` stays visible and silent, and it is enough.
 **Net effect of (a)–(c): first sound ~0.05 s, transcript ~1 s, first spoken word of the answer ~7 s.**
 The wait does not get shorter. It stops being silent, which is the part that was actually broken.
 
-### 9.3 What genuinely needs M2, stated so nobody promises it
+### 9.3 What needed M2 — and now arrives with it, because the order was reversed (M9-A5)
 
-**Synthesising the answer before the whole answer exists.** That requires token streaming from the
-reasoning model (`stream=True` on chat completions), which is **BL-001 / M2 / NFR-061** — the SRS
-already puts "streamed responses begin within 3 seconds" there, and `REQUIREMENTS_V1.md` already lists
-BL-009 (voice) as depending on BL-001 (streaming). With it, incoming text is chunked at sentence
-boundaries and each sentence is synthesised while the next is still being generated, so speech starts
-at roughly the first sentence: **release → first spoken word ≈ 2.5–3.5 s** instead of ~7 s. That is the
-change that makes it feel like a conversation, and **M9 cannot deliver it.**
+**Synthesising the answer before the whole answer exists** requires token streaming from the reasoning
+model, which is **BL-001 / M2 / NFR-061**. `REQUIREMENTS_V1.md` already records BL-009 (voice) as
+depending on BL-001, and the owner has now acted on it: **M2 ships first.**
 
-**The seam M9 leaves so M2 is additive, not a rewrite:**
+That inverts this section's original meaning. Sentence-level pipelining is no longer "M2's additive
+follow-on"; it is **inside M9's scope from day one**, because streaming will already exist when M9 is
+built and buffering the answer in order to synthesise it once would be a deliberate regression.
 
-* `SpeechProvider.synthesize()` takes a `str` today; M2 adds `synthesize_stream(chunks: AsyncIterator[str])`
-  beside it. The protocol grows a method; nothing existing changes signature.
-* **The client side is already built by M9.** `<audio>` progressive playback over a chunked
-  `audio/mpeg` response does not care whether the server is forwarding one upstream synthesis or
-  concatenating six. M2's work is entirely server-side.
-* The `speech_calls` row already carries `attempt` and per-call cost, so N sentence-level syntheses
-  are N rows and the cost arithmetic stays true with no schema change.
+**What M9 must therefore build, that the original design deferred:**
 
-Also V2, not M9, per R§16 Epic 5: **barge-in** (speaking over SUNIL to interrupt), offline STT/TTS, and
+* A **sentence-boundary chunker** over the token stream, emitting on `. ! ?` plus a whitespace
+  boundary, with a minimum chunk length so an abbreviation does not trigger a 4-character synthesis.
+* `SpeechProvider.synthesize_stream(chunks: AsyncIterator[str])` alongside `synthesize(text: str)`.
+  The protocol grows a method; nothing existing changes signature.
+* A response whose upstream is **N syntheses concatenated**, not one. `<audio>` progressive playback
+  does not care — the client side is unchanged, which is the part of the original seam that survives
+  intact.
+* `speech_calls` already carries `attempt` and per-call cost, so N sentence-level syntheses are N rows
+  and the cost arithmetic stays true **with no schema change**. That seam was designed for this and it
+  holds.
+
+**And one new option that only exists because M2 lands first** — see ADR-024 Amendment 1 for the full
+argument. At `plan_created` (~2.5 s in) SUNIL knows, from a plan that has passed all five validation
+layers, which project it is checking. Speaking *"Checking the workforce repo."* fills the gap with a
+**fact**, not a progress claim, and it is the same fact `WorkIndicator` already renders on screen from
+`plan_created.detail.project_display_name`. This is *not* the "speak the four phases" idea ADR-024
+rejected: that asserted progress nothing measures; this states something the system knows. It is
+optional and it replaces T38 as the descope lever.
+
+Still V2, not M9, per R§16 Epic 5: **barge-in** (speaking over SUNIL to interrupt), offline STT/TTS, and
 wake-word. M9 gives a stop button, not voice interruption.
 
 ### 9.4 Honesty about these numbers
 
-Legs 1, 4, 7, 7b and 8 are **estimates**. This environment has no network access and no key in the
-shell, so I could not measure them, and I will not present modelled numbers as measured ones — the same
-discipline `config/models.yaml` already applies to OpenAI's pricing, where zeros are written rather
-than guesses. **T37 measures all five legs across 10 runs and replaces this table with observed medians
-and maxima**, reporting per leg, exactly as §5.2 requires latency to be reported ("median and max of N
-observed turns … not arithmetic theatre"). If streamed TTS does not deliver early bytes in practice,
-leg 7 becomes leg 7b and the total moves by ~1–1.7 s; that contingency is why both rows are in the
-table.
+Legs 1, 4, 7, 7b and 8 are **estimates**, and leg **6a is derived, which is weaker still**. This
+environment has no network access and no key in the shell, so none of them could be measured, and I
+will not present modelled numbers as measured ones — the discipline `config/models.yaml` already
+applies to OpenAI's pricing, where zeros are written rather than guesses.
+
+Two tasks replace them:
+
+* **M2's T27a measures leg 6a first**, before any streaming work — the split of the 5.8 s turn into
+  plan / tool / analysis. It is the largest component of the voice path and the least understood, and
+  designing the streaming work without it means aiming at a leg whose size nobody knows.
+* **T37 measures legs 1, 4, 7 and 8** across 10 runs and replaces this table with observed medians and
+  maxima **per leg**, exactly as §5.2 requires ("median and max of N observed turns … not arithmetic
+  theatre").
+
+If chunked forwarding does not deliver early bytes in practice, leg 7 becomes leg 7b and the total
+moves by ~0.6–1.5 s; that contingency is why both rows are in the table.
 
 ---
 
@@ -918,9 +1071,10 @@ Carries the four ADR-014 capture columns, like every other capture-path table.
 | `input_chars` | `Integer` NULL | TTS: `len(input)` — the billing unit |
 | `transcript_chars` | `Integer` NULL | STT: `len(text)` — kept under `metadata_only`, where the text is not |
 | `transcript` | `Text` NULL | **content column.** NULL under the `metadata_only` default |
-| `audio_path` | `String(500)` NULL | NULL unless `SUNIL_VOICE_AUDIO_RETENTION=local_file` |
 | `truncated` | `Boolean` NOT NULL default false | TTS: the answer exceeded `max_speak_chars` |
-| `cost_micro_usd` | `BigInteger` NOT NULL | from `config/speech.yaml` |
+| `billing_unit` | `String(20)` NOT NULL | **`audio_second` \| `character`** (M9-A3). CHECK-constrained. Two units across three vendor/leg combinations — ADR-026 §2 |
+| `billed_units` | `Numeric(12,3)` NOT NULL | the count in `billing_unit`'s unit. Cost = `billed_units × unit_price`, **one line, no vendor branch** |
+| `cost_micro_usd` | `BigInteger` NOT NULL | derived from the two columns above and `config/speech.yaml`'s `unit_price` |
 | `pricing_version` | `String(20)` NOT NULL | stamped per call, same rule as `llm_calls` |
 | `latency_ms` | `Integer` NOT NULL | |
 | `error_kind` | `String(50)` NULL | |
@@ -954,13 +1108,14 @@ transcript) to the asset list. Summarised here so this document stands alone.
 
 | ID | Threat | Control | Status |
 |---|---|---|---|
-| T-35 | **Microphone audio egress to an unintended host** — the ADR-017 loopback exception now covers live audio, not just prompts | Canonical-or-loopback validator (unchanged) **plus** the M9§8.1 interlock: loopback disables voice unless separately opted in | **Mitigated** |
+| T-35 | **Microphone audio egress to an unintended host** — the ADR-017 loopback exception now covers live audio, not just prompts | Canonical-or-loopback validator (unchanged, now four upstreams) **plus** `SUNIL_VOICE_ALLOW_LOOPBACK_STT`: a loopback `OPENAI_BASE_URL` disables **transcription** unless separately opted in. Narrowed to the STT leg by M9-A4, because that is the leg the argument was made for | **Mitigated** |
 | T-36 | **Denial of wallet via the speak endpoint** — repeated synthesis of the same or arbitrary text | The endpoint takes a `message_id`, not text; ownership is checked; a bounded RAM cache serves replays; `SameSite=Lax` withholds the cookie cross-site | **Mitigated** |
 | T-37 | **False provenance** — a client claims `input_modality="voice"` for typed text, contaminating a future corpus | Server-side check for a matching `speech_calls(stt, ok)` row owned by the same user; 422 otherwise (ET-16) | **Mitigated** |
 | T-38 | **Injection into the transcript via the STT `prompt=` parameter** | The parameter is never set, by any code path. Asserted by a security test that greps the speech package | **Mitigated** |
 | T-39 | **Unbounded upload** — a lying `Content-Length`, or a 500 MB body | Allow-listed `Content-Type` (415), `Content-Length` cap (413), **and** a running byte count while iterating `request.stream()` that aborts past the limit | **Mitigated** |
-| T-40 | **The vendor retains the audio** — SUNIL's discard policy governs SUNIL's disk, not OpenAI's | None available architecturally. The owner chose a cloud STT vendor knowingly; R§16 Epic 5's local voice is the answer and it is V2 | **Accepted, by explicit roadmap design.** Deferred → V2 |
-| T-41 | **Spoken secrets** — the owner reads a password aloud while a recording is running | Audio is discarded by default (M9§7.1) and **is never redactable** (M9§7). The transcript passes through §8.3's redaction like any other text, which catches `sk-…`-shaped tokens but not a spoken passphrase | **Partial, and stated as partial.** The residual is real; the mitigation is the default retention policy, not detection |
+| T-40 | **The STT vendor retains the audio** — SUNIL's discard policy governs SUNIL's disk, not OpenAI's | None available architecturally. The owner chose a cloud STT vendor knowingly; R§16 Epic 5's local voice is the answer and it is V2 | **Accepted, by explicit roadmap design.** Deferred → V2 |
+| **T-43** | **The TTS vendor retains the answer text.** ElevenLabs' `enable_logging` defaults to **`true`**, so the request — SUNIL's answer, which may carry private-repository content projected into it — is retained. Zero Retention Mode (`enable_logging=false`) *"may only be used by enterprise customers"* per their own documentation | SUNIL sends `enable_logging=false` on **every** synthesis request, unconditionally. It costs nothing and is honoured if the account is eligible | **Requested, not controlled — and counted as nothing.** On a non-Enterprise plan it does not apply, and no claim anywhere in this architecture depends on it. **The owner should know this before he signs up** (M9-A3, ADR-026 §3) |
+| T-41 | **Spoken secrets** — the owner reads a password aloud while a recording is running | Audio is discarded — **always**, now that `local_file` is withdrawn (M9-A2) — and **is never redactable** (M9§7). The transcript passes through §8.3's redaction like any other text, which catches `sk-…`/`sk_…`-shaped tokens but not a spoken passphrase | **Partial, and stated as partial.** The residual is real; the mitigation is that nothing retains the audio, not detection |
 | T-42 | **Microphone available over an insecure origin** — `getUserMedia` needs a secure context, and any plain-HTTP origin other than `localhost` silently yields nothing | None needed today (single machine, loopback). Hosting means TLS, and the session cookie's `https_only=False` moves at the same time | **Not reachable today; recorded so hosting does not rediscover it.** Debt D-14 |
 
 **Deferred controls added to the register:**
@@ -968,7 +1123,7 @@ transcript) to the asset list. Summarised here so this document stands alone.
 | # | Deferred control | Owning milestone |
 |---|---|---|
 | DC-17 | **Auto-send is safe only while every reachable operation is read-only.** When write-capable tools land, a misheard command becomes an executed command; the answer is the `ASK_USER` approval path (DC-2), not a voice-specific control | **M5** |
-| DC-18 | Purge of `var/voice/` under `local_file` retention — nothing purges, same gap as `retention_class` (D-11) | M11 |
+| ~~DC-18~~ | ~~Purge of `var/voice/` under `local_file` retention~~ — **WITHDRAWN 2026-08-19 (M9-A2).** `local_file` is not built, `var/voice/` is never created, and there is nothing to purge | — |
 | DC-19 | Rate limiting on the voice endpoints. M1/M9 have one user and no limiter anywhere in the system; the speak endpoint's cache caps the common case but not a determined loop | M11 |
 
 ---
@@ -984,10 +1139,12 @@ version of this milestone adds three.
 | `pydub` / `ffmpeg` / `soundfile` | No transcoding: WebM/Opus and MP4/AAC are both on the vendor's accepted list, verified from the installed SDK's own docstring |
 | `sse-starlette` | Already rejected at §14.3; TTS uses `StreamingResponse`, ~15 lines |
 | A frontend audio library (`wavesurfer`, `recorder.js`) | `MediaRecorder`, `getUserMedia`, `AudioContext` and `<audio>` are platform APIs. The frontend still has **no test runner** (M1 debt, deferred to M11) and this is not the milestone to add one — M9's frontend is verified by review plus the browser-level exit tests, and that limitation is stated rather than papered over |
+| **`elevenlabs` (the official Python SDK)** — the temptation M9-A3 introduced | ElevenLabs is plain JSON over HTTPS returning a byte stream. **`httpx` 0.28.1 is already pinned in §14.3 and already used in exactly this shape** by `tools/github/adapter.py` — `AsyncClient.stream("POST", …)` plus `aiter_bytes()`. An SDK would add a dependency outside the approved list **and** a third HTTP stack to the tree (`httpx`, `httpx2` via `openai`, and whatever it pins). Checking whether `httpx` sufficed took one reading of the API reference |
 
 `openai==3.1.0` is already on the approved list — **the owner authorised the OpenAI dependency on
-2026-08-17** (T23, `docs/SECRETS_SETUP.md` §0) — and it carries both `audio.transcriptions` and
-`audio.speech`. **§14.3 needs no edit for M9.**
+2026-08-17** (T23, `docs/SECRETS_SETUP.md` §0) — and it carries `audio.transcriptions`, which is the
+leg M9 still uses it for after the vendor split. `httpx==0.28.1` has been on the list since 2026-08-14
+and covers ElevenLabs. **§14.3 needs no edit for M9, including after M9-A3.**
 
 ---
 
@@ -1007,9 +1164,9 @@ Normative for M9. Written in `REQUIREMENTS_V1.md`'s format so §4.11 can be repl
 | FR-205 | MUST | M9 | The assistant's answer is displayed as text in every case, whether or not it is spoken, with the trace available as today. | owner instruction |
 | FR-206 | MUST | M9 | The assistant's answer is spoken back via cloud TTS, streamed to the browser and played progressively. | R§14 Epic 11 |
 | FR-207 | MUST | M9 | A synthesis failure never fails the turn: the text answer stands, and the failure is surfaced as a playback-unavailable state on that message. | M9§4.5 |
-| FR-208 | MUST | M9 | Under the default configuration the captured audio is not persisted: no database column and no file holds it after the request ends. | ADR-021 |
+| FR-208 | MUST | M9 | The captured audio is not persisted. There is no database column, no file path, no setting and no code path that could retain it (M9-A2 — no longer conditioned on a default). | ADR-021 Am. 1 |
 | FR-209 | MUST | M9 | Every STT and TTS attempt records provider, model, attempt number, duration or size, latency, cost and error kind, linked to the turn's `request_id`. | ADR-019, §13.1 |
-| FR-210 | SHOULD | M9 | An answer longer than the configured spoken-length limit is spoken up to a sentence boundary within that limit; the full answer remains on screen and the truncation is indicated. | M9§4.5 |
+| FR-210 | SHOULD | M9 | An answer longer than the configured spoken-length limit is spoken up to a sentence boundary within that limit; the full answer remains on screen and the truncation is indicated. **The limit is a product choice (cost, and spoken length), not a vendor cap** — `eleven_flash_v2_5` allows 40,000 characters. | M9§4.5 |
 | FR-211 | SHOULD | M9 | The client obtains its capture limits, accepted formats and send behaviour from the server, never from a hard-coded list. | A-14's precedent |
 | FR-212 | SHOULD | M9 | An empty or unintelligible transcription does not start a turn; the owner is told nothing was caught. | M9§4.3 |
 | FR-213 | COULD | M9 | Playback can be stopped by the owner at any point. | R§16 Epic 5 is where interruption proper lives |
@@ -1020,7 +1177,7 @@ Normative for M9. Written in `REQUIREMENTS_V1.md`'s format so §4.11 can be repl
 | ID | Pri | M | Statement | Verification method |
 |---|---|---|---|---|
 | NFR-013 | MUST | M9 | Microphone audio leaves the machine only to the canonical speech host; a loopback destination requires a separate, explicit opt-in, and any other destination prevents the application from starting. | Startup test with a non-canonical host (refuses to boot); request test with a loopback host and the opt-in unset (503, nothing sent) — ET-18 |
-| NFR-052 | MUST | M9 | Captured audio has no persistence path under the default configuration: no schema column and no file receives it. | Schema review plus a filesystem and database diff across a complete voice turn — ET-15 |
+| NFR-052 | MUST | M9 | Captured audio has **no persistence path at all**: no schema column, no file, no setting that could create one. | Schema review plus a filesystem and database diff across a complete voice turn — ET-15 |
 | NFR-062 | SHOULD | M9 | Release → first audible feedback ≤ 1.5 s. Release → first spoken word of the answer ≤ 9 s at the median. | 10 timed runs, reporting **median and maximum per leg** (capture, STT, turn, TTS-to-first-byte, playback start) — never a single figure — T37 |
 
 ### 14.3 Exit tests
@@ -1029,10 +1186,10 @@ Normative for M9. Written in `REQUIREMENTS_V1.md`'s format so §4.11 can be repl
 |---|---|
 | ET-13 | A spoken request and the equivalent typed request produce the same twelve trace stages in the same order, and the spoken turn has exactly twelve `audit_events` rows. |
 | ET-14 | A completed voice turn has exactly two `speech_calls` rows (one `stt`, one `tts`) sharing the turn's `request_id`, each with non-null provider, model, latency and cost. |
-| ET-15 | Across a complete voice turn under the default configuration, no audio bytes are written to the database or the filesystem. |
+| ET-15 | Across a complete voice turn, no audio bytes are written to the database or the filesystem — asserted against a `var/` tree that must remain byte-identical. There is no configuration under which this test could pass differently (M9-A2). |
 | ET-16 | `POST /api/v1/chat` with `input_modality="voice"` and no server-side transcription for that `request_id` is rejected 422 and runs no turn (no `audit_events`, no `llm_calls`, no `tool_calls`). |
 | ET-17 | `GET /api/v1/voice/speak/{message_id}` for a message in another user's conversation returns 404 and produces no `speech_calls` row and no upstream call. |
-| ET-18 | With `OPENAI_BASE_URL` loopback and `SUNIL_VOICE_ALLOW_LOOPBACK_EGRESS` unset, every voice endpoint returns 503 and no audio leaves the process. |
+| ET-18 | With `OPENAI_BASE_URL` loopback and `SUNIL_VOICE_ALLOW_LOOPBACK_STT` unset, `POST /voice/transcribe` returns 503 and **no audio leaves the process**. Synthesis against a loopback `ELEVENLABS_BASE_URL` is *permitted* with no second flag, and the test asserts that asymmetry deliberately (M9-A4). |
 
 ### 14.4 The two counter lines that must move with this
 
@@ -1054,13 +1211,14 @@ Normative for M9. Written in `REQUIREMENTS_V1.md`'s format so §4.11 can be repl
 
 | Not in M9 | Where it is |
 |---|---|
-| Speech starting before the answer is complete | **M2** — needs token streaming (NFR-061, BL-001). M9§9.3 |
+| ~~Speech starting before the answer is complete~~ | **NOW IN M9** — the owner reversed the order (M9-A5), so M2's streaming lands first and sentence-level pipelining is M9 scope. M9§9.3 |
 | Barge-in / interruption by speaking | **V2** — R§16 Epic 5 |
 | Wake word, always-listening, voice activity detection | **V2** — R§16 Epic 5, kept there by the owner |
 | Offline/local STT and TTS | **V2** — R§16 Epic 5 |
-| Any control over what the vendor does with received audio | Nowhere in V1. T-40, accepted |
+| Any control over what either vendor does with what it receives | Nowhere in V1. T-40 (audio, OpenAI) and **T-43** (answer text, ElevenLabs — `enable_logging=false` is requested and counted as nothing, because Zero Retention Mode is Enterprise-only) |
 | Redaction of spoken secrets | Impossible on audio; partial on the transcript. T-41 |
-| Purge of retained clips under `local_file` | **M11** — DC-18 |
+| ~~Purge of retained clips~~ | **NOT NEEDED** — `local_file` is withdrawn (M9-A2); nothing is retained, DC-18 withdrawn |
+| Replay of the exact audio behind a bad transcription | Nowhere. The accepted cost of M9-A2; `speech_call: redacted_full` gives the transcript, not the waveform |
 | Rate limiting on voice endpoints | **M11** — DC-19 |
 | A frontend regression test for the push-to-talk state machine | **M11** — the no-test-runner debt, unchanged. M9's frontend is verified by review and by browser-level exit tests, which is weaker and is stated as weaker |
 | Speaker identification, multi-speaker, diarization | Not a V1 requirement. The SDK supports it (`gpt-4o-transcribe-diarize`); nothing in SUNIL asks for it |
@@ -1073,5 +1231,6 @@ Normative for M9. Written in `REQUIREMENTS_V1.md`'s format so §4.11 can be repl
 |---|---|---|
 | D-14 | **Voice requires a secure context.** `http://localhost` qualifies; any other plain-HTTP origin silently yields no microphone. Hosting SUNIL means TLS, and `https_only=False` on the session cookie moves at the same time | M11 / whoever hosts it |
 | D-15 | `config/speech.yaml`'s prices ship as **clearly-marked zeros**, exactly as `config/models.yaml`'s OpenAI entry does, because they are not verifiable from any local source. Voice cost reads as 0 until they are filled in, and the file says so | first person with the pricing page |
-| D-16 | Five of the eight latency legs in M9§9.1 are estimates until T37 measures them | T37 |
+| D-16 | Legs 1, 4, 7 and 8 of M9§9.1 are **estimates**, and leg **6a is derived, which is weaker** — the plan/tool/analysis split of the 5.8 s turn was never measured. M2's T27a takes 6a **before** the streaming work; T37 takes the rest | T27a, then T37 |
+| D-18 | **ElevenLabs is unverified against a live key.** Every fact in ADR-026 §1 comes from the vendor's published reference, not from a call. The ~75 ms latency figure is theirs, and the per-request-id response header is undocumented — the adapter must degrade to `NULL` rather than assume one | first build task with a key |
 | D-17 | `0002` is the second migration never verified against real PostgreSQL (extends D-2) | before Gate 3 |

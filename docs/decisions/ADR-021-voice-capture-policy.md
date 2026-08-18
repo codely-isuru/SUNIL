@@ -30,7 +30,7 @@ per capture-column-bearing table, because the four capture columns live on the r
 
 | Artefact | What happens | Configurable |
 |---|---|---|
-| **The captured audio bytes** | **Discarded when the request ends.** One request-scoped `bytes` object, handed to the STT client, dropped. **No database column and no default file path can hold it** | `SUNIL_VOICE_AUDIO_RETENTION` = **`discard`** (default) \| `local_file` |
+| **The captured audio bytes** | **Discarded when the request ends.** One request-scoped `bytes` object, handed to the STT client, dropped. **No database column and no default file path can hold it** | ~~`SUNIL_VOICE_AUDIO_RETENTION` = `discard` (default) \| `local_file`~~ → **no setting at all; see Amendment 1** |
 | **The transcript** | Becomes `messages.content` for the user's turn, exactly as a typed message would, under the existing `message` kind (`redacted_full / internal / standard`) | `config/capture.yaml` as today |
 | **A second copy of the transcript in `speech_calls`** | **Not written.** The new `speech_call` kind defaults to **`metadata_only`**: duration, bytes, model, latency, cost, error kind — no content | `config/capture.yaml` → `speech_call` |
 | **The synthesised reply audio** | Streamed to the browser; held in a bounded RAM cache for ≤10 minutes; never written to disk or database | not configurable |
@@ -77,3 +77,57 @@ already has (D-11, M11) — and it is not exempted from that gap (DC-18).
   spoken passphrase is not** — threat **T-41**, Partial, stated as Partial.
 * `training_eligible` stays derived, never hand-set. A `metadata_only` `speech_calls` row is therefore
   not training-eligible, which is correct: there is nothing on it to train on.
+
+---
+
+## Amendment 1 — `local_file` retention is withdrawn; there is no retention setting
+
+**Date:** 2026-08-19 · **Origin:** the owner's decision, 2026-08-19
+**Status:** Accepted · **Applies to:** the decision's table row for the audio bytes, and §7.3 of
+`ARCHITECTURE_M9_VOICE.md`. **The reasoning is unchanged and is the part that matters.**
+
+### The ruling
+
+**Build `discard` only. `local_file` is not implemented, `var/voice/` is never created, and
+`speech_calls.audio_path` is not added.** The owner does not want the mode to exist.
+
+**And therefore `SUNIL_VOICE_AUDIO_RETENTION` is deleted, not defaulted.** A setting with one legal
+value is not a setting; it is a comment with a parser. Keeping it would imply a second mode exists and
+invite someone to add one without re-reading this ADR, which is precisely the outcome the ruling
+avoids.
+
+The original decision offered `local_file` on two grounds: that a setting whose unsafe value the owner
+must consciously choose is a better control than an undocumented absence, and that reproducing a bad
+transcription is otherwise impossible. The owner declined the first — he does not want the choice on
+the menu — and the second is answered by `speech_call: redacted_full`, which stores the *transcript*
+and is what actually diagnoses a mis-transcription in almost every case. What is genuinely lost is the
+ability to replay the exact audio when the transcript alone does not explain the failure; that is
+recorded as a limitation, not smuggled back in.
+
+**"Discarded" is now enforced by absence.** There is no column, no path, no setting and no code that
+could write the bytes anywhere. That is the strongest form the guarantee can take, and it is now the
+only form M9 offers. DC-18 (purge of retained clips) is **withdrawn** — there is nothing to purge.
+
+### What is deliberately kept, because it will be re-proposed
+
+The argument for *why retaining audio as `redacted_full` is unachievable* stands unchanged and is the
+valuable part of this ADR:
+
+> §8.3's redaction mechanism walks strings, dicts and lists. **There is no mechanism in SUNIL — and no
+> cheap one anywhere — that removes a spoken API key from a waveform.** `redacted_full` is therefore
+> not achievable for audio bytes, and a policy value that cannot be honoured must not be offered for
+> them. A voice recording is additionally biometric: a stored corpus of the owner's speech is a
+> voiceprint, a different category of data from a stored corpus of his typing.
+
+Someone will propose audio retention again — for a personal voice model (`ROADMAP.md` §18), for
+debugging, or for an evaluation set. When they do, the answer is not "the owner said no in August"; it
+is the paragraph above, plus the requirement that any such proposal arrives as its own ADR with its own
+table, its own consent conversation and its own purge job.
+
+### Unchanged by this amendment
+
+* The transcript still becomes `messages.content` under the `message` kind.
+* `speech_call` still defaults to `metadata_only`, and `redacted_full` is still a real, implemented
+  value for debugging.
+* The synthesised reply audio is still streamed and RAM-cached, never written.
+* `CaptureKind.SPEECH_CALL` is unchanged.

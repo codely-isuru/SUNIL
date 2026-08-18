@@ -71,3 +71,55 @@ Four reasons, in decreasing order of force:
 5. Adding a second speech vendor later follows §4.6's recipe unchanged: implement `SpeechProvider`,
    one line in `speech/registry.py`, one entry in `config/speech.yaml`. That is how R§6's "need not be
    the same service" is honoured.
+
+---
+
+## Amendment 1 — the second speech vendor strengthens this decision
+
+**Date:** 2026-08-19 · **Origin:** the owner's decision to move synthesis to ElevenLabs (ADR-026)
+**Status:** Accepted · **Applies to:** reason 2 and reason 3 of the decision. Nothing is withdrawn.
+
+The Delivery Manager asked the right question: does a second speech vendor strengthen this ADR's
+argument or complicate `speech_calls`? **It strengthens it, and the complication it appeared to add
+turned out to be a simplification.**
+
+### Reason 2 (the cost model) gets stronger, and the schema gets simpler
+
+The original argument was that `llm_calls` cannot express speech billing truthfully because
+transcription bills by audio duration and synthesis had no usage object at all. With ElevenLabs there
+are now **three vendor/leg combinations across two billing units** — audio seconds for OpenAI
+transcription, characters for ElevenLabs synthesis (and characters again for OpenAI synthesis, the
+option kept commented in config).
+
+Two units in one table is not a problem; it is a column. `speech_calls` gains `billing_unit`
+(`audio_second | character`) and `billed_units`, `config/speech.yaml` names the unit and the price per
+unit beside the model, and cost is `billed_units × unit_price` — **one line, no vendor branch**.
+
+Note what that removes. Under a single vendor, `SpeechService` would have carried an
+`if direction == "stt"` branch to pick which column to multiply. The second vendor deleted the branch,
+because it forced the unit to be *named data* rather than *inferred from the leg*. **A second
+implementation making an abstraction simpler is the strongest available evidence the abstraction was
+drawn in the right place.**
+
+Had speech gone into `llm_calls` instead, this same pressure would have produced a `billing_unit`
+column on the table that carries every reasoning call — a column meaningless for 100% of the rows that
+were there first.
+
+### Reason 3 (capability indirection) stops being theoretical
+
+The original text argued that reasoning capabilities and media capabilities are selected on different
+grounds and should not share a lookup. That was an argument about a hypothetical. It is now the
+mechanism by which a live vendor change costs **one adapter module and one block of YAML**, with zero
+changes to `core/`, `agents/`, `tools/`, or even `api/routes/voice.py` — which names capabilities, not
+vendors. `ROADMAP.md` §6's sentence *"the reasoning model does not need to be the same service used for
+STT or TTS"* is now demonstrated rather than asserted, and so is the stronger version it implies:
+**the STT service need not be the TTS service either.**
+
+### What genuinely does get harder, said plainly
+
+* **Two failure domains.** Transcription can succeed while synthesis is down. FR-207 (a synthesis
+  failure never fails the turn) moves from defensive to load-bearing.
+* **Two keys, two base URLs, two guards** — ADR-022 Amendment 1.
+* **Two auth header shapes.** OpenAI uses `Authorization: Bearer`; ElevenLabs uses `xi-api-key`. The
+  `SpeechProvider` protocol never sees either — each adapter owns its own client construction, which
+  is what keeps this a two-line difference rather than a conditional.
