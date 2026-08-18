@@ -259,6 +259,35 @@ def test_github_token_is_still_required_when_provider_keys_are_absent(
         Settings(_env_file=None)
 
 
+# -- Structural .env isolation for the whole unit suite (T26) ----------------
+# A real `.env` now exists at the repo root once the owner creates one for a
+# live run. `monkeypatch.delenv(...)` only clears the process env var -- it
+# does not stop `Settings()` reading the *same* variable straight out of that
+# file, since pydantic-settings reads `.env` by path, not through
+# `os.environ`. Every test in this file already disables that itself
+# (`Settings(_env_file=None)`, this file's own module docstring), so none of
+# them depend on the autouse fixture below -- this one test is the exception,
+# written deliberately WITHOUT `_env_file=None`, to prove the fixture (not
+# per-test discipline) is what protects a bare `Settings()`/`create_app()`
+# call anywhere else in the unit suite (`tests/unit/test_main_app.py`, which
+# cannot pass `_env_file` directly -- `create_app()` takes a whole `Settings`
+# instance or none).
+
+
+def test_bare_settings_construction_is_isolated_from_a_real_dotenv_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Presence/absence only -- never a secret's value (the constraint the
+    Security Reviewer rebuilt `test_live_credential_scope.py` on, after a
+    real GitHub token reached a terminal via a value-asserting test)."""
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    settings = Settings()  # deliberately NOT _env_file=None -- see docstring above
+
+    assert settings.openai_api_key is None
+
+
 # -- Upstream base URLs (A-11, ADR-017) -----------------------------------
 # Added by BE-2 (T6) ahead of T1/T5 picking up the ADR-017 delta — see
 # `settings.py`'s own "Cross-lane note" docstring. Co-located with the

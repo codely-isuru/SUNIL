@@ -86,6 +86,35 @@ def _migrate_to_head(db_path: Path) -> None:
     command.upgrade(config, "head")
 
 
+def _app_settings(db_path: Path, **overrides: object):
+    """Build an explicit `Settings` instance for `create_app(settings=...)`
+    (the ADR-018 seam) with `_env_file=None` — never a bare `create_app()`,
+    which would build `Settings()` reading whatever real `.env` exists at
+    the repo root (T26: a real one now does, on the owner's machine, and
+    `monkeypatch.delenv` cannot make a variable the file also defines
+    genuinely absent — it only removes the process env var, not the
+    file's own copy).
+
+    Defaults to `_REQUIRED_ENV`'s values; pass e.g. `openai_api_key=None`
+    to test absence explicitly, with that absence under this call's own
+    control rather than the ambient environment's.
+    """
+    from sunil.settings import Settings
+
+    kwargs: dict[str, object] = {
+        "_env_file": None,
+        "database_url": f"sqlite+aiosqlite:///{db_path.as_posix()}",
+        "anthropic_api_key": _REQUIRED_ENV["ANTHROPIC_API_KEY"],
+        "github_token": _REQUIRED_ENV["GITHUB_TOKEN"],
+        "openai_api_key": _REQUIRED_ENV["OPENAI_API_KEY"],
+        "session_secret": _REQUIRED_ENV["SESSION_SECRET"],
+        "owner_username": _REQUIRED_ENV["OWNER_USERNAME"],
+        "owner_password": _REQUIRED_ENV["OWNER_PASSWORD"],
+    }
+    kwargs.update(overrides)
+    return Settings(**kwargs)
+
+
 def test_app_boots_and_serves_health_against_a_real_migrated_db(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -236,15 +265,28 @@ def test_app_refuses_to_boot_when_general_reasoning_has_no_provider(
     `openai`. With no `OPENAI_API_KEY` at all, `Settings()` now constructs
     fine (T25 made provider keys optional) -- but the app must still refuse
     to boot, loudly, naming the capability/provider/env var, rather than
-    booting with a hot path that will 500 on first use."""
+    booting with a hot path that will 500 on first use.
+
+    T26: absence is built via an explicit `Settings(_env_file=None,
+    openai_api_key=None, ...)` passed to `create_app(settings=...)` (the
+    ADR-018 seam), never a bare `create_app()` + `monkeypatch.delenv` --
+    a real `.env` at the repo root (the owner's own, once they create one
+    for a live run) would silently supply the "absent" value back, since
+    delenv only clears the process env var, not the file pydantic-
+    settings reads directly by path. `_set_required_env` is still called
+    first: `migrations/env.py` is a separate script context (ADR-018 §5)
+    that builds its *own* bare `Settings()` reading the environment, by
+    design (unlike the app itself) -- it still needs every mandatory
+    field present via `monkeypatch.setenv`, or this call fails for an
+    unrelated reason before the app-level absence is ever exercised."""
     db_path = tmp_path / "main_app_no_openai_key.db"
     _set_required_env(monkeypatch, db_path)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     _migrate_to_head(db_path)
 
     from sunil.main import create_app
 
-    app = create_app()
+    settings = _app_settings(db_path, openai_api_key=None)
+    app = create_app(settings)
 
     with pytest.raises(Exception) as exc_info:  # noqa: B017 - RegistryCrossValidationError
         with TestClient(app):
@@ -262,15 +304,19 @@ def test_app_boots_fine_with_no_anthropic_key_since_nothing_reachable_needs_it(
     """The other half of the same proof: `general_reasoning_anthropic`
     (`config/models.yaml`) points at `anthropic` but no agent references
     it, so a boot with only an OpenAI key -- the owner's actual situation
-    -- must succeed."""
+    -- must succeed. Same T26 fix as the test above: absence is this
+    call's own, explicit `anthropic_api_key=None`, not an ambient-.env-
+    dependent `monkeypatch.delenv` (and `_set_required_env` is still
+    called first for the same reason: `migrations/env.py`'s own bare
+    `Settings()` still needs every mandatory field present)."""
     db_path = tmp_path / "main_app_no_anthropic_key.db"
     _set_required_env(monkeypatch, db_path)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     _migrate_to_head(db_path)
 
     from sunil.main import create_app
 
-    app = create_app()
+    settings = _app_settings(db_path, anthropic_api_key=None)
+    app = create_app(settings)
 
     with TestClient(app) as client:
         resp = client.get("/api/v1/health")
