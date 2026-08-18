@@ -884,7 +884,7 @@ measured from what is estimated, and says plainly which fixes belong to M9 and w
 | 4 | **STT round trip** — `gpt-4o-mini-transcribe`, 5 s of audio, non-streaming | **0.6–1.5 s** | **ESTIMATE — unverifiable here. T37 measures it** |
 | 5 | Client renders transcript, POSTs `/api/v1/chat` | **<30 ms** | |
 | 6 | **The turn, complete** | **5.8 s** | **MEASURED**, one real run. Median and p95 unknown — §5.2's honesty applies unchanged |
-| 6a | *of which:* plan + tool + analysis-to-first-**sentence** | **3.0–4.5 s** | **DERIVED, NOT MEASURED** — apportioned from §5.1's budget model. **The weakest number in this document**; M2's T27a measures the split |
+| 6a | *of which:* plan + tool + analysis-to-first-**sentence** | **3.0–4.5 s** | **DERIVED, NOT MEASURED** — apportioned from §5.1's budget model. **The weakest number in this document**; M2's T40 measures the split |
 | 7 | **TTS to first audio byte** — ElevenLabs `eleven_flash_v2_5`, ~75 ms model latency | **0.2–0.5 s** | **ESTIMATE** — the vendor's published figure, not observed here. T37 measures it |
 | 7b | *(TTS to last byte, whole answer, ~500 chars)* | *0.8–2.0 s* | ESTIMATE — the fallback if chunked forwarding does not deliver |
 | 8 | Browser decode + playback start | **50–150 ms** | ESTIMATE |
@@ -984,7 +984,7 @@ applies to OpenAI's pricing, where zeros are written rather than guesses.
 
 Two tasks replace them:
 
-* **M2's T27a measures leg 6a first**, before any streaming work — the split of the 5.8 s turn into
+* **M2's T40 measures leg 6a first**, before any streaming work — the split of the 5.8 s turn into
   plan / tool / analysis. It is the largest component of the voice path and the least understood, and
   designing the streaming work without it means aiming at a leg whose size nobody knows.
 * **T37 measures legs 1, 4, 7 and 8** across 10 runs and replaces this table with observed medians and
@@ -1231,6 +1231,6 @@ Normative for M9. Written in `REQUIREMENTS_V1.md`'s format so §4.11 can be repl
 |---|---|---|
 | D-14 | **Voice requires a secure context.** `http://localhost` qualifies; any other plain-HTTP origin silently yields no microphone. Hosting SUNIL means TLS, and `https_only=False` on the session cookie moves at the same time | M11 / whoever hosts it |
 | D-15 | `config/speech.yaml`'s prices ship as **clearly-marked zeros**, exactly as `config/models.yaml`'s OpenAI entry does, because they are not verifiable from any local source. Voice cost reads as 0 until they are filled in, and the file says so | first person with the pricing page |
-| D-16 | Legs 1, 4, 7 and 8 of M9§9.1 are **estimates**, and leg **6a is derived, which is weaker** — the plan/tool/analysis split of the 5.8 s turn was never measured. M2's T27a takes 6a **before** the streaming work; T37 takes the rest | T27a, then T37 |
+| D-16 | Legs 1, 4, 7 and 8 of M9§9.1 are **estimates**, and leg **6a is derived, which is weaker** — the plan/tool/analysis split of the 5.8 s turn was never measured. M2's T40 takes 6a **before** the streaming work; T37 takes the rest | T40, then T37 |
 | D-18 | **ElevenLabs is unverified against a live key.** Every fact in ADR-026 §1 comes from the vendor's published reference, not from a call. The ~75 ms latency figure is theirs, and the per-request-id response header is undocumented — the adapter must degrade to `NULL` rather than assume one | first build task with a key |
 | D-17 | `0002` is the second migration never verified against real PostgreSQL (extends D-2) | before Gate 3 |

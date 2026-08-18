@@ -3,7 +3,7 @@
 > **⚠️ M9 IS NO LONGER THE NEXT BUILD.** The owner reversed the order on 2026-08-19: **M2 (streaming)
 > ships first** — see [`docs/M2_BUILD_PLAN.md`](M2_BUILD_PLAN.md). This plan is amended and correct,
 > and it is executed *after* M2 lands. Task numbers T27…T39 are M9's and do not collide with M2's,
-> which uses T27a…T33a.
+> which uses T40…T51.
 
 **Author:** Solution Architect, Minions Team 18 · **Date:** 2026-08-19 · **Amended:** 2026-08-19 (M9-A2 … M9-A5)
 **Architecture:** [`docs/ARCHITECTURE_M9_VOICE.md`](ARCHITECTURE_M9_VOICE.md) — `M9§n` below, and read
@@ -566,7 +566,7 @@ the first answer sentence arrives first.
 | ET-16 — voice provenance required | T31, T36 |
 | ET-17 — speak ownership enforced | T32, T36 |
 | ET-18 — STT interlock holds, **and synthesis is deliberately not gated** | T27, T29a, T29b, T32, T35, T36 |
-| NFR-062 — latency, measured not modelled | T27a (M2, leg 6a), then T37 |
+| NFR-062 — latency, measured not modelled | T40 (M2, leg 6a), then T37 |
 
 Every M9 FR in `ARCHITECTURE_M9_VOICE.md` §14.1 is claimed by at least one task above; FR-213/FR-214
 (COULD) are T34 and T32 respectively and are the two safe descopes after T39.

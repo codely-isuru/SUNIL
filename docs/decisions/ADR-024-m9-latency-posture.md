@@ -127,7 +127,7 @@ Against ~7.5 s without streaming, that is a **~2 s improvement, not a ~4 s one.*
 **And the "3.0–4.5 s" row is the weakest number in this document.** The 5.8 s turn was measured as a
 *total*; the split between plan, tool and analysis was never measured separately, so that row is
 apportioned from §5.1's budget model rather than observed. It is the single most valuable measurement
-M2 can take, and it is now a task in its own right (`M2_BUILD_PLAN.md` T27a), taken **before** the
+M2 can take, and it is now a task in its own right (`M2_BUILD_PLAN.md` T40), taken **before** the
 streaming work rather than after, so the design is aimed at the leg that is actually large.
 
 ### The floor, and why no amount of streaming goes below it

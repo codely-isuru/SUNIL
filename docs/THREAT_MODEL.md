@@ -411,3 +411,51 @@ Security owns T-35 … T-41 and the two DC-10 rules (task **T35** of the M9 plan
 - **M9's frontend has no regression test**, because the frontend still has no test runner (M1 debt,
   M11). The push-to-talk state machine is verified by review and by browser-level exit tests, which is
   weaker.
+
+---
+
+## 13. M2 — Streaming and cancellation (added 2026-08-19)
+
+**Scope:** M2 as designed in [`ARCHITECTURE_M2_STREAMING.md`](ARCHITECTURE_M2_STREAMING.md), decided by
+ADR-027 … ADR-029. Assessed as *designed*, not built.
+
+**No new trust boundary.** M2 changes the *representation* crossing TB1 (browser ↔ API), not the set of
+boundaries. That is itself a result of the transport decision: ADR-027 rejected WebSocket partly
+because it would have created a crossing with **no CORS, no `X-SUNIL-Client` and a hand-written
+`Origin` check** — a new boundary in all but name.
+
+| ID | Threat | Control | Status |
+|---|---|---|---|
+| T-44 | **A long-lived streaming request holds a DB session and a provider socket.** A handful of abandoned turns could exhaust the pool | The turn's session is request-scoped and released in a `finally`; the provider stream is closed with `async with`; a disconnect cancels within ~1 s (heartbeat-bounded). One user, one concurrent turn | **Mitigated for M2's scope, and the scope is the reason** — no connection cap exists. DC-19's rate-limit gap covers it from M11 |
+| T-45 | **Partial answers leak through a failed turn.** A stream dying after 200 tokens has shown the owner text no `messages` row will hold | Deliberate and made visible: the terminal frame states the outcome and the client marks the message incomplete. The partial text **is** persisted on the `llm_calls` row, so the trace is not silently short | **Accepted, and surfaced** rather than hidden |
+| **T-46** | **Token frames bypass the redaction hook.** §8.3 scrubs `llm_calls.response_*` **before insert** — and a token frame reaches the browser *before any insert happens*. **M1 had a control here that M2 would have quietly lost** | Secrets are never placed in a prompt (§9.1), so a model reproducing one would have had to be told it — but that is a weaker guarantee than "redaction covers the response". **`scrub()` therefore runs on each delta before it is framed.** Cost is a dict walk over ~20 characters | **Mitigated by moving the hook.** Recorded prominently because the honest default was to miss it — the threat was found by asking what the hook actually covers, not by assuming it still did |
+| T-47 | **Cancellation as a denial-of-wallet amplifier** — repeated start/cancel burns plan-call spend with nothing to show | Every attempt is costed into `llm_calls` regardless, so the spend is visible rather than invisible. No cap exists | **Accepted, visible, uncapped.** DC-5 (spend cap, M3) unchanged — cancellation reduces waste, it is not a budget control |
+| T-48 | **NDJSON frame injection** — untrusted tool content in a `token` frame breaking framing, or forging a `done` | Frames are built with `json.dumps`, **never string concatenation**, so a newline inside a string is escaped by the serialiser. The client parses each line with `JSON.parse` and **ignores unknown `type` values** | **Mitigated** |
+| T-49 | **Cancellation used to skip an audit trail** — abort late to avoid recording what happened | A cancelled turn is a **recorded** turn: no rollback, terminal task state, `final_response` emitted, `llm_calls` row written with real usage (ADR-029, ET-24). Rolling back on cancel was explicitly rejected | **Mitigated** |
+
+### 13.1 What §13 does not claim
+
+- **Streaming does not make a turn faster**, so it changes no timeout, no deadline and no NFR-060
+  exposure. Total turn time is unchanged.
+- **Cancellation does not abort an in-flight tool call.** The GitHub adapter's reads are already
+  bounded by a 15 s timeout, and interrupting an external read buys nothing — it has left the machine.
+  Cancellation stops SUNIL *starting* more work, not from having started some.
+- **Cancellation does not refund.** A turn cancelled during analysis has already paid for its plan call
+  and its generated tokens, and FR-029 requires that spend be recorded rather than dropped.
+- **Cancellation promptness is uvicorn-version-dependent** (debt D-19): `uvicorn==0.52.3` declares ASGI
+  `spec_version "2.3"`, so Starlette runs a concurrent disconnect listener; a version declaring 2.4+
+  detects on next send, and the heartbeat becomes the only thing keeping cancel prompt.
+
+### 13.2 Tests that make §13 checkable
+
+| Test | Threat | Requirement |
+|---|---|---|
+| `test_registered_secret_never_appears_in_a_token_frame` | **T-46** | NFR-001/005 on the live path |
+| `test_registered_secret_is_still_scrubbed_in_the_persisted_row` | T-46 | ET-10, unchanged |
+| `test_token_text_with_newlines_and_quotes_yields_one_parseable_line` | T-48 | ADR-027 §4 |
+| `test_client_ignores_unknown_frame_types` | T-48 | ADR-027 §4 |
+| `test_abort_writes_a_terminal_cancelled_task` | T-49 | **ET-23** |
+| `test_cancelled_turn_still_writes_its_llm_call_row` | T-49, T-47 | **ET-24** |
+| `test_streamed_usage_matches_non_streamed_usage` | — (cost integrity) | **ET-25** |
+
+Security owns T-46 … T-49 (task **T51**); QA owns ET-19 … ET-25 (task **T50**).
