@@ -44,6 +44,8 @@ Every request below is read-only. Nothing here writes to GitHub.
 
 from __future__ import annotations
 
+import os
+
 import httpx
 import pytest
 from pydantic import SecretStr
@@ -111,50 +113,153 @@ def _client(token: SecretStr, base_url: str) -> httpx.Client:
     )
 
 
-def test_the_github_token_has_no_write_access_to_the_target_repository() -> None:
-    """T-17. A repository-scoped read token must report `push`, `admin` and
-    `maintain` false. If any is true, the tool M1 grants an agent can modify
-    the owner's business repository.
+# The three endpoints the M1 adapter actually calls
+# (`sunil/tools/github/adapter.py`). If any is refused, the tool cannot do its
+# job — this is the positive half of "what can this credential actually do".
+_REQUIRED_READS = ("commits", "pulls", "issues")
 
-    `permissions` is GitHub's own boolean block — no credential — but it is
-    reduced to the three booleans under test rather than interpolated whole,
-    so this assertion's output cannot grow to include something sensitive if
-    GitHub adds a field.
+# Read endpoints that GitHub gates behind **write-level** permission:
+# `collaborators` requires push, `hooks` requires admin. Probing these answers
+# "does this token hold more than read?" without going near a mutating verb.
+_WRITE_GATED_READS = ("collaborators", "hooks")
+
+# Every probe in this file is an HTTP GET. That is the safety property, and it
+# is structural rather than a promise: no GitHub REST GET mutates state, so
+# even a token wrongly holding admin cannot change anything through these
+# tests. `_assert_probes_are_all_gets()` enforces it mechanically below, so a
+# later edit adding a POST fails here rather than against the owner's real
+# repository.
+_ALLOWED_METHOD = "GET"
+
+
+def _probe(client: httpx.Client, path: str) -> int:
+    """Issue one read-only probe and return its status code only. The response
+    body is deliberately discarded: it can contain collaborator logins, webhook
+    URLs or secret *names*, none of which belong in test output."""
+    response = client.request(_ALLOWED_METHOD, path)
+    return response.status_code
+
+
+def test_every_probe_in_this_file_is_a_get() -> None:
+    """The side-effect-free guarantee, mechanised.
+
+    These tests run against the owner's real repositories, so "provably cannot
+    mutate" has to be checked rather than intended. `_probe()` is the only way
+    this module reaches GitHub, and it is pinned to GET.
+    """
+    import ast
+    import inspect
+    import sys
+
+    source = inspect.getsource(sys.modules[__name__])
+    verbs = {"post", "put", "patch", "delete"}
+    offenders = [
+        f"line {node.lineno}: .{node.func.attr}()"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in verbs
+    ]
+    assert not offenders, "a mutating HTTP verb appears in the live credential suite: " + "; ".join(
+        offenders
+    )
+    assert _ALLOWED_METHOD == "GET"
+
+
+def test_the_github_token_can_do_exactly_what_m1_needs_and_no_more() -> None:
+    """T-17, measured as **capability** rather than role.
+
+    The previous version asserted on the `permissions` block of
+    `GET /repos/{owner}/{repo}`. That block reports the *authenticated user's*
+    role on the repository, not the token's grants: against a real fine-grained
+    token it returned `admin: True, push: True` while `/commits` and `/issues`
+    both returned 403 "Resource not accessible by personal access token". It
+    could therefore neither pass for a correctly-scoped token nor fail for the
+    right reason on an over-scoped one — the field simply does not vary with
+    token scope.
+
+    Capability is asked of the endpoints themselves, in both directions,
+    because either half alone is satisfiable by a broken token: a token with no
+    access at all passes the negative half, and an admin token passes the
+    positive half. Together they mean "exactly the reads M1 performs, and
+    nothing gated behind write".
     """
     settings = _settings()
     token = _require(settings.github_token, "GITHUB_TOKEN")
 
     with _client(token, settings.github_api_base_url) as client:
-        response = client.get(f"/repos/{EXPECTED_REPO}")
-        status = response.status_code
-        permissions = response.json().get("permissions", {}) if status == 200 else {}
+        required = {
+            name: _probe(client, f"/repos/{EXPECTED_REPO}/{name}") for name in _REQUIRED_READS
+        }
+        write_gated = {
+            name: _probe(client, f"/repos/{EXPECTED_REPO}/{name}") for name in _WRITE_GATED_READS
+        }
 
-    assert status == 200, f"cannot read the target repository: HTTP {status}"
-    granted = sorted(level for level in ("push", "admin", "maintain") if permissions.get(level))
-    assert not granted, (
-        f"GITHUB_TOKEN grants {granted} on {EXPECTED_REPO}; T-17 records it as read-only. "
-        "Re-issue it with Contents/Pull requests/Issues set to read."
+    refused_reads = sorted(name for name, status in required.items() if status != 200)
+    assert not refused_reads, (
+        f"GITHUB_TOKEN cannot read {refused_reads} on {EXPECTED_REPO} "
+        f"(statuses: {required}). M1's GitHub tool calls exactly these three endpoints, so it "
+        "cannot function. Grant Contents, Pull requests and Issues: read on that repository."
     )
-    assert permissions.get("pull") is True, "GITHUB_TOKEN cannot read the target repository"
+
+    # 403/404 both mean "not permitted"; GitHub uses 404 to avoid confirming
+    # existence for some resources. Anything else — 200 above all — means the
+    # token holds more than the read access T-17 records.
+    over_scoped = sorted(name for name, status in write_gated.items() if status not in (403, 404))
+    assert not over_scoped, (
+        f"GITHUB_TOKEN can reach write-gated endpoints {over_scoped} on {EXPECTED_REPO} "
+        f"(statuses: {write_gated}). THREAT_MODEL T-17 records this token as read-only; "
+        "re-issue it with Contents, Pull requests and Issues set to read and nothing else."
+    )
 
 
-def test_the_github_token_is_scoped_to_one_repository() -> None:
-    """T-17: "a repository-scoped read token cannot reach other repositories".
-    Repository *names* are not credentials, so naming the excess ones is what
-    makes the failure actionable."""
+# A control repository the token must NOT be able to read: any private
+# repository other than the target. Supplied by environment because it cannot
+# be derived — see the test below for why. `SUNIL_LIVE_CONTROL_REPO=owner/name`.
+_CONTROL_REPO_VAR = "SUNIL_LIVE_CONTROL_REPO"
+
+
+def test_the_github_token_cannot_reach_a_repository_it_was_not_granted() -> None:
+    """T-17's containment half: "a repository-scoped read token cannot reach
+    other repositories".
+
+    The previous version listed `GET /user/repos` and asserted the result was a
+    subset of the target. That measures nothing for a fine-grained token: run
+    against a real one it returned four repositories, **none of them the
+    target**, because that endpoint enumerates the *user's* repositories rather
+    than the token's grants — the same class of defect as reading the
+    `permissions` role block.
+
+    There is no endpoint that reports a fine-grained PAT's repository scope, so
+    containment cannot be proven by enumeration at all. It can only be proven
+    by probing a repository the token should not reach and finding it refused,
+    which needs a **private** control repository named explicitly: a public one
+    proves nothing, since any token can read public repositories.
+
+    Skips when unconfigured rather than asserting something weaker, so a pass
+    here always means a real refusal was observed.
+    """
+    control_repo = os.environ.get(_CONTROL_REPO_VAR, "").strip()
+    if not control_repo:
+        pytest.skip(
+            f"{_CONTROL_REPO_VAR} is not set — containment cannot be proven without a private "
+            "control repository the token should not reach (no endpoint reports a fine-grained "
+            f"PAT's scope). Set {_CONTROL_REPO_VAR}=owner/name to enable this check."
+        )
+    if control_repo == EXPECTED_REPO:
+        pytest.skip(f"{_CONTROL_REPO_VAR} names the target repository; it must be a different one")
+
     settings = _settings()
     token = _require(settings.github_token, "GITHUB_TOKEN")
 
     with _client(token, settings.github_api_base_url) as client:
-        listed = client.get("/user/repos", params={"per_page": 100})
-        status = listed.status_code
-        names = {repo["full_name"] for repo in listed.json()} if status == 200 else set()
+        status = _probe(client, f"/repos/{control_repo}")
 
-    if status == 200:
-        beyond = sorted(names - {EXPECTED_REPO})
-        assert not beyond, f"the token can enumerate repositories beyond {EXPECTED_REPO}: {beyond}"
-    else:
-        assert status in (401, 403, 404), f"unexpected status enumerating repositories: {status}"
+    assert status in (403, 404), (
+        f"GITHUB_TOKEN can reach {control_repo}, which it was not granted (HTTP {status}). "
+        "A fine-grained token must be scoped to codely-isuru/easy_clean_workforce only; "
+        "re-issue it with 'Only select repositories' and that repository alone."
+    )
 
 
 def test_the_github_token_is_fine_grained_not_a_classic_pat() -> None:
