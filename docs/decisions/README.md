@@ -37,6 +37,7 @@ that supersedes it, or — where the decision survives and only part of it moves
 | [027](ADR-027-streaming-transport.md) | **NDJSON streamed from the chat POST**, selected by `Accept`. **Supersedes ADR-009**; contradicts FR-024's "over WebSocket" and argues it | Proposed (M2, 2026-08-19) |
 | [028](ADR-028-only-the-analysis-call-streams.md) | **Only the analysis call streams.** A partial plan is not a validated plan, so the plan call is consumed whole | Proposed (M2, 2026-08-19) |
 | [029](ADR-029-cooperative-cancellation.md) | **Cancellation is a client disconnect**; `cancelled` becomes a real terminal state. **Supersedes ADR-010 in part**; closes DC-7 and D-4 | Proposed (M2, 2026-08-19) |
+| [030](ADR-030-integrate-open-source-components.md) | **Integrate open-source behind existing seams** (n8n edition): MCP servers, LiteLLM, Mem0, OpenHands, n8n, Hermes (channels), OmniRoute (dev lane). SUNIL core kept custom. Extends the plan of record; supersedes nothing in ADR-001..029 | Proposed (V2, finalised 2026-08-21) |
 
 ADR-017 and ADR-018 answer questions raised by QA against the running build, not by a review. They
 are Architect rulings issued mid-flight because T5, T6 and T8 were still open and the cost of ruling

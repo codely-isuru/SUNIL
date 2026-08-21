@@ -6,6 +6,16 @@
 **Roadmap:** V1 → V3  
 **Primary principle:** SUNIL is the system. Claude, Codex, OpenAI, Qwen, and future models are interchangeable intelligence providers used by SUNIL.
 
+> **V2 direction (finalised proposal, 2026-08-21, branch `V2`):** deliver the remaining epics by
+> integrating proven open-source components behind SUNIL's existing seams — **MCP tool servers,
+> LiteLLM, Mem0, OpenHands, n8n** (workflows + 1,500-connector fabric, replacing the earlier
+> Windmill choice), with **Hermes** as an optional channel gateway and **OmniRoute** fenced to a
+> dev-only lane. Recorded in [ADR-030](decisions/ADR-030-integrate-open-source-components.md);
+> integration phasing in [`V2_INTEGRATION_ROADMAP.md`](V2_INTEGRATION_ROADMAP.md); parallel-stream
+> build in [`V2_DEVELOPMENT_PLAN.md`](V2_DEVELOPMENT_PLAN.md); diagram in
+> [`design/ARCHITECTURE_V2_FINAL.html`](design/ARCHITECTURE_V2_FINAL.html). This document remains
+> the plan of record; the proposal extends it and changes nothing about M1/M2/M9.
+
 ---
 
 # 1. Project Vision

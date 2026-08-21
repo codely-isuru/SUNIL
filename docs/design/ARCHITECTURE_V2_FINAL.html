@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SUNIL — Finalised Architecture</title>
+<style>
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#f6f8fb;color:#1a2233;margin:0;padding:26px 20px 40px}
+  .wrap{max-width:1010px;margin:0 auto}
+  h1{font-size:21px;margin:0}
+  .sub{color:#5b6577;font-size:13px;margin:6px 0 14px}
+  svg{width:100%;height:auto;display:block;background:#fff;border:1px solid #d6dbe4;border-radius:12px}
+  .foot{margin-top:12px;font-size:12px;color:#5b6577}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>S.U.N.I.L. — Finalised architecture</h1>
+  <div class="sub">2026-08-19 · live M1 core at the centre, open-source integrations at existing seams (ADR-030, n8n edition) · badges: <b style="color:#15803d">LIVE</b> · <b style="color:#b45309">IN FLIGHT</b> · <b style="color:#1d4ed8">V2</b> · red dashed = custom build · principle: SUNIL is the product; every integrated component is replaceable behind a SUNIL-owned seam</div>
+
+<svg viewBox="0 0 1000 1180" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#475569"/></marker>
+    <marker id="ab" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#7c3aed"/></marker>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#22a06b"/></marker>
+  </defs>
+
+  <!-- INTERFACES -->
+  <rect x="16" y="14" width="968" height="92" rx="12" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.6"/>
+  <text x="34" y="38" font-size="12" font-weight="700" fill="#1d4ed8" letter-spacing="1">INTERFACES</text>
+  <rect x="34" y="48" width="290" height="46" rx="8" fill="#fff" stroke="#3b82f6"/>
+  <text x="179" y="67" text-anchor="middle" font-size="12" font-weight="700">Next.js web — chat + streaming <tspan fill="#15803d" font-size="9.5">LIVE/M2</tspan></text>
+  <text x="179" y="83" text-anchor="middle" font-size="10.5" fill="#5b6577">+ ops views in V2: approvals · agents · projects · audit</text>
+  <rect x="344" y="48" width="290" height="46" rx="8" fill="#fff" stroke="#3b82f6"/>
+  <text x="489" y="67" text-anchor="middle" font-size="12" font-weight="700">Voice (M9) <tspan fill="#b45309" font-size="9.5">IN FLIGHT</tspan></text>
+  <text x="489" y="83" text-anchor="middle" font-size="10.5" fill="#5b6577">STT/TTS adapters · reuses /api/v1/chat · one request_id</text>
+  <rect x="654" y="48" width="312" height="46" rx="8" fill="#fff" stroke="#3b82f6"/>
+  <text x="810" y="67" text-anchor="middle" font-size="12" font-weight="700">Hermes channel gateway <tspan fill="#1d4ed8" font-size="9.5">V2-F optional</tspan></text>
+  <text x="810" y="83" text-anchor="middle" font-size="10.5" fill="#5b6577">Telegram · WhatsApp · Signal → conversation API only</text>
+
+  <!-- SUNIL CORE -->
+  <rect x="16" y="136" width="968" height="196" rx="12" fill="#fff7ed" stroke="#ea8a2a" stroke-width="2"/>
+  <text x="34" y="160" font-size="12.5" font-weight="700" fill="#c2620f" letter-spacing="1">SUNIL CORE — the product (custom code)  <tspan fill="#15803d" font-size="10">M1 LIVE-VERIFIED · 564 TESTS · ADR-001..029</tspan></text>
+  <rect x="34" y="172" width="225" height="66" rx="8" fill="#fff" stroke="#ea8a2a"/>
+  <text x="146" y="193" text-anchor="middle" font-size="11.5" font-weight="700">Conversation gateway <tspan fill="#15803d" font-size="9">LIVE</tspan></text>
+  <text x="146" y="208" text-anchor="middle" font-size="10" fill="#5b6577">POST /api/v1/chat · sessions ·</text>
+  <text x="146" y="222" text-anchor="middle" font-size="10" fill="#5b6577">NDJSON streaming (M2)</text>
+  <rect x="273" y="172" width="240" height="66" rx="8" fill="#fff" stroke="#ea8a2a" stroke-width="1.6"/>
+  <text x="393" y="193" text-anchor="middle" font-size="11.5" font-weight="700">Central Orchestrator <tspan fill="#15803d" font-size="9">LIVE</tspan></text>
+  <text x="393" y="208" text-anchor="middle" font-size="10" fill="#5b6577">LLM plans → validated (Pydantic +</text>
+  <text x="393" y="222" text-anchor="middle" font-size="10" fill="#5b6577">registry re-check) → deterministic exec</text>
+  <rect x="527" y="172" width="225" height="66" rx="8" fill="#fff" stroke="#ea8a2a" stroke-width="1.6"/>
+  <text x="639" y="193" text-anchor="middle" font-size="11.5" font-weight="700">Permission engine <tspan fill="#15803d" font-size="9">LIVE</tspan></text>
+  <text x="639" y="208" text-anchor="middle" font-size="10" fill="#5b6577">agent × tool × operation</text>
+  <text x="639" y="222" text-anchor="middle" font-size="10" fill="#5b6577">ALLOW / ASK USER / DENY</text>
+  <rect x="766" y="172" width="200" height="66" rx="8" fill="#fff" stroke="#ea8a2a"/>
+  <text x="866" y="193" text-anchor="middle" font-size="11.5" font-weight="700">Audit spine <tspan fill="#15803d" font-size="9">LIVE</tspan></text>
+  <text x="866" y="208" text-anchor="middle" font-size="10" fill="#5b6577">12 trace stages · llm_calls ·</text>
+  <text x="866" y="222" text-anchor="middle" font-size="10" fill="#5b6577">tool_calls · request_id chain</text>
+  <rect x="34" y="252" width="225" height="64" rx="8" fill="#fff" stroke="#ea8a2a"/>
+  <text x="146" y="273" text-anchor="middle" font-size="11.5" font-weight="700">Agent framework</text>
+  <text x="146" y="288" text-anchor="middle" font-size="10" fill="#5b6577">PM <tspan fill="#15803d">LIVE</tspan> · PA · Executive ·</text>
+  <text x="146" y="302" text-anchor="middle" font-size="10" fill="#5b6577">Support · Email <tspan fill="#1d4ed8">V2 rollout</tspan></text>
+  <rect x="273" y="252" width="240" height="64" rx="8" fill="#fff" stroke="#ea8a2a"/>
+  <text x="393" y="273" text-anchor="middle" font-size="11.5" font-weight="700">Tool framework</text>
+  <text x="393" y="288" text-anchor="middle" font-size="10" fill="#5b6577">native GitHub tool <tspan fill="#15803d">LIVE</tspan></text>
+  <text x="393" y="302" text-anchor="middle" font-size="10" fill="#5b6577">+ MCPToolAdapter <tspan fill="#1d4ed8">V2-A</tspan></text>
+  <rect x="527" y="252" width="225" height="64" rx="8" fill="#fff" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="6 3"/>
+  <text x="639" y="273" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b91c1c">Approvals queue + UI</text>
+  <text x="639" y="288" text-anchor="middle" font-size="10" fill="#5b6577">ASK_USER parks the call →</text>
+  <text x="639" y="302" text-anchor="middle" font-size="10" fill="#5b6577">card on dashboard <tspan fill="#1d4ed8">V2 build</tspan></text>
+  <rect x="766" y="252" width="200" height="64" rx="8" fill="#fff" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="6 3"/>
+  <text x="866" y="273" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b91c1c">Entity schema</text>
+  <text x="866" y="288" text-anchor="middle" font-size="10" fill="#5b6577">clients · projects · people</text>
+  <text x="866" y="302" text-anchor="middle" font-size="10" fill="#5b6577"><tspan fill="#1d4ed8">V2-C build</tspan></text>
+
+  <!-- MODEL PATH -->
+  <rect x="16" y="366" width="470" height="236" rx="12" fill="#fce7f3" stroke="#db2777" stroke-width="1.6"/>
+  <text x="34" y="390" font-size="12" font-weight="700" fill="#db2777" letter-spacing="1">MODEL PATH — one chokepoint</text>
+  <rect x="34" y="402" width="200" height="56" rx="8" fill="#fff" stroke="#db2777"/>
+  <text x="134" y="423" text-anchor="middle" font-size="11.5" font-weight="700">Model Router <tspan fill="#15803d" font-size="9.5">LIVE</tspan></text>
+  <text x="134" y="439" text-anchor="middle" font-size="10" fill="#5b6577">capability + privacy policy (ours)</text>
+  <rect x="252" y="402" width="216" height="56" rx="8" fill="#fff" stroke="#db2777"/>
+  <text x="360" y="423" text-anchor="middle" font-size="11.5" font-weight="700">LiteLLM gateway <tspan fill="#1d4ed8" font-size="9.5">V2-B</tspan></text>
+  <text x="360" y="439" text-anchor="middle" font-size="10" fill="#5b6577">virtual key/agent · budgets · retries</text>
+  <rect x="34" y="486" width="434" height="52" rx="8" fill="#fdf2f8" stroke="#db2777"/>
+  <text x="251" y="507" text-anchor="middle" font-size="11.5" font-weight="600">Claude <tspan fill="#15803d" font-size="9.5">LIVE</tspan> · OpenAI <tspan fill="#15803d" font-size="9.5">LIVE</tspan> · Codex · local Qwen (Ollama/vLLM) <tspan fill="#1d4ed8" font-size="9.5">V2-G</tspan></text>
+  <text x="251" y="526" text-anchor="middle" font-size="10.5" fill="#5b6577">LOCAL-ONLY privacy routing · V3 fine-tuned personal model serves here too</text>
+  <rect x="34" y="548" width="434" height="42" rx="8" fill="#fff" stroke="#db2777" stroke-dasharray="3 3"/>
+  <text x="251" y="565" text-anchor="middle" font-size="10.5" font-weight="600" fill="#9d174d">OmniRoute — dev/experimentation lane only</text>
+  <text x="251" y="581" text-anchor="middle" font-size="10" fill="#5b6577">registered behind LiteLLM · PUBLIC-classified workloads only · never client/production data</text>
+  <path d="M234,430 L252,430" fill="none" stroke="#db2777" stroke-width="1.6" marker-end="url(#a)"/>
+  <path d="M251,458 L251,486" fill="none" stroke="#db2777" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- TOOL PATH -->
+  <rect x="514" y="366" width="470" height="236" rx="12" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.6"/>
+  <text x="532" y="390" font-size="12" font-weight="700" fill="#ca8a04" letter-spacing="1">TOOL PATH — one chokepoint, all governed</text>
+  <rect x="532" y="402" width="212" height="76" rx="8" fill="#fff" stroke="#ca8a04"/>
+  <text x="638" y="423" text-anchor="middle" font-size="11.5" font-weight="700">Official MCP servers <tspan fill="#1d4ed8" font-size="9.5">V2-A</tspan></text>
+  <text x="638" y="440" text-anchor="middle" font-size="10" fill="#5b6577">GitHub · Gmail · Calendar</text>
+  <text x="638" y="454" text-anchor="middle" font-size="10" fill="#5b6577">Jira · Stripe · filesystem · terminal</text>
+  <text x="638" y="470" text-anchor="middle" font-size="10" fill="#b91c1c">+ Codely Support (build)</text>
+  <rect x="760" y="402" width="206" height="76" rx="8" fill="#fff" stroke="#ca8a04" stroke-width="1.6"/>
+  <text x="863" y="423" text-anchor="middle" font-size="11.5" font-weight="700">n8n MCP Server <tspan fill="#1d4ed8" font-size="9.5">V2-A</tspan></text>
+  <text x="863" y="440" text-anchor="middle" font-size="10" fill="#5b6577">workflows exposed as governed</text>
+  <text x="863" y="454" text-anchor="middle" font-size="10" fill="#5b6577">tools · SSE/HTTP · bearer auth ·</text>
+  <text x="863" y="468" text-anchor="middle" font-size="10" fill="#5b6577">credentials stay in n8n vault</text>
+  <rect x="532" y="498" width="434" height="52" rx="8" fill="#fffbeb" stroke="#ca8a04"/>
+  <text x="749" y="519" text-anchor="middle" font-size="11" font-weight="600">n8n connector fabric — 1,500+ integrations</text>
+  <text x="749" y="537" text-anchor="middle" font-size="10.5" fill="#5b6577">WordPress · WooCommerce · SharePoint · Stripe · client APIs · long tail</text>
+  <text x="749" y="576" text-anchor="middle" font-size="10.5" font-style="italic" fill="#a16207">every call: permission check → execute → audit; ASK_USER → approvals queue</text>
+  <path d="M863,478 L830,498" fill="none" stroke="#ca8a04" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- N8N TRIGGERS + OPENHANDS -->
+  <rect x="16" y="636" width="470" height="100" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.6"/>
+  <text x="34" y="660" font-size="12" font-weight="700" fill="#7c3aed" letter-spacing="1">SCHEDULER / TRIGGERS — n8n  <tspan fill="#1d4ed8" font-size="10">V2-E</tspan></text>
+  <text x="251" y="686" text-anchor="middle" font-size="11" fill="#374151">schedules · webhooks · app events (ticket, email, Stripe event)</text>
+  <text x="251" y="704" text-anchor="middle" font-size="11" fill="#374151">→ POST /api/v1/chat → governed, audited agent turn</text>
+  <text x="251" y="723" text-anchor="middle" font-size="10.5" font-style="italic" fill="#6d28d9">morning brief · project monitor · support sweep · client follow-ups</text>
+
+  <rect x="514" y="636" width="470" height="100" rx="12" fill="#fff7ed" stroke="#ea8a2a" stroke-width="1.6"/>
+  <text x="532" y="660" font-size="12" font-weight="700" fill="#c2620f" letter-spacing="1">DEV EXECUTION — OpenHands  <tspan fill="#1d4ed8" font-size="10">V2-D</tspan></text>
+  <text x="749" y="686" text-anchor="middle" font-size="11" fill="#374151">Developer + QA engine · Docker-sandboxed · drives Claude Code / Codex</text>
+  <text x="749" y="704" text-anchor="middle" font-size="11" fill="#374151">PM agent delegates · push_branch: allow · merge_main: ask_user</text>
+  <text x="749" y="723" text-anchor="middle" font-size="10.5" font-style="italic" fill="#c2620f">all git writes pass the permission engine</text>
+
+  <!-- DATA -->
+  <rect x="16" y="770" width="968" height="110" rx="12" fill="#dcfce7" stroke="#22a06b" stroke-width="1.6"/>
+  <text x="34" y="794" font-size="12" font-weight="700" fill="#15803d" letter-spacing="1">MEMORY &amp; DATA</text>
+  <rect x="34" y="806" width="300" height="62" rx="8" fill="#fff" stroke="#22a06b"/>
+  <text x="184" y="828" text-anchor="middle" font-size="11.5" font-weight="700">SQLite (M1) → PostgreSQL + pgvector</text>
+  <text x="184" y="844" text-anchor="middle" font-size="10" fill="#5b6577">one portable schema (ADR-001) · pgvector</text>
+  <text x="184" y="858" text-anchor="middle" font-size="10" fill="#5b6577">arrives with the memory phase (ADR-013)</text>
+  <rect x="354" y="806" width="300" height="62" rx="8" fill="#fff" stroke="#22a06b"/>
+  <text x="504" y="828" text-anchor="middle" font-size="11.5" font-weight="700">Mem0 <tspan fill="#1d4ed8" font-size="9.5">V2-C</tspan></text>
+  <text x="504" y="844" text-anchor="middle" font-size="10" fill="#5b6577">hybrid semantic + BM25 recall behind</text>
+  <text x="504" y="858" text-anchor="middle" font-size="10" fill="#5b6577">core/memory · linked to entity schema</text>
+  <rect x="674" y="806" width="292" height="62" rx="8" fill="#fff" stroke="#22a06b"/>
+  <text x="820" y="828" text-anchor="middle" font-size="11.5" font-weight="700">audit_events — source of truth <tspan fill="#15803d" font-size="9.5">LIVE</tspan></text>
+  <text x="820" y="844" text-anchor="middle" font-size="10" fill="#5b6577">optional Langfuse for cost/evals views ·</text>
+  <text x="820" y="858" text-anchor="middle" font-size="10" fill="#5b6577">capture policy (ADR-014) feeds V3 dataset</text>
+
+  <!-- ARROWS -->
+  <path d="M179,94 L160,136" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <path d="M489,94 L440,136" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+  <path d="M810,94 C760,115 700,120 650,136" fill="none" stroke="#475569" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#a)"/>
+  <path d="M146,316 C140,345 137,360 134,402" fill="none" stroke="#db2777" stroke-width="1.7" marker-end="url(#a)"/>
+  <text x="88" y="352" font-size="10" fill="#9d174d" font-weight="600">model calls</text>
+  <path d="M420,316 C480,345 560,360 620,402" fill="none" stroke="#ca8a04" stroke-width="1.7" marker-end="url(#a)"/>
+  <path d="M460,316 C600,350 760,365 850,402" fill="none" stroke="#ca8a04" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="505" y="352" font-size="10" fill="#a16207" font-weight="600">tool calls (MCP)</text>
+  <path d="M180,636 C120,560 90,430 80,336" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#ab)"/>
+  <text x="52" y="505" font-size="10" fill="#6d28d9" transform="rotate(-82 52 505)">triggers turns via chat API</text>
+  <path d="M700,636 C660,570 560,510 480,330" fill="none" stroke="#ea8a2a" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#a)"/>
+  <text x="570" y="620" font-size="10" fill="#c2620f">delegated by PM agent</text>
+  <path d="M120,336 C90,620 110,720 150,806" fill="none" stroke="#22a06b" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#ag)"/>
+
+  <!-- DELIVERY -->
+  <rect x="16" y="912" width="968" height="246" rx="12" fill="#fff" stroke="#d6dbe4"/>
+  <text x="34" y="938" font-size="12" font-weight="700">DELIVERY SEQUENCE &amp; DECISIONS</text>
+  <text x="34" y="962" font-size="11.5" fill="#374151"><tspan font-weight="700" fill="#15803d">DONE</tspan>  M1 vertical slice — orchestrator, permissions, GitHub tool, PM agent, audit (live-verified 2026-08-19)</text>
+  <text x="34" y="984" font-size="11.5" fill="#374151"><tspan font-weight="700" fill="#b45309">IN FLIGHT</tspan>  M2 streaming (NDJSON, cancellation) · M9 voice (ADR-019..029)</text>
+  <text x="34" y="1006" font-size="11.5" fill="#374151"><tspan font-weight="700" fill="#1d4ed8">V2-A</tspan>  MCPToolAdapter + official MCP servers + n8n MCP fabric    <tspan font-weight="700" fill="#1d4ed8">V2-B</tspan>  LiteLLM gateway (keys, budgets)</text>
+  <text x="34" y="1028" font-size="11.5" fill="#374151"><tspan font-weight="700" fill="#1d4ed8">V2-C</tspan>  Mem0 + entity schema    <tspan font-weight="700" fill="#1d4ed8">V2-D</tspan>  OpenHands dev/QA    <tspan font-weight="700" fill="#1d4ed8">V2-E</tspan>  n8n workflows    <tspan font-weight="700" fill="#1d4ed8">V2-F</tspan>  Hermes channels (opt.)</text>
+  <text x="34" y="1050" font-size="11.5" fill="#374151"><tspan font-weight="700" fill="#1d4ed8">V2-G</tspan>  local Qwen + privacy routing    <tspan font-weight="700">V3</tspan>  fine-tune on captured traces → personal model behind LiteLLM</text>
+  <text x="34" y="1078" font-size="11" fill="#5b6577">Rejected / limited (ADR-030): Hermes-as-platform (LLM-driven loop inverts §25/§26; channels only) · ContextForge (duplicates live tool governance) ·</text>
+  <text x="34" y="1094" font-size="11" fill="#5b6577">Graphiti (needs Neo4j; Mem0 on existing Postgres wins on ops) · Windmill (n8n preferred: 1,500+ connectors incl. WordPress/WooCommerce/SharePoint, MCP-native) ·</text>
+  <text x="34" y="1110" font-size="11" fill="#5b6577">OmniRoute in production (free-tier evasion, prompt-mutating compression, privacy posture — dev lane only, PUBLIC workloads)</text>
+  <text x="34" y="1138" font-size="10.5" fill="#5b6577">Licences: LiteLLM · OpenHands · Hermes · Langfuse-core · OmniRoute = MIT · Mem0 · LiveKit = Apache-2.0 · n8n = Sustainable Use (internal use fine, no resale as a hosted service)</text>
+</svg>
+
+  <div class="foot">Credential rule (absolute): agents hold nothing — provider keys live in LiteLLM, tool credentials in MCP servers / n8n's vault; every model call passes the Model Router, every tool call passes the permission engine, everything lands in audit_events. n8n ops notes: route /mcp* to a single webhook replica when scaling; disable reverse-proxy buffering for SSE.</div>
+</div>
+</body>
+</html>

@@ -16,6 +16,24 @@
 
 ## 1. What happened
 
+### 2026-08-21 — V2 architecture finalised (branch `V2`)
+
+The owner delivered the **finalised SUNIL architecture** (`design/ARCHITECTURE_V2_FINAL.html`)
+and a parallel-stream **development plan** (`V2_DEVELOPMENT_PLAN.md`). Decision recorded as
+[ADR-030](decisions/ADR-030-integrate-open-source-components.md). Committed to branch **`V2`**.
+
+**Stance (resolves the earlier draft conflict):** *integrate open-source behind SUNIL''s existing
+seams* — the live M1 control plane stays at the centre; **no M1 code is retired.** This finalises
+the earlier `update/v2-architecture` draft with two changes: **n8n replaces Windmill** (1,500+
+connectors, MCP-native), and **OmniRoute** is admitted as a dev-only lane behind LiteLLM (PUBLIC
+workloads only). Hermes is a channel gateway only; ContextForge and Graphiti rejected (ADR-030).
+
+**Delivery:** to be built by the Minions team as six parallel streams (A–F) against five frozen
+contracts (C1–C5). Model assignment for this engagement — **all developer/QA/ops roles on
+Opus 4.8; Solution Architect + Security Reviewer on Opus 5.** M2 (streaming) and M9 (voice) files
+are untouchable by V2 streams.
+
+
 ### 2026-08-13 — Reset onto the new roadmap
 
 The project was re-planned. `SUNIL_AGENTIC_OS_ROADMAP.md` (V1 → V3) replaces every
