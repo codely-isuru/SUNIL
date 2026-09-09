@@ -1,0 +1,56 @@
+# SUNIL - line-ending policy
+#
+# WHY THIS FILE EXISTS (do not delete it):
+# the team's build machine has `core.autocrlf=true` globally. Without the rules
+# below, a fresh clone on Windows gets CRLF working-copy files, and two things
+# break in ways that are annoying to diagnose:
+#
+#   1. infra/postgres/init/*.sh is executed INSIDE the Linux Postgres
+#      container. With CRLF, bash fails on the shebang or reports
+#      "$'\r': command not found" for every line.
+#   2. scripts/*.sh run under Git Bash and hit the same class of failure.
+#
+# So: normalise to LF in the repository, and check LF back out regardless of
+# the local autocrlf setting, for everything that an interpreter or a container
+# executes or parses.
+
+# Default: let Git detect text vs binary, and store text with LF.
+* text=auto eol=lf
+
+# Executed by a shell - MUST be LF.
+*.sh            text eol=lf
+*.bash          text eol=lf
+
+# Parsed by tools that are whitespace-sensitive or run in containers.
+*.yml           text eol=lf
+*.yaml          text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+.env.example    text eol=lf
+*.py            text eol=lf
+*.sql           text eol=lf
+
+# PowerShell tolerates both, but keep it LF so the ASCII/EOL story is uniform
+# and CI's byte-level script check sees the same bytes everywhere.
+*.ps1           text eol=lf
+*.psm1          text eol=lf
+
+# Windows-only batch files genuinely want CRLF.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# Docs.
+*.md            text eol=lf
+*.json          text eol=lf
+
+# Binaries - never touch.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.woff          binary
+*.woff2         binary
