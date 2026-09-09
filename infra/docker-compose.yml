@@ -1,0 +1,245 @@
+# SUNIL V2 — Phase 0 development platform
+# =========================================================================
+# Three infrastructure services only. There is deliberately NO app/api/web
+# container here: branch `V2` is a clean-slate rebuild and no application
+# code exists yet (ADR-030 Amendment 1). This stack must boot green on its
+# own; the app container plugs in at the marked stub below when Stream B/D
+# land the rebuilt gateway.
+#
+# Invocation (always from the repo root, always with an explicit env file so
+# that ${...} interpolation resolves against the ROOT .env rather than
+# infra/.env, which is what Compose would otherwise look for):
+#
+#   docker compose --env-file .env -f infra/docker-compose.yml up -d
+#
+# Or just use scripts/dev-up.ps1 / scripts/dev-up.sh, which do that for you.
+#
+# Variable convention in this file:
+#   ${VAR:-default}  non-secret config (ports, names, tuning) — safe defaults
+#                    so that `docker compose config` validates with no .env.
+#   ${VAR}           secrets (passwords, keys) — NO default on purpose. Unset
+#                    resolves to empty, which makes `config` still succeed (so
+#                    CI can lint this file) but makes the container fail loudly
+#                    at boot instead of silently running a known-value secret.
+# No real credential belongs in this file, ever. See .env.example.
+# =========================================================================
+
+name: ${COMPOSE_PROJECT_NAME:-sunil-v2}
+
+services:
+  # -----------------------------------------------------------------------
+  # Postgres 17 + pgvector — the single stateful service.
+  #
+  # Image choice: `pgvector/pgvector:0.8.6-pg17`.
+  #   Why this one over the alternatives:
+  #   - It is the pgvector project's own published image, and it is built ON
+  #     TOP of the official `postgres:17` Debian image — so we inherit the
+  #     official entrypoint, initdb behaviour, /docker-entrypoint-initdb.d
+  #     contract and PGDATA layout unchanged. Nothing about standard Postgres
+  #     operation is bespoke here.
+  #   - The extension is precompiled and, critically, the tag pins BOTH
+  #     versions independently: `0.8.6` (pgvector) and `pg17` (server). An
+  #     index built by one pgvector version must be readable by the next, so
+  #     pinning the extension version explicitly — not just `pg17` — is what
+  #     keeps Stream C's Mem0 embeddings reproducible (ADR-030 §3, ADR-013).
+  #   - Rejected: `postgres:17` + compiling pgvector in a custom Dockerfile —
+  #     adds a build toolchain, a build step and a maintenance burden for an
+  #     artefact upstream already publishes.
+  #   - Rejected: `ankane/pgvector` — the author's personal pre-donation
+  #     namespace, superseded by the `pgvector/` org images.
+  #   Swap cost is one line: any image exposing Postgres 17 with the `vector`
+  #   extension available drops in, which keeps ADR-030's "every component is
+  #   a replaceable vendor" rule true for the database too.
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17
+    container_name: ${COMPOSE_PROJECT_NAME:-sunil-v2}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sunil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-sunil}
+      # Extra databases created on FIRST boot only, by the init script below.
+      # LiteLLM (virtual keys/budgets) and n8n (workflow state) each get their
+      # own logical database inside this one server: separate schemas and
+      # separate migration histories, one thing to back up.
+      SUNIL_LITELLM_DB: ${LITELLM_DB_NAME:-litellm}
+      SUNIL_N8N_DB: ${N8N_DB_NAME:-n8n}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Host 5433, not 5432: port 5432 on this machine is already bound by an
+      # unrelated container (strapi-next-starter-db-1). Container-internal
+      # port stays 5432, so service-to-service URLs are conventional.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      # -q keeps the log clean; the user/db flags matter because pg_isready
+      # defaults to the root OS user, which does not exist as a role here.
+      test: ["CMD-SHELL", "pg_isready -q -U ${POSTGRES_USER:-sunil} -d ${POSTGRES_DB:-sunil}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [sunil]
+
+  # -----------------------------------------------------------------------
+  # LiteLLM — model gateway (ADR-030 §2). Provider keys live HERE, not in the
+  # application, so the app never holds an upstream credential. Pinned to the
+  # `-stable` release lane rather than the weekly `v1.89.x` line: upstream
+  # promotes a release to `-stable` only after a soak period, and `.patch.N`
+  # carries the fixes made against that soak. Bleeding-edge weeklies have
+  # repeatedly shipped breaking config changes, and this is a shared seam that
+  # six parallel streams will point at (Stream B, C2 override).
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.83.14-stable.patch.3
+    container_name: ${COMPOSE_PROJECT_NAME:-sunil-v2}-litellm
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      # Backing store for virtual keys, per-agent budgets and spend rows —
+      # Stream B's exit criterion ("per-agent spend queryable") needs it.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sunil}:${POSTGRES_PASSWORD}@postgres:5432/${LITELLM_DB_NAME:-litellm}
+      STORE_MODEL_IN_DB: ${LITELLM_STORE_MODEL_IN_DB:-True}
+      # Upstream provider keys, referenced by config.yaml as os.environ/NAME.
+      # Empty in dev is fine and expected: the proxy boots and serves /health
+      # regardless, it only fails on an actual call to an unconfigured model.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      # 4000 is LiteLLM's own default and is free on this machine.
+      # NEVER 4317 — that is the Minions Portal.
+      - "${LITELLM_HOST_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The image is Python-based and ships no curl/wget, so probe with the
+      # interpreter that is guaranteed present. /health/liveliness answers as
+      # soon as the ASGI app is serving and does not call any provider (unlike
+      # /health, which fans out to upstreams and would fail with empty keys).
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness',timeout=4).status==200 else 1)"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      # Generous: on first boot LiteLLM runs its Prisma schema push against
+      # the freshly created database before it starts serving.
+      start_period: 120s
+    networks: [sunil]
+
+  # -----------------------------------------------------------------------
+  # n8n — workflow/scheduler and connector fabric (ADR-030 §5). Pinned to
+  # 2.38.5, which is the digest the upstream `stable` tag currently resolves
+  # to (verified: sha256:f98bb7c2…). 2.39.1 exists but is the `latest` lane.
+  # Licence note: Sustainable Use Licence — internal use only, never resold
+  # as a hosted service (ADR-030 Consequences).
+  n8n:
+    image: n8nio/n8n:2.38.5
+    container_name: ${COMPOSE_PROJECT_NAME:-sunil-v2}-n8n
+    restart: unless-stopped
+    environment:
+      # Postgres-backed rather than the default SQLite: workflow state is real
+      # state, and Stream E's scheduled triggers must survive a container
+      # rebuild.
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8n}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-sunil}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Encrypts n8n's own credential vault at rest. Losing/changing this key
+      # makes every stored credential undecryptable — treat it as a secret and
+      # keep it stable across rebuilds.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      # Must carry the *host* port or webhook URLs shown in the editor are
+      # unreachable from the browser.
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5680/}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Australia/Melbourne}
+      TZ: ${GENERIC_TIMEZONE:-Australia/Melbourne}
+      N8N_DIAGNOSTICS_ENABLED: ${N8N_DIAGNOSTICS_ENABLED:-false}
+      # Silences the 2.x deprecation warning and opts into the current
+      # permission model for filesystem access from Code nodes.
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-true}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      # Host 5680. Both 5678 AND 5679 are already bound on this machine by a
+      # single host-native node process (the local n8n source build in
+      # C:\repo\n8n — main port + task-broker port). 5680 is free.
+      - "${N8N_HOST_PORT:-5680}:5678"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Alpine/busybox wget is present in this image; curl is not.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks: [sunil]
+
+  # -----------------------------------------------------------------------
+  # STUB — the SUNIL application container plugs in HERE.
+  #
+  # Intentionally commented out: no application code exists on `V2` yet
+  # (ADR-030 Amendment 1), and an app service pointing at an empty build
+  # context would make this stack fail to boot, breaking the Phase 0 exit
+  # criterion ("Compose stack boots green"). Uncomment and fill in when the
+  # rebuilt gateway lands. The seams it needs are already provided above:
+  # Postgres+pgvector for memory/entities, LiteLLM as the only egress to
+  # model providers, n8n reachable for turn triggers (C5).
+  #
+  # api:
+  #   build:
+  #     context: ..
+  #     dockerfile: infra/api/Dockerfile
+  #   container_name: ${COMPOSE_PROJECT_NAME:-sunil-v2}-api
+  #   restart: unless-stopped
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sunil}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sunil}
+  #     # C2 provider base-URL override (ADR-017): the router policy does not
+  #     # change, only where it sends the call. Rollback = unset this.
+  #     LLM_BASE_URL: http://litellm:4000
+  #     LLM_API_KEY: ${LITELLM_MASTER_KEY}
+  #     N8N_BASE_URL: http://n8n:5678
+  #   ports:
+  #     - "${API_HOST_PORT:-8000}:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     litellm:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 30s
+  #   networks: [sunil]
+
+volumes:
+  pgdata:
+    name: ${COMPOSE_PROJECT_NAME:-sunil-v2}_pgdata
+  n8n_data:
+    name: ${COMPOSE_PROJECT_NAME:-sunil-v2}_n8n_data
+
+networks:
+  # One shared bridge network. Services address each other by service name on
+  # their container-internal ports (postgres:5432, litellm:4000, n8n:5678) —
+  # host port mappings above are for humans and for the host-native tooling,
+  # not for inter-service traffic.
+  sunil:
+    name: ${COMPOSE_PROJECT_NAME:-sunil-v2}_net
+    driver: bridge
