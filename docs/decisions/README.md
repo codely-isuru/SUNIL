@@ -37,7 +37,12 @@ that supersedes it, or — where the decision survives and only part of it moves
 | [027](ADR-027-streaming-transport.md) | **NDJSON streamed from the chat POST**, selected by `Accept`. **Supersedes ADR-009**; contradicts FR-024's "over WebSocket" and argues it | Proposed (M2, 2026-08-19) |
 | [028](ADR-028-only-the-analysis-call-streams.md) | **Only the analysis call streams.** A partial plan is not a validated plan, so the plan call is consumed whole | Proposed (M2, 2026-08-19) |
 | [029](ADR-029-cooperative-cancellation.md) | **Cancellation is a client disconnect**; `cancelled` becomes a real terminal state. **Supersedes ADR-010 in part**; closes DC-7 and D-4 | Proposed (M2, 2026-08-19) |
-| [030](ADR-030-integrate-open-source-components.md) | **Integrate open-source behind existing seams** (n8n edition): MCP servers, LiteLLM, Mem0, OpenHands, n8n, Hermes (channels), OmniRoute (dev lane). SUNIL core kept custom. Extends the plan of record; supersedes nothing in ADR-001..029 | Proposed (V2, finalised 2026-08-21) |
+| [030](ADR-030-integrate-open-source-components.md) | **Integrate open-source behind existing seams** (n8n edition): MCP servers, LiteLLM, Mem0, OpenHands, n8n, Hermes (channels), OmniRoute (dev lane). SUNIL core kept custom. Extends the plan of record; supersedes nothing in ADR-001..029 | Proposed (V2, finalised 2026-08-21) · **Amended once** (Amendment 1, clean-slate rebuild on `V2`, owner 2026-09-10) |
+| [031](ADR-031-parked-turns-and-continuations.md) | **A turn that hits ASK_USER ends `parked`**; approval runs a persisted system continuation (consume CAS, single-use binding). Adds the third `outcome` to the C5 envelope | Proposed (V2 Phase 0, 2026-09-10) |
+| [032](ADR-032-v2-deployment-topology-and-ports.md) | **V2 dev topology:** app on host, infra in Compose (`infra`/`full` profiles); fixed loopback ports — web 3000, api 8000, postgres 5432, litellm 4000, n8n 5678, openhands 3400, langfuse 3200 | Proposed (V2 Phase 0, 2026-09-10) |
+| [033](ADR-033-gateway-egress-and-named-host-rule.md) | **Egress URLs:** ADR-017's canonical-or-loopback rule extended with a closed code-level set of named Compose hosts (`litellm`, `n8n`); population-scoped gateway↔direct kill switch invisible to router policy. Extends ADR-017 without amending it | Proposed (V2 Phase 0, 2026-09-10) |
+| [034](ADR-034-mcp-permission-mapping-and-trust.md) | **MCP mapping:** server = tool, MCP tool = operation; SUNIL config authoritative — server self-description (incl. `readOnlyHint`) never participates in permission decisions; startup drift check | Proposed (V2 Phase 0, 2026-09-10) |
+| [035](ADR-035-machine-caller-authentication.md) | **Machine callers** (n8n triggers): static bearer `SUNIL_SERVICE_TOKEN`, structurally scoped to `POST /api/v1/chat` by route registration; audit `channel`/`channel_label` | Proposed (V2 Phase 0, 2026-09-10) |
 
 ADR-017 and ADR-018 answer questions raised by QA against the running build, not by a review. They
 are Architect rulings issued mid-flight because T5, T6 and T8 were still open and the cost of ruling
@@ -67,6 +72,7 @@ contingency rather than a constraint.
 | ADR-005 | Context line re-stated: two logical LLM stages, 7.5–17.5 s nominal | 2026-08-14 |
 | ADR-009 | T12 pre-classified OPTIONAL / post-M1; `SUNIL_PROGRESS_EVENTS` defaults `false` | 2026-08-14 |
 | `ARCHITECTURE_V1.md` | Amendment log A-1 … A-14 at the head of the document | 2026-08-14 |
+| ADR-030 | Amendment 1 — clean-slate rebuild on `V2` (owner): `main` keeps the M1 reference build; C1–C5 become greenfield interface definitions; component decisions unchanged | 2026-09-10 |
 
 **M9 amendment index — where a voice decision moved after it was first written:**
 
@@ -83,6 +89,13 @@ contingency rather than a constraint.
 §13; build plan `docs/M2_BUILD_PLAN.md` (T40 … T51). **M2 is the next build** — the owner reversed the
 M2/M9 order on 2026-08-19 so that voice lands once on a streaming foundation rather than being
 retrofitted.
+
+**V2 Phase 0 — ADR-031 … ADR-035.** The contract-freeze decisions for the clean-slate rebuild
+(ADR-030 Amendment 1). Each fixes a point `V2_DEVELOPMENT_PLAN.md` left open or argues a deviation
+from an M1 shape; their companion documents are `docs/contracts/C1…C5` and
+[`docs/ARCHITECTURE_V2.md`](../ARCHITECTURE_V2.md). ADR-033 extends ADR-017 without amending it —
+the canonical-or-loopback rule is unchanged; what ADR-033 adds is the case of self-hosted gateways
+that have no public canonical host.
 
 Two of these overrule earlier records rather than extending them, and both say so on their face:
 **ADR-027 supersedes ADR-009** (whose separate SSE channel was specified but never built) and
