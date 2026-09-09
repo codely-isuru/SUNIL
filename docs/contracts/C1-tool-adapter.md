@@ -267,7 +267,46 @@ connection maps to `transport_error` (retryable by policy; `upstream_error` is n
 - **Identity:** `server_id` = the config key (e.g. `github_mcp`, `n8n_mcp`); pinned versions
   recorded in config (`version:` for stdio packages, base URL for HTTP).
 
-## 6. FAKE specification — `FakeToolAdapter` (QA-buildable, no questions)
+## 6. FAKE specification — adapter + hooks (QA-buildable, no questions)
+
+Four fakes cover every seam the Tool Manager is constructed with. Only two live in this contract;
+the approvals seam's fake is C4's — defined once, used by both suites.
+
+| Seam | Fake | Module |
+|---|---|---|
+| `ToolAdapter` | `FakeToolAdapter` | `apps/api/tests/fakes/fake_tool_adapter.py` |
+| `PermissionHook` | `FakePermissionHook` | `apps/api/tests/fakes/fake_hooks.py` |
+| `AuditHook` | `RecordingAuditHook` | `apps/api/tests/fakes/fake_hooks.py` |
+| `ApprovalsService` | `FakeApprovalsService` | `apps/api/tests/fakes/fake_approvals.py` — **C4 §6's spec verbatim**, no C1-specific variant |
+
+### 6.1 `FakePermissionHook` (exact behaviour)
+
+Constructor `FakePermissionHook()` — empty grant registry (`dict[tuple[str, str, str],
+PermissionDecision]`). Grant-registration API (the one C1 tests 3–5 use):
+
+```python
+def grant(self, agent_id: str, tool: str, operation: str,
+          decision: Literal["allow", "deny", "ask_user"]) -> None: ...
+```
+
+`__call__(*, agent_id, tool, operation)` returns, deterministically:
+
+- triple in the registry → `PermissionResult(decision=<granted>, reason="granted",
+  source=f"fake:{agent_id}.{tool}.{operation}")`
+- triple absent → `PermissionResult(decision=PermissionDecision.DENY,
+  reason="no grant for this triple (default deny)", source="fake:default")` — default-deny is the
+  fake's structure too, mirroring the engine.
+
+### 6.2 `RecordingAuditHook` (exact behaviour)
+
+Constructor `RecordingAuditHook()`. State: `self.attempts: list[ToolCallAttempt]`,
+`self.finalised: dict[str, dict]`. `attempt(record)` appends and returns
+`f"audit-{len(self.attempts)}"` (`audit-1`, `audit-2`, …). `finalise(audit_id, *, outcome,
+error_kind, duration_ms)` stores `{"outcome": outcome, "error_kind": error_kind,
+"duration_ms": duration_ms}` under `audit_id`; a second `finalise` for the same id raises
+`AssertionError("double finalise")`.
+
+### 6.3 `FakeToolAdapter`
 
 Module: `apps/api/tests/fakes/fake_tool_adapter.py` (importable by every stream's tests).
 
@@ -296,18 +335,44 @@ constructor `FakeToolAdapter(clock=time.monotonic)`; `start()`/`stop()` set/clea
 
 Every result's `meta` = `ToolResultMeta(adapter_kind=NATIVE, server_id=None, duration_ms=<measured>)`.
 
-Contract tests (published as `apps/api/tests/contracts/test_c1_tool_adapter.py`) that any adapter
-implementation must pass, run first against `FakeToolAdapter`:
+### 6.4 Contract tests
 
-1. unknown operation → `unknown_operation`, audit row written with `permission_decision=None`.
-2. extra param key → `invalid_params` (proves `extra="forbid"`).
-3. empty permission registry → `write_item` returns `permission_denied` (structural default-deny).
-4. grant `ask_user` on `fake_tool.write_item`, no approval → `approval_required` AND the park hook
-   received a `ParkRequest` with `args_hash = sha256(canonical_json(params))` (C4 §5).
-5. same grant + consumable approval bound to the same hash → executes, `ok=True`, audit row carries
-   `approval_id`.
+Published as `apps/api/tests/contracts/test_c1_tool_adapter.py`; any adapter implementation must
+pass them, run first against the fakes. Fixture for every test:
+`ToolManager([FakeToolAdapter()], FakePermissionHook(), FakeApprovalsService(),
+RecordingAuditHook())`; `trace = TraceContext(request_id="req-1", task_id="task-1",
+conversation_id="conv-1")`.
+
+1. unknown operation → `unknown_operation`; one attempt row with `permission_decision=None`,
+   finalised `outcome="error"`.
+2. extra param key → `invalid_params` (proves `extra="forbid"`); attempt row has `args_hash=None`.
+3. empty grant registry → `write_item` returns `permission_denied` (structural default-deny).
+4. `hook.grant("agent-1", "fake_tool", "write_item", "ask_user")`, execute with no `approval` →
+   `approval_required` AND `FakeApprovalsService` now holds exactly one `pending` approval whose
+   `args_hash == sha256(canonical_json(validated params))` (rule below) and whose
+   `request_id/task_id/conversation_id` equal the `TraceContext` values.
+5. same grant; take test 4's `approval_id`, `fake_approvals.decide(approval_id, "approve", None,
+   now)`, re-execute the IDENTICAL params with `approval=approval_id` → executes, `ok=True`; the
+   attempt row carries `approval_id`; the approval's status is `consumed`. Re-executing a third
+   time with the same id → `approval_invalid` (single-use, C4 test 1's property seen from C1).
 6. `sleep_forever` → `timeout` in < 1 s wall clock.
-7. every case above produced exactly one audit record (the hook is a recording fake).
+7. every case above produced exactly one attempt AND exactly one finalise (two-phase pairing).
+   Ordering probe (attempt precedes execution): build one extra manager whose adapter is a
+   `FakeToolAdapter` with its `echo` handler wrapped test-locally to append `"execute"` to a shared
+   `events: list[str]`, and whose audit hook is a `RecordingAuditHook` subclass whose `attempt`
+   appends `"attempt"` to the same list — after one `echo` call assert
+   `events == ["attempt", "execute"]`.
 
 `args_hash` canonicalisation (normative for C1 and C4): `sha256` hex digest of the UTF-8 JSON
 serialisation of the **validated** params model with `sort_keys=True`, separators `(",", ":")`.
+
+## Changelog
+
+- **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
+  merged). `execute` signature typed: `TraceContext` + `approval: str | None` (QA B2). Consume
+  ownership: the manager consumes via the C4 `ApprovalsService` seam, which replaces `ParkHook`;
+  continuation path re-enters the pipeline (QA B3, ADR-031 Amendment 1). Two-phase audit
+  (`attempt`/`finalise`, `ToolCallAttempt` typed) (Security item 3). Fake specs added for
+  `PermissionHook` (grant API), `AuditHook`; approvals fake = C4 §6 (QA B1). Strip-list defined
+  recursive + case-insensitive, cosmetic (Security item 4). `credential_env:`→`Settings` mapping
+  specified (QA should-fix). Plan-literal cross-reference in step 2 (Security build-check item 5).
