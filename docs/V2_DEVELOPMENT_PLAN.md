@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-19, finalised 2026-08-21 · **Basis:** finalised architecture (ADR-030, n8n edition) · **Repo:** codely-isuru/SUNIL · **Branch:** `V2`
 **Design rule:** every stream builds against a frozen contract, not against another stream's code — so streams run simultaneously and plug in at the end. This mirrors how the repo already works (ADR-017 base-URL test seams, exclusive file ownership per task).
-**Companion docs:** [`decisions/ADR-030-integrate-open-source-components.md`](decisions/ADR-030-integrate-open-source-components.md) · [`V2_INTEGRATION_ROADMAP.md`](V2_INTEGRATION_ROADMAP.md) · [`design/ARCHITECTURE_V2_FINAL.html`](design/ARCHITECTURE_V2_FINAL.html). **Status:** proposal on `V2` — not plan-of-record until the owner merges; M1 stays the live control plane, M2/M9 untouched.
+**Companion docs:** [`decisions/ADR-030-integrate-open-source-components.md`](decisions/ADR-030-integrate-open-source-components.md) · [`V2_INTEGRATION_ROADMAP.md`](V2_INTEGRATION_ROADMAP.md) · [`design/ARCHITECTURE_V2_FINAL.html`](design/ARCHITECTURE_V2_FINAL.html). **Status:** ADOPTED (owner, 2026-09-10) with **Amendment 1 — clean-slate rebuild**: `V2` starts with no app code; contracts C1–C5 are greenfield interfaces informed by the M1 reference build on `main`. Where this plan says a seam "exists", read: exists on `main` as reference, is rebuilt here.
 
 ---
 

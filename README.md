@@ -8,32 +8,17 @@ operations (Codely Digital, Ezy Clean Co), autonomous AI teams, tasks and
 reminders, communications, long-term memory, computer control and multi-LLM
 routing — all managed through a configurable web portal.
 
-## Status
+## Branches
 
-**Phase 0 — assessment and design.** The repository currently contains the
-original UI prototypes and the full architecture/design documentation.
-Implementation begins with Phase 1 (Foundation).
-
-## Repository layout
-
-```
-prototype/   Original command-centre HTML prototypes (design reference)
-docs/        Architecture, security, integrations and implementation plan
-```
-
-## Documentation
-
-| Document | Contents |
+| Branch | What it holds |
 |---|---|
-| [docs/CURRENT_ARCHITECTURE.md](docs/CURRENT_ARCHITECTURE.md) | Assessment of the existing repository and prototypes; reuse decisions |
-| [docs/SUNIL_ARCHITECTURE.md](docs/SUNIL_ARCHITECTURE.md) | Target architecture: stack, orchestrator, agent runtime, jobs, memory, portal, data model, APIs |
-| [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Phases 0–7 with exit tests and the critical test scenarios |
-| [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md) | Identity, secrets, agent permissions, approvals, prompt-injection defence, computer control |
-| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Microsoft Graph, Teams, Jira, Ezy Clean mailbox, support adapter, weather, LLM providers |
+| `main` | **V1 / M1 — live-verified build** (FastAPI + Next.js, 564 tests): orchestrator, validated plans, permission engine, GitHub tool, audit spine. Kept as the reference implementation and fallback. |
+| `V2` | **The V2 rebuild (this branch)** — clean slate by owner decision 2026-09-10. Docs only until the Minions team delivers Phase 0. |
 
-## Prototypes
+## Status (V2 branch)
 
-Open `prototype/sunil-command-centre.html` in a browser to see the design
-reference: the animated HUD, connector panel, content queue, stats bar and the
-"Brief Me" voice interaction. Data in the prototype is hard-coded; the real
-platform replaces it with live services per the architecture docs.
+**Phase 0 — contracts & platform.** Read [`docs/STATUS.md`](docs/STATUS.md) first.
+The finalised architecture is [ADR-030](docs/decisions/ADR-030-integrate-open-source-components.md)
+(n8n edition) + Amendment 1 (clean-slate rebuild); the build plan is
+[`docs/V2_DEVELOPMENT_PLAN.md`](docs/V2_DEVELOPMENT_PLAN.md); the diagram is
+[`docs/design/ARCHITECTURE_V2_FINAL.html`](docs/design/ARCHITECTURE_V2_FINAL.html).

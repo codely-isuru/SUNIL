@@ -16,6 +16,22 @@
 
 ## 1. What happened
 
+### 2026-09-10 — V2 clean slate (owner decision) · Minions V2 engagement starts
+
+**Owner decision:** branch `V2` starts with **no application code**. Removed from `V2`:
+`apps/` (M1 FastAPI + Next.js), `config/`, `scripts/`, `prototype/`, V1 CI and `.env.example`
+(256 files). **`main` keeps the complete live-verified M1 build** as reference + fallback.
+Recorded as **ADR-030 Amendment 1**; `V2_DEVELOPMENT_PLAN.md` is now ADOPTED with contracts
+C1–C5 read as greenfield interfaces informed by M1. Branch cleanup 2026-09-10: all task/*,
+feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescript-foundation`
+kept; full pre-cleanup bundle at `C:epo\SUNIL-branches-archive-2026-09-10.bundle`).
+
+**Engagement:** Minions team on branch `V2`, due **2026-10-08**, budget **$300**, urgency ASAP.
+Models per owner: developers Opus 4.8 · QA Opus 5 · Solution Architect Fable 5.1 · Security
+Reviewer Fable (hard rule). First unit of work: **Phase 0 — contracts C1–C5 + Compose platform
++ fakes** per `V2_DEVELOPMENT_PLAN.md`.
+
+
 ### 2026-08-21 — V2 architecture finalised (branch `V2`)
 
 The owner delivered the **finalised SUNIL architecture** (`design/ARCHITECTURE_V2_FINAL.html`)

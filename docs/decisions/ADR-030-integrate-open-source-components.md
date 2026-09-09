@@ -94,3 +94,27 @@ audit spine, dashboard, entity memory schema, Codely Support tool, privacy class
 - The "models are replaceable resources" principle now applies to every integrated component: each
   sits behind a SUNIL-owned interface and can be swapped.
 - Supersedes nothing in ADR-001..029; extends the plan of record. M1/M2/M9 are untouched.
+
+---
+
+## Amendment 1 — clean-slate rebuild on branch `V2` (owner decision, 2026-09-10)
+
+The owner directed that the `V2` branch start **empty of application code**: the M1 build
+(`apps/`, `config/`, `scripts/`, plus the pre-reset `prototype/` mockups and V1 CI) was removed
+from `V2` in this commit. This changes one premise of this ADR — "plugs into existing seams"
+becomes "**rebuilds those seams fresh on `V2`**":
+
+- **`main` keeps the complete live-verified M1 build** (564 tests, live turn 2026-08-19). It is
+  the reference implementation and fallback, not deleted history.
+- The component decisions above (what to integrate, what stays custom, what was rejected) are
+  **unchanged**. The custom product surface — gateway, orchestrator + plan validation, permission
+  engine + approvals, audit spine, dashboard, entity schema — is now **built new on `V2`**,
+  integration-first, using the M1 code on `main` as the informing reference.
+- `V2_DEVELOPMENT_PLAN.md` Phase 0 contracts C1–C5 are therefore **greenfield interface
+  definitions** (informed by M1's proven shapes) rather than documentation of existing code.
+- ROADMAP §25/§26/§33 rules (validated plans, permission chokepoints, full audit) apply to the
+  rebuild unchanged; M2/M9 (streaming, voice) remain scoped to `main`'s build and their designs
+  carry over as requirements for the rebuilt gateway.
+
+Risk accepted by the owner: the rebuild forgoes the shortcut of reusing verified code in place;
+mitigation is that `main` remains runnable and diffable throughout.
