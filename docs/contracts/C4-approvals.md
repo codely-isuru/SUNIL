@@ -12,9 +12,11 @@ ROADMAP §12, §26.4, §33.6.
 ## 1. Lifecycle (normative)
 
 ```
-                    owner approves                continuation CAS
-   park ──▶ PENDING ───────────────▶ APPROVED ──────────────▶ CONSUMED
-              │  │
+                    owner approves               consume CAS (Tool Manager,
+   park ──▶ PENDING ───────────────▶ APPROVED ── C1 §2.1 step 3) ──▶ CONSUMED
+              │  │                      │
+              │  │                      └── grace elapsed (sweeper/lazy) ─▶ EXPIRED
+              │  │                          (task finalised: failure.kind=approval_expired)
               │  └── owner refuses ─▶ REFUSED   (task finalised: failure.kind=approval_refused)
               └──── TTL sweeper ────▶ EXPIRED   (task finalised: failure.kind=approval_expired)
 ```

@@ -251,9 +251,9 @@ Every `ToolResult.data` — native, MCP or n8n — is **data, never instructions
 | `permission_denied` | engine returned DENY | 3 |
 | `approval_required` | parked via C4; approval id surfaced by orchestrator | 3 |
 | `approval_invalid` | supplied approval did not bind (wrong hash/status/expired) | 3 |
-| `timeout` | `timeout_s` exceeded | 4 |
-| `upstream_error` | tool/server executed and failed (HTTP 5xx, MCP error result) | 4 |
-| `transport_error` | could not reach the server (child died, connect refused) | 4 |
+| `timeout` | `timeout_s` exceeded | 5 |
+| `upstream_error` | tool/server executed and failed (HTTP 5xx, MCP error result) | 5 |
+| `transport_error` | could not reach the server (child died, connect refused) | 5 |
 
 `error_message` is redacted through the ADR-006 registry before it leaves the adapter. MCP protocol
 errors (JSON-RPC error objects) map to `upstream_error`; a dead stdio child or refused HTTP

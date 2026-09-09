@@ -162,7 +162,7 @@ Nothing else reads the process environment (M1 law: `settings.py` is the single 
 
 ## 6. L-001 trace — one mutating request, end to end, at real addresses
 
-Scenario (dev topology, ADR-032 `infra` profile): the owner types **"close issue #42 in
+Scenario (ADR-032 host-mode dev topology, Amendment 1 ports): the owner types **"close issue #42 in
 codely-isuru/SUNIL"**. `github_mcp.issues_close` is granted `ask_user` for `project_manager` in
 `config/permissions.yaml`. Every hop names its mechanism; every mechanism appears in §4/§5.
 
