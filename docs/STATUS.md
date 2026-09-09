@@ -24,7 +24,15 @@
 Recorded as **ADR-030 Amendment 1**; `V2_DEVELOPMENT_PLAN.md` is now ADOPTED with contracts
 C1–C5 read as greenfield interfaces informed by M1. Branch cleanup 2026-09-10: all task/*,
 feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescript-foundation`
-kept; full pre-cleanup bundle at `C:epo\SUNIL-branches-archive-2026-09-10.bundle`).
+kept; full pre-cleanup bundle at `C:
+epo\SUNIL-branches-archive-2026-09-10.bundle`).
+
+**Phase 0 progress (2026-09-10):** both lanes DONE and DM-verified — `task/P0-contracts`
+(SA: C1–C5 frozen v1.0.0, ARCHITECTURE_V2, ADR-031..035, 9 commits) and `task/P0-platform`
+(DevOps: Compose stack pg17+pgvector:5433 / LiteLLM:4000 / n8n:5680 booted + probed, CI green
+run 34370950604, 8 commits). Independent QA + Security reviews IN FLIGHT; known cross-lane
+drift to resolve before merge: ADR-032 ports (5432/5678) vs actual host bindings (5433/5680).
+Merge to `V2` only after PASS/APPROVE, then Gate 2 (owner).
 
 **Engagement:** Minions team on branch `V2`, due **2026-10-08**, budget **$300**, urgency ASAP.
 Models per owner: developers Opus 4.8 · QA Opus 5 · Solution Architect Fable 5.1 · Security
