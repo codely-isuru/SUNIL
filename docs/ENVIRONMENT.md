@@ -239,9 +239,15 @@ cp .env.example .env
 ./scripts/dev-down.sh       # --volumes to discard all data
 ```
 
-The scripts check the Docker **daemon** (not just the CLI), create `.env` from the template if
-missing, fail fast on missing required secrets, warn about host-level port conflicts, validate the
-compose file, then block until every healthcheck reports `healthy`. They are idempotent.
+**Preferred: do not copy the template — just run `dev-up`.** With no `.env` present it creates
+one and generates real random values for the secrets (see *Secrets* below), which is why the
+`copy .env.example .env` line above is now the fallback rather than the first step.
+
+The scripts check the Docker **daemon** (not just the CLI), create `.env` and
+`infra/.env.litellm` from their templates if missing (generating the secrets they can), **refuse
+to boot if any required secret is still a `dummy`/`change-me` template value**, warn about
+host-level port conflicts, validate the compose file, then block until every healthcheck reports
+`healthy`. They are idempotent.
 
 Raw equivalent — note the explicit `--env-file`, without which Compose looks for `infra/.env`
 next to the compose file rather than the repo-root `.env`:
@@ -252,11 +258,25 @@ docker compose --env-file .env -f infra/docker-compose.yml up -d
 
 ### First boot
 
-Slower than later ones (allow a few minutes): Postgres runs `initdb` plus
-`infra/postgres/init/01-init-databases.sh`, which enables `vector` + `uuid-ossp` and creates the
-`litellm` and `n8n` databases; then LiteLLM pushes its Prisma schema and n8n runs its own
-migrations. That init script only runs on an **empty** volume — to re-run it you must
-`dev-down --volumes`, which destroys the data.
+Slower than later ones (measured: 44s on this machine): Postgres runs `initdb` plus
+`infra/postgres/init/01-init-databases.sh`, which enables `vector` + `uuid-ossp`, creates the
+`litellm` and `n8n` databases **and their two least-privilege roles**, and revokes `CONNECT` on
+`sunil` from both; then LiteLLM pushes its Prisma schema (70 tables) and n8n runs its own
+migrations (136 tables). That init script only runs on an **empty** volume — to re-run it you
+must `dev-down --volumes`, which destroys the data.
+
+Two things that make a first boot fail where a re-boot succeeds, both found the hard way:
+
+- **The init script must be LF.** It is bind-mounted and executed inside a Linux container; with
+  CRLF the kernel cannot find the interpreter and the container exits **255**. `.gitattributes`
+  enforces LF, but a worktree created while `core.autocrlf=true` can still hold CRLF on disk —
+  `git rm --cached -r . && git reset --hard HEAD` renormalises it. `file infra/postgres/init/*.sh`
+  should say nothing about CRLF.
+- **"It booted" is not "it first-booted".** If `sunil-v2_pgdata` already exists, the init script
+  does not run at all and the log lines you are reading are from an earlier volume. Check
+  `docker volume ls --filter name=sunil-v2` is empty before claiming first-boot evidence.
+  When tearing down, name the volumes deliberately: this host also carries `sunil_pgdata` /
+  `sunil_redisdata` from V1 and volumes for six unrelated projects.
 
 ### Health endpoints
 
@@ -266,6 +286,51 @@ migrations. That init script only runs on an **empty** volume — to re-run it y
   dummy keys — that is expected, not a broken stack.
 - n8n — `http://localhost:5680/healthz`
 
+### Loopback binding (added 2026-09-10, fix round)
+
+**Every published port is bound to `127.0.0.1` explicitly**, and CI parses the resolved compose
+config to assert it. A bare `"5433:5432"` publishes on `0.0.0.0` — every interface, including the
+LAN and each WSL/Docker virtual adapter — which is the configuration ADR-032 rejects by name.
+Phase 0 shipped that way for a day and it was reachable off-box: reviewers got HTTP 200 for n8n
+and LiteLLM from `172.21.240.1`. n8n is the worst case, because its first-boot owner-setup screen
+is unauthenticated — whoever reaches the port first owns the vault. Verified after the fix:
+`curl` to all three ports on all three of this host's IPv4 addresses is refused, while
+`127.0.0.1` answers.
+
+The same rule applies to host-native processes: `API_HOST=127.0.0.1`, never `0.0.0.0`.
+
+### Two env files, on purpose (added 2026-09-10, fix round)
+
+| File | Tracked? | Who reads it |
+|---|---|---|
+| `.env` | no (`.env.example` is) | Compose interpolation — every service, plus host-native app processes |
+| `infra/.env.litellm` | no (`infra/.env.litellm.example` is) | the **LiteLLM container only**, via `env_file:` |
+
+Upstream provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) and `LITELLM_SALT_KEY` live in the
+second file. ADR-030 §2 promises the application never holds an upstream credential, and a single
+shared `.env` quietly broke that: every process reading it saw the provider keys.
+`LITELLM_MASTER_KEY` stays in `.env` — it is the gateway's admin credential, and the app
+authenticates with a **virtual** key minted against it (`LITELLM_VIRTUAL_KEY_DEFAULT`).
+
+Do not name a provider key in the litellm service's `environment:` block: `environment:` overrides
+`env_file:`, so an interpolation from `.env` would silently blank the scoped value.
+
+### Three database roles (added 2026-09-10, fix round)
+
+| Database | Owner role | Can connect to `sunil`? |
+|---|---|---|
+| `sunil` | `sunil` (superuser) | — |
+| `litellm` | `litellm_user` | **no** (`CONNECT` revoked) |
+| `n8n` | `n8n_user` | **no** (`CONNECT` revoked) |
+
+`CONNECT` is also revoked from `PUBLIC` on all three, since Postgres grants it implicitly and the
+named revokes would otherwise be cosmetic. Rationale (TB9): `sunil` holds `approvals` and
+`audit_events`, and ADR-031's startup re-scan *executes* what it finds in state `approved` — a
+compromised n8n holding superuser could flip a row and have SUNIL act on it. Passwords:
+`LITELLM_DB_PASSWORD`, `N8N_DB_PASSWORD`, **alphanumeric only** (both are embedded in a
+connection URL). Applied by the init script, which runs once per volume — changing them later
+needs `ALTER ROLE`, not an edit to `.env`.
+
 ### Secrets
 
 `.env` is gitignored; only `.env.example` (dummy values) is committed. Real provider keys come
@@ -274,9 +339,25 @@ container — the application never receives an upstream provider key (ADR-030 �
 credentials for connectors live only in n8n's own vault (ADR-030 §5), encrypted with
 `N8N_ENCRYPTION_KEY`; losing or changing that key makes every stored credential undecryptable.
 
-Secrets are referenced in the compose file as `${VAR}` with **no default**, on purpose: unset
-resolves to empty so `docker compose config` still validates in CI, but a container started that
-way fails loudly instead of quietly running a guessable secret.
+Secrets are referenced in the compose file as `${VAR:?set in .env}` — **mandatory**, no default.
+Compose refuses to resolve the file at all if one is unset or empty.
+
+> ~~Secrets are referenced as `${VAR}` with no default, on purpose: unset resolves to empty so
+> `docker compose config` still validates in CI, but a container started that way fails loudly
+> instead of quietly running a guessable secret.~~
+> **Corrected 2026-09-10:** the second half of that was **false**. An empty
+> `N8N_ENCRYPTION_KEY` does not fail — n8n silently generates its own, leaving the credential
+> vault encrypted under a key nobody manages. Hence `:?`. Consequence: `docker compose config`
+> now needs an env file, so CI passes `--env-file .env.example` and a CI step asserts that
+> `config` **fails** without one.
+
+**`dev-up` will not boot the stack on a template value.** Any of `POSTGRES_PASSWORD`,
+`LITELLM_MASTER_KEY`, `N8N_ENCRYPTION_KEY`, `LITELLM_DB_PASSWORD`, `N8N_DB_PASSWORD` or
+`LITELLM_SALT_KEY` still matching `dummy`/`change-me` is rejected with exit 1 before anything
+starts. When `dev-up` creates the files for you it **generates** those values from a CSPRNG, so
+the normal path is `./scripts/dev-up.sh` with **no `.env` at all** — not `cp .env.example .env`.
+This repository is public: a stack running on the template passwords is a stack running on
+published passwords.
 
 ### Scripts must stay ASCII
 

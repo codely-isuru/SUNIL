@@ -66,11 +66,117 @@ than assuming it is free; then scan forward for the first genuinely free port an
 the default was not used. On a shared dev box, assume every conventional port is already taken by
 some other project.
 
+## L-P0-5 — I captured the evidence and did not READ it against the ADR I had cited
+
+**LESSON:** Phase 0 was BLOCKED by both reviewers for publishing every port on `0.0.0.0`. The
+damning part is not the mistake, it is where it was found: **in my own acceptance evidence.** I
+pasted `0.0.0.0:4000`, `0.0.0.0:5680`, `0.0.0.0:5433` into the task file as *proof of success*,
+three paragraphs after citing ADR-032 — the ADR that rejects `0.0.0.0` by name. I ran the right
+command, transcribed the right output, and never compared it to the requirement. QA and Security
+both read the paste and found the defect in it.
+
+**ROOT CAUSE:** I treated evidence as a ritual to satisfy ("did the command run and did it
+produce output?") rather than as an assertion to check ("does this output satisfy the specific
+clause I am claiming compliance with?"). Docker's default publish behaviour is `0.0.0.0` and the
+short `"5433:5432"` form gives no visual hint that a host IP is missing, so nothing prompted the
+comparison. Related self-deception in the same task file: I claimed a first boot on a volume
+that already existed, so the init script never ran — "the stack came up healthy" was true and
+"the init script created three databases" was read off an earlier run's volume.
+
+**RULE — three habits, in order:**
+1. **Every evidence line gets read back against the specific clause it proves.** Quote the
+   requirement next to the output. If I cite an ADR, I open it and check the paste against its
+   wording — a citation is not a check.
+2. **A first-boot claim requires a proven-empty volume.** Before claiming any once-per-volume
+   behaviour (init scripts, `initdb`, migrations, seed data), name the volumes, delete them,
+   show `docker volume ls` returning nothing for that project, and only then boot. If the
+   pre-condition is not in the evidence, the claim is not evidence. Same class as any
+   "idempotent"/"fresh install" claim: state the starting state or do not make the claim.
+3. **Turn the check into a machine that reads it for me.** A human reading their own output is
+   the weakest link, so the assertion now lives in CI: parse the resolved compose config and
+   assert `host_ip == 127.0.0.1` on every published port, and assert the ports equal the ADR's
+   table. Anything I would have to remember to eyeball is a check I will eventually skip.
+
+## L-P0-6 — "unset resolves to empty, so the container fails loudly" is an assumption, not a fact
+
+**LESSON:** I declared secrets as bare `${VAR}` and documented that an unset value "makes the
+container fail loudly instead of silently running a known-value secret." False for n8n: an empty
+`N8N_ENCRYPTION_KEY` makes it **generate its own key**, so the vault holding every tool
+credential ends up encrypted under a key nobody manages or backs up. I never tested it — the
+comment described intended behaviour as though it were observed behaviour.
+
+**ROOT CAUSE:** a convenience convention (empty must be safe, because it keeps
+`docker compose config` lintable in CI without a `.env`) got retro-justified with a fail-closed
+story I had not verified for any of the four services it covered.
+
+**RULE:** prefer `${VAR:?message}` — Compose then refuses to resolve at all, which is
+fail-closed by construction and needs no per-image knowledge. Keep CI lintable by passing
+`--env-file .env.example` instead, and add the inverse assertion: `config` with **no** env file
+must FAIL, so the guard is tested rather than assumed. Generally: when a comment claims a
+failure mode, either reproduce it or delete the claim.
+
+## L-P0-7 — never let a placeholder filter see the filename
+
+**LESSON:** My CI secret scan piped `git grep -n` through
+`grep -viE 'dummy|change-me|example|placeholder'`. The filter matched **whole lines including
+the path**, so every finding in a path containing "example" was dropped — a real Anthropic key
+pasted into `.env.example` was invisible to the scan whose entire purpose is guarding
+`.env.example`. QA demonstrated it with a planted key.
+
+**ROOT CAUSE:** the filter's intended domain was the matched VALUE; its actual domain was
+`path:lineno:content`. Composing two line-oriented tools silently widened the input.
+
+**RULE:** allowlists apply to the narrowest possible field, extracted first. Split
+`path:lineno:content` and filter `content` only. Then prove it: plant a real-shaped secret in
+the file the scan is most responsible for and confirm exit 1. A scan that has never caught
+anything is untested, not clean. (Third instance of the same family as L-P0-2: guards need
+negative fixtures. I now write the failing fixture *first*, run it, then delete it.)
+
+## L-P0-8 — one shared `.env` breaks credential scoping no matter what the ADR says
+
+**LESSON:** ADR-030 §2 says the application never holds an upstream provider key, and I put
+`ANTHROPIC_API_KEY` in the single root `.env` that Compose interpolation, `dev-up` and every
+future container read. The architectural boundary existed only in prose.
+
+**RULE:** scope a credential to the one consumer that needs it — a per-service `env_file:` with
+its own gitignored file and a committed `.example` twin. Verify by inspection, per container
+(`docker exec <other-service> printenv THE_KEY` must be empty). And remember `environment:`
+**overrides** `env_file:` in Compose, so naming the variable in both silently blanks the scoped
+value.
+
+## L-P0-9 — a worktree on a CRLF machine can defeat `.gitattributes`
+
+**LESSON:** `.gitattributes` said `*.sh text eol=lf` and the index was clean, yet this worktree
+held CRLF copies of the bind-mounted Postgres init script. A true first boot would have failed
+with exit **255** (the kernel cannot find the interpreter named on a `#!...\r` line). It only
+went unnoticed because the volume already existed, so the script never ran.
+
+**RULE:** after creating a worktree on a machine with `core.autocrlf=true`, renormalise
+(`git rm -q --cached -r . && git reset --hard HEAD`) and verify with
+`file path/to/script.sh` — it must not say "CRLF". Do this for anything a container or
+interpreter executes, before trusting a green run. Side note: the renormalise may surface
+CRLF-in-blob for files outside your lane (it did: two `.md` files) — flag those to their owner
+rather than committing another lane's 291-line whitespace diff.
+
 ## Handy facts for this project
 
 - Windows build machine: Docker engine 29.7.2, Compose v5.5.1, daemon normally **up**.
 - Reserved: **4317 = Minions Portal**, never bind it. Occupied by others: 5432, 5678, 5679, 3000, 3306.
-- SUNIL V2 platform ports: Postgres **5433**, LiteLLM **4000**, n8n **5680**.
+- SUNIL V2 platform ports: Postgres **5433**, LiteLLM **4000**, n8n **5680** — all bound to
+  **127.0.0.1**, asserted in CI by parsing the resolved compose config.
+- This host's own IPv4 addresses, for off-loopback probes: `172.21.240.1`, `172.30.112.1`,
+  `192.168.0.243`. A correct probe returns **curl exit 7** (connection refused).
+- Two env files: root `.env` (everything) and `infra/.env.litellm` (provider keys +
+  `LITELLM_SALT_KEY`, litellm container only). Both gitignored, both with committed `.example`.
+- Three DB roles: `sunil` (superuser), `litellm_user`, `n8n_user`; the last two cannot connect
+  to `sunil`. Created by the init script, which runs **once per volume**.
+- `sunil-v2` volumes are `sunil-v2_pgdata` / `sunil-v2_n8n_data`. `sunil_pgdata` and
+  `sunil_redisdata` are **V1's** — never delete those, and never run a bare `docker volume
+  prune` on this shared box (six unrelated projects live here).
+- Local CI dry-run trick: parse `.github/workflows/ci.yml`, pull each step's `run:` block and
+  execute it verbatim, so the dry-run tests the shipped text. Under Git Bash, invoke
+  `C:/Program Files/Git/usr/bin/bash.exe` explicitly — a plain `bash` from Windows Python
+  resolves to WSL's bash, which fails with `execvpe(/bin/bash)`.
 - Compose looks for `.env` in the **compose file's** directory. Since ours lives in `infra/` but
   the env file is at the repo root, every invocation needs an explicit
   `--env-file .env`, or interpolation silently resolves to empty.
