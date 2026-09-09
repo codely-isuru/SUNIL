@@ -2,6 +2,28 @@
 
 ## Lessons
 
+- [L-002 | 2026-09-10 | SUNIL V2 Phase 0 fix round] **LESSON:** The Phase 0 contract freeze failed
+  independent review on 7 blockers. The two structural ones: (1) ADR-032 froze a port inventory
+  from the plan while the parallel platform lane was discovering machine reality — the frozen
+  defaults pointed SUNIL's Postgres credentials and n8n token at FOREIGN processes (5432 = an
+  unrelated container, 5678 = an unrelated host-native n8n), and ADR-033's loopback-any-port
+  validator boots that silently; (2) C1 §2.1 and C4 §1/§3 each described the approval-consume as
+  theirs — followed literally the approval was consumed twice and nothing executed, so the
+  headline contract test was unsatisfiable.
+  **ROOT CAUSE:** (1) I issued a "single source of truth" inventory without a ground-truth check
+  against the lane that owns the machine, and no mechanism made divergence loud — the two branches
+  touch disjoint files, so a merge would have succeeded textually while docs and infra
+  contradicted each other. (2) The park/consume mechanism was written twice, once per document,
+  from each document's local point of view, and no single actor column ever answered "who issues
+  this CAS"; my L-001 trace hid it because the trace narrated both documents' versions as one
+  blended story instead of executing one contract literally.
+  **RULE (review-loop):** Before freezing any cross-lane inventory, verify every value against the
+  owning lane's artifacts (or the machine) and REQUIRE a CI parity check in the same document —
+  a frozen number with no tripwire is drift waiting to be discovered by a reviewer. And for every
+  state transition in a multi-document design, one table names exactly ONE actor per transition;
+  every other document may only cross-reference that table, never restate the mechanism. When a
+  trace walks a transition, it must name the component issuing it, not a blended paraphrase.
+
 - [L-001 | 2026-07-21 | SUNIL Phase 1] **LESSON:** The §16 closed config list and the §6.7 CSP
   (`connect-src 'self' <api origin>`) implied a cross-origin browser→API topology without ever
   specifying the CORS or proxy mechanism that would make it buildable. The gap surfaced during
