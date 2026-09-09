@@ -1,0 +1,109 @@
+# SUNIL V2 — LiteLLM proxy configuration (skeleton)
+# =========================================================================
+# LiteLLM is the model gateway (ADR-030 §2): the ONLY component that holds
+# upstream provider credentials. The application never sees a provider key —
+# it holds a LiteLLM virtual key and points `core/routing` at this proxy via
+# the C2 base-URL override (ADR-017). Rollback is a config flip, not a code
+# change: point the base URL back at the provider.
+#
+# HARD RULE: no real key, token or secret in this file. Every credential is
+# read from the environment at proxy start-up with LiteLLM's `os.environ/NAME`
+# indirection, and those variables are supplied by the container environment
+# (see .env.example). This file is committed; secrets are not.
+#
+# This is deliberately a SKELETON. Routing policy — capability tiers, privacy
+# classification, LOCAL-ONLY enforcement — stays in SUNIL's own router, not
+# here (ADR-030: the router keeps capability/privacy policy). What belongs
+# here is provider plumbing, virtual keys and budgets.
+# =========================================================================
+
+model_list:
+  # ---- Anthropic ---------------------------------------------------------
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-4-1
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ---- OpenAI ------------------------------------------------------------
+  - model_name: gpt-flagship
+    litellm_params:
+      model: openai/gpt-5
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ---- OmniRoute — DEV LANE, PUBLIC WORKLOADS ONLY -----------------------
+  # Commented out on purpose: this entry must not exist in any lane until a
+  # human enables it deliberately for a specific experiment.
+  #
+  # ADR-030 §8 admits OmniRoute as a dev/experimentation lane ONLY, and the
+  # ADR's "Alternatives / limited adoption" section states why it is rejected
+  # for production: free-tier evasion, prompt-mutating compression (it can
+  # rewrite the prompt before it reaches the model, which breaks the audit
+  # spine's guarantee that what we logged is what we sent), and an unclear
+  # privacy posture.
+  #
+  # Therefore, if enabled:
+  #   - PUBLIC-classified workloads ONLY. Never client data, never production
+  #     data, never anything the privacy classifier marks above PUBLIC.
+  #   - the SUNIL router must refuse to select this model for any request
+  #     whose classification is not PUBLIC — enforcement lives in the router,
+  #     NOT in this file. Uncommenting alone does not make it safe.
+  #   - it stays behind LiteLLM so it inherits routing and audit, and can be
+  #     removed by config (ADR-030 §8).
+  #
+  # - model_name: omniroute-dev-public-only
+  #   litellm_params:
+  #     model: openai/auto                       # OmniRoute speaks the OpenAI wire format
+  #     api_base: os.environ/OMNIROUTE_API_BASE  # e.g. the local build on :20129
+  #     api_key: os.environ/OMNIROUTE_API_KEY
+  #   model_info:
+  #     mode: chat
+  #     sunil_lane: dev                          # never `prod`
+  #     sunil_max_privacy_class: PUBLIC          # read by the SUNIL router
+  #     notes: >-
+  #       ADR-030 §8 dev lane. PUBLIC workloads only. Prompt-mutating
+  #       compression means request/response fidelity is NOT guaranteed —
+  #       do not use for anything that must be faithfully audited.
+
+general_settings:
+  # Admin/root credential for the proxy and its UI. Env-sourced, no default.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Encrypts provider credentials that get stored in the DB when virtual keys
+  # and models are managed at runtime (STORE_MODEL_IN_DB). Rotating this
+  # invalidates everything already encrypted with the old value.
+  salt_key: os.environ/LITELLM_SALT_KEY
+  database_url: os.environ/DATABASE_URL
+  # Per-agent virtual keys with budgets (Stream B) are created at runtime
+  # against the DB — /key/generate — not declared here, so that adding an
+  # agent does not require a proxy restart.
+  # store_model_in_db is set via the STORE_MODEL_IN_DB env var in Compose.
+
+litellm_settings:
+  drop_params: true          # tolerate provider-specific params the target model lacks
+  set_verbose: false         # NEVER true outside local debugging: verbose logs prompt bodies
+  request_timeout: 600       # seconds; long enough for streamed analysis calls (ADR-028)
+  # Redact message/response bodies from LiteLLM's own logs. SUNIL's audit
+  # spine is the source of truth for what was sent (ADR-030 §9), and it
+  # applies the capture policy (ADR-014/021). The gateway should not keep a
+  # second, unclassified copy of prompt content.
+  turn_off_message_logging: true
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  allowed_fails: 3
+  cooldown_time: 30
