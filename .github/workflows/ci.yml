@@ -41,7 +41,7 @@ jobs:
     name: Platform (compose validation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Show Docker Compose version
         run: docker compose version
@@ -219,7 +219,7 @@ jobs:
     name: Contracts (YAML / OpenAPI lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Detect contract files
         id: detect
@@ -281,7 +281,7 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Detect a Python test suite
         id: detect
@@ -293,7 +293,7 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.detect.outputs.found == 'true'
         with:
           python-version: '3.13'
