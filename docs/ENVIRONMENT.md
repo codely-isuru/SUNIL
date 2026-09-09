@@ -191,6 +191,103 @@ variables at deploy time — not read from this ambient shell and not committed 
 
 ---
 
+## 9. V2 platform (added 2026-09-10, Phase 0 — `docs/tasks/P0-platform.md`)
+
+**This section carries the current facts.** §1–§8 above are a dated V1 survey and are kept as
+history; where they disagree with this section, this section wins — notably §7, which recorded
+port 5432 as free (it is not, see below).
+
+The `V2` branch is a clean-slate rebuild with **no application code** (ADR-030 Amendment 1), so
+the platform is infrastructure only: Postgres+pgvector, LiteLLM, n8n. It boots green with zero
+app containers, and `infra/docker-compose.yml` carries a commented `api` stub showing exactly
+where the rebuilt gateway plugs in.
+
+### Ports
+
+| Service | Host port | Container port | Why not the default |
+|---|---|---|---|
+| Postgres 17 + pgvector | **5433** | 5432 | 5432 is taken by an unrelated container on this machine (`strapi-next-starter-db-1`) |
+| LiteLLM proxy | **4000** | 4000 | LiteLLM's own default; free here |
+| n8n | **5680** | 5678 | **both** 5678 and 5679 are held by a single host-native node process — the local n8n source build at `C:\repo\n8n`. 5680 is the first free port after them |
+| *(reserved)* | ~~4317~~ | — | **Minions Portal. Never bind it.** CI fails the build if the compose file publishes 4317 |
+
+Container-internal ports are deliberately left at their conventional values, so service-to-service
+URLs are the boring ones (`postgres:5432`, `litellm:4000`, `n8n:5678`). Only the host mappings move.
+
+### Pinned images
+
+| Service | Image | Why this pin |
+|---|---|---|
+| Postgres | `pgvector/pgvector:0.8.6-pg17` | pgvector project's own image, built on official `postgres:17`; pins extension **and** server version independently |
+| LiteLLM | `ghcr.io/berriai/litellm:v1.83.14-stable.patch.3` | the vetted `-stable` release lane, not the weekly `v1.89.x` head |
+| n8n | `n8nio/n8n:2.38.5` | the digest upstream's `stable` tag currently resolves to |
+
+CI rejects any floating tag (`:latest`, `:stable`, `:main`, `:next`, `:beta`) or untagged image.
+
+### How to boot
+
+```powershell
+# from the repo root
+copy .env.example .env      # then edit: the required values are dummies
+./scripts/dev-up.ps1        # boots, waits for healthchecks, prints status
+./scripts/dev-down.ps1      # teardown; add -Volumes to discard all data
+```
+
+```bash
+cp .env.example .env
+./scripts/dev-up.sh         # --pull to refresh images, --timeout N to extend the wait
+./scripts/dev-down.sh       # --volumes to discard all data
+```
+
+The scripts check the Docker **daemon** (not just the CLI), create `.env` from the template if
+missing, fail fast on missing required secrets, warn about host-level port conflicts, validate the
+compose file, then block until every healthcheck reports `healthy`. They are idempotent.
+
+Raw equivalent — note the explicit `--env-file`, without which Compose looks for `infra/.env`
+next to the compose file rather than the repo-root `.env`:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml up -d
+```
+
+### First boot
+
+Slower than later ones (allow a few minutes): Postgres runs `initdb` plus
+`infra/postgres/init/01-init-databases.sh`, which enables `vector` + `uuid-ossp` and creates the
+`litellm` and `n8n` databases; then LiteLLM pushes its Prisma schema and n8n runs its own
+migrations. That init script only runs on an **empty** volume — to re-run it you must
+`dev-down --volumes`, which destroys the data.
+
+### Health endpoints
+
+- Postgres — `pg_isready`, or `docker exec sunil-v2-postgres psql -U sunil -d sunil -c 'select 1'`
+- LiteLLM — `http://localhost:4000/health/liveliness` (no provider calls) and `/health/readiness`
+  (includes DB status). UI at `/ui`. `/health` fans out to upstream providers and will fail with
+  dummy keys — that is expected, not a broken stack.
+- n8n — `http://localhost:5680/healthz`
+
+### Secrets
+
+`.env` is gitignored; only `.env.example` (dummy values) is committed. Real provider keys come
+from the secrets manager (`docs/SECRETS_SETUP.md`) and are held **only** by the LiteLLM
+container — the application never receives an upstream provider key (ADR-030 §2). Third-party
+credentials for connectors live only in n8n's own vault (ADR-030 §5), encrypted with
+`N8N_ENCRYPTION_KEY`; losing or changing that key makes every stored credential undecryptable.
+
+Secrets are referenced in the compose file as `${VAR}` with **no default**, on purpose: unset
+resolves to empty so `docker compose config` still validates in CI, but a container started that
+way fails loudly instead of quietly running a guessable secret.
+
+### Scripts must stay ASCII
+
+`*.ps1` and `*.sh` files are ASCII-only and CI enforces it byte-by-byte. Windows PowerShell 5.1
+decodes a BOM-less file as cp1252, so an em dash (`E2 80 94`) becomes three characters ending in
+`0x94` = `”` — which PowerShell treats as a string delimiter, silently breaking the parse. This
+cost a real debugging cycle during Phase 0. Use `-`, not `—`, in scripts. (Markdown and YAML are
+unaffected and may use whatever they like.)
+
+---
+
 ## Gaps — what must happen before M1 development can begin
 
 In priority order (suggested commands are for the human to run; none were executed by this
