@@ -26,6 +26,11 @@ out/
 .env
 .env.*
 !.env.example
+# Service-scoped env files (infra/.env.litellm holds the upstream provider
+# keys and is attached to the litellm container only). The real file is
+# covered by `.env.*` above; this negation is what keeps the TEMPLATE
+# tracked, since `!.env.example` matches only that exact basename.
+!.env.*.example
 *.local
 
 # --- test / logs ---
