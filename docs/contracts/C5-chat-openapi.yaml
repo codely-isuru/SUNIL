@@ -1,0 +1,400 @@
+---
+openapi: 3.1.0
+info:
+  title: SUNIL Chat Turn API (C5)
+  version: 1.0.0
+  description: >
+    POST /api/v1/chat - the single turn trigger. Frozen Phase 0 contract
+    (2026-09-10), greenfield rebuild informed by M1's live-verified section-6
+    envelope (main:apps/api/sunil/api/schemas.py). Two representations
+    selected by Accept (ADR-027): application/json returns the complete
+    envelope; application/x-ndjson streams stage/token/heartbeat frames and
+    exactly one terminal done frame carrying that same envelope. V2 additions
+    over M1: outcome value "parked" + approval reference (ADR-031),
+    input_modality seam (ADR-020, server-verified), bearer service-token
+    auth for machine callers such as n8n triggers (ADR-035). Rationale:
+    C5-chat.md.
+  contact:
+    name: Solution Architect, SUNIL V2
+
+servers:
+  - url: http://localhost:8000
+    description: >-
+      dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
+
+paths:
+  /api/v1/chat:
+    post:
+      operationId: chatTurn
+      summary: Run one governed turn
+      description: >
+        Free-form text in; a validated-plan-governed turn runs; the envelope
+        comes back. Free-form LLM output NEVER triggers privileged actions
+        (ROADMAP section 25): tool execution happens only through validated
+        plan steps, and anything ASK_USER-gated parks via C4 and returns
+        outcome=parked. Streaming is a projection: a client that reads only
+        the done frame behaves exactly like an application/json client.
+      security:
+        - sessionCookie: []
+          clientHeader: []
+        - serviceToken: []
+      parameters:
+        - name: Accept
+          in: header
+          required: false
+          description: >
+            application/json (default) or application/x-ndjson (stream).
+            Any other value is served application/json.
+          schema:
+            type: string
+            enum: [application/json, application/x-ndjson]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: The turn ran (outcome may still be failed or parked).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/NdjsonFrame'
+              example: >
+                {"type":"stage","stage":"plan_created","offset_ms":812}
+                {"type":"token","token":"Closing "}
+                {"type":"heartbeat","offset_ms":15000}
+                {"type":"done","envelope":{"request_id":"..."}}
+        '401':
+          description: No valid owner session and no valid service token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: >
+            Cookie lane only - missing/invalid X-SUNIL-Client header or
+            Origin mismatch (ADR-008). Never returned on the service-token lane.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: >-
+            conversation_id supplied but unknown - or, on the bearer lane,
+            not service-created (the service lane is scoped to conversations
+            it created; same shape as unknown, no existence oracle).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: >
+            Body invalid - message out of 1..8000, unknown fields
+            (additionalProperties false), or input_modality=voice without a
+            server-verifiable speech binding (ADR-020; always 422 until the
+            voice milestone lands on V2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sunil_session
+      description: Owner browser session (ADR-007). Paired with clientHeader.
+    clientHeader:
+      type: apiKey
+      in: header
+      name: X-SUNIL-Client
+      description: >-
+        Literal value "web" (ADR-008 CSRF control). Paired with sessionCookie.
+    serviceToken:
+      type: http
+      scheme: bearer
+      description: >
+        Machine-caller lane (ADR-035): static token from SUNIL_SERVICE_TOKEN,
+        constant-time compared. Grants POST /api/v1/chat ONLY - structurally
+        scoped by route registration, so no token value can reach approvals
+        or any other endpoint. Turns started this way record
+        channel="service" and the caller label in audit.
+
+  schemas:
+    ChatRequest:
+      type: object
+      required: [message]
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          description: >-
+            Out-of-range is a 422 before any turn machinery runs (M1 rule).
+        conversation_id:
+          type: [string, 'null']
+          description: >-
+            Omit/null to start a new conversation (created with the calling
+            lane's channel). Bearer-lane callers may only name conversations
+            the service lane created (else 404).
+        input_modality:
+          type: string
+          enum: [text, voice]
+          default: text
+          description: >
+            ADR-020 seam, additive and defaulted. "voice" is accepted only
+            when server-verified against a bound speech transcription;
+            clients cannot label typed text as speech.
+        channel_label:
+          type: [string, 'null']
+          maxLength: 64
+          description: >
+            Service-token lane only (e.g. "n8n:morning-brief"); recorded in
+            audit. Ignored with a warning trace detail on the cookie lane.
+
+    MessageOut:
+      type: object
+      required: [id, role, content, created_at]
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          const: assistant
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ChatTaskOut:
+      type: object
+      required: [id, status, assigned_agent]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          description: >-
+            Task lifecycle value at response time; includes "parked" on V2.
+        assigned_agent:
+          type: string
+
+    ProjectSummary:
+      type: object
+      required: [key, display_name]
+      properties:
+        key:
+          type: string
+        display_name:
+          type: string
+
+    ChatFailure:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum:
+            - provider_error
+            - tool_failed
+            - plan_rejected
+            - unknown_project
+            - approval_refused
+            - approval_expired
+            - continuation_interrupted
+          description: >
+            M1's four kinds plus the approval terminals (ADR-031) and
+            continuation_interrupted, which is minted ONLY by the startup
+            reconciliation of a consumed-but-unfinalised approval (C4
+            rationale doc section 3) - never by a live turn.
+        known_projects:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ProjectSummary'
+          description: Populated only for kind=unknown_project.
+
+    ApprovalRef:
+      type: object
+      required: [approval_id, expires_at, summary]
+      description: Present exactly when outcome=parked; links to C4.
+      properties:
+        approval_id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        summary:
+          type: string
+          maxLength: 500
+          description: >-
+            Built by SUNIL code but embeds attacker-influenceable values
+            (repo names, issue titles). Render as PLAIN TEXT ONLY - never
+            HTML/markdown/DOM markup (C4 rationale doc section 4).
+
+    TraceEntryOut:
+      type: object
+      required: [stage, offset_ms]
+      properties:
+        stage:
+          type: string
+          description: >-
+            One of the twelve spine stages (ROADMAP section 28; ADR-023 -
+            the set does not grow per feature).
+        offset_ms:
+          type: integer
+        detail:
+          type: [object, 'null']
+          additionalProperties: true
+          description: >-
+            Enums and numbers only - never prose, never LLM output (M1 rule).
+
+    ChatUsage:
+      type: object
+      required: [input_tokens, output_tokens, cost_usd]
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          description: >-
+            Summed across every provider attempt, including failed ones
+            (M1 A-2 rule).
+
+    ChatResponse:
+      type: object
+      required:
+        - request_id
+        - conversation_id
+        - outcome
+        - message
+        - task
+        - failure
+        - approval
+        - trace
+        - usage
+      description: >
+        Exactly-one rule - outcome=ok: message set, failure and approval null.
+        outcome=failed: failure set, message and approval null. outcome=parked:
+        approval set, message and failure null. task is set whenever a task was
+        created (ok, parked, and tool_failed cases); null when the turn failed
+        before task creation. Enforced by the response builder, not the schema.
+      properties:
+        request_id:
+          type: string
+        conversation_id:
+          type: string
+        outcome:
+          type: string
+          enum: [ok, failed, parked]
+        message:
+          oneOf:
+            - $ref: '#/components/schemas/MessageOut'
+            - type: 'null'
+        task:
+          oneOf:
+            - $ref: '#/components/schemas/ChatTaskOut'
+            - type: 'null'
+        failure:
+          oneOf:
+            - $ref: '#/components/schemas/ChatFailure'
+            - type: 'null'
+        approval:
+          oneOf:
+            - $ref: '#/components/schemas/ApprovalRef'
+            - type: 'null'
+        trace:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceEntryOut'
+        usage:
+          $ref: '#/components/schemas/ChatUsage'
+
+    StageFrame:
+      type: object
+      required: [type, stage, offset_ms]
+      properties:
+        type:
+          type: string
+          const: stage
+        stage:
+          type: string
+        offset_ms:
+          type: integer
+
+    TokenFrame:
+      type: object
+      required: [type, token]
+      properties:
+        type:
+          type: string
+          const: token
+        token:
+          type: string
+          description: >-
+            Analysis-stage tokens only (ADR-028 - the plan call never
+            streams).
+
+    HeartbeatFrame:
+      description: >-
+        Emitted after 15 s of stream silence to keep the connection alive
+        (ADR-027). Carries no payload beyond its timing offset.
+      type: object
+      required: [type, offset_ms]
+      properties:
+        type:
+          type: string
+          const: heartbeat
+        offset_ms:
+          type: integer
+
+    DoneFrame:
+      type: object
+      required: [type, envelope]
+      properties:
+        type:
+          type: string
+          const: done
+        envelope:
+          $ref: '#/components/schemas/ChatResponse'
+
+    NdjsonFrame:
+      description: >
+        The stream body is newline-delimited JSON: zero or more
+        stage/token/heartbeat frames, then EXACTLY ONE done frame carrying the
+        authoritative envelope, then EOF. Heartbeats every 15 s of silence.
+        A dropped/duplicated token frame cannot corrupt the answer - the done
+        envelope is the source of truth (ADR-027). Client disconnect before
+        done = cancellation (ADR-029).
+      oneOf:
+        - $ref: '#/components/schemas/StageFrame'
+        - $ref: '#/components/schemas/TokenFrame'
+        - $ref: '#/components/schemas/HeartbeatFrame'
+        - $ref: '#/components/schemas/DoneFrame'
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [kind, message]
+          properties:
+            kind:
+              type: string
+              enum:
+                - unauthenticated
+                - forbidden_client
+                - not_found
+                - validation_error
+            message:
+              type: string
