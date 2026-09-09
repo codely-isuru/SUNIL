@@ -85,7 +85,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: >-
-            conversation_id supplied but unknown (or not the caller's).
+            conversation_id supplied but unknown - or, on the bearer lane,
+            not service-created (the service lane is scoped to conversations
+            it created; same shape as unknown, no existence oracle).
           content:
             application/json:
               schema:
@@ -138,7 +140,10 @@ components:
             Out-of-range is a 422 before any turn machinery runs (M1 rule).
         conversation_id:
           type: [string, 'null']
-          description: Omit/null to start a new conversation.
+          description: >-
+            Omit/null to start a new conversation (created with the calling
+            lane's channel). Bearer-lane callers may only name conversations
+            the service lane created (else 404).
         input_modality:
           type: string
           enum: [text, voice]
@@ -204,8 +209,12 @@ components:
             - unknown_project
             - approval_refused
             - approval_expired
+            - continuation_interrupted
           description: >
-            M1's four kinds plus the two approval terminals (ADR-031).
+            M1's four kinds plus the approval terminals (ADR-031) and
+            continuation_interrupted, which is minted ONLY by the startup
+            reconciliation of a consumed-but-unfinalised approval (C4
+            rationale doc section 3) - never by a live turn.
         known_projects:
           type: [array, 'null']
           items:
@@ -225,6 +234,10 @@ components:
         summary:
           type: string
           maxLength: 500
+          description: >-
+            Built by SUNIL code but embeds attacker-influenceable values
+            (repo names, issue titles). Render as PLAIN TEXT ONLY - never
+            HTML/markdown/DOM markup (C4 rationale doc section 4).
 
     TraceEntryOut:
       type: object
@@ -332,6 +345,9 @@ components:
             streams).
 
     HeartbeatFrame:
+      description: >-
+        Emitted after 15 s of stream silence to keep the connection alive
+        (ADR-027). Carries no payload beyond its timing offset.
       type: object
       required: [type, offset_ms]
       properties:
@@ -340,8 +356,6 @@ components:
           const: heartbeat
         offset_ms:
           type: integer
-        description:
-          type: string
 
     DoneFrame:
       type: object

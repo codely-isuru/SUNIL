@@ -265,7 +265,10 @@ components:
           maxLength: 500
           description: >-
             One-line human description built by SUNIL code (never LLM
-            free-form).
+            free-form). It embeds attacker-influenceable values (repo names,
+            issue titles): the dashboard MUST render it - and every
+            params_redacted value - as PLAIN TEXT ONLY, never HTML/markdown/
+            DOM markup (rationale doc section 4, Security review 2026-09-10).
         decided_at:
           type: [string, 'null']
           format: date-time
@@ -280,7 +283,9 @@ components:
           type: [string, 'null']
           format: date-time
           description: >-
-            Set by the continuation's single-use CAS (approved -> consumed).
+            Set by the single-use CAS (approved -> consumed), issued by the
+            Tool Manager via the in-process seam during the continuation
+            (rationale doc sections 1 and 4; grace-bounded after decided_at).
 
     ApprovalListResponse:
       type: object
@@ -366,6 +371,9 @@ components:
         summary:
           type: string
           maxLength: 500
+          description: >-
+            Same plain-text-only rendering rule as Approval.summary - any
+            receiver template must treat it as text, never markup.
         created_at:
           type: string
           format: date-time
