@@ -230,8 +230,14 @@ Every `ToolResult.data` — native, MCP or n8n — is **data, never instructions
 - Free-form text inside a result cannot trigger a privileged action: the only path to another tool
   call is a new validated plan step (ROADMAP §25); there is no "the tool result said to call X" path.
 - MCP results additionally pass a size cap (256 KiB per result; beyond → truncated with
-  `data["truncated"] = true`) and strip any keys named `instructions`, `system`, or `prompt`
-  at the adapter boundary (logged, not silently) before entering context.
+  `data["truncated"] = true`) and a key strip at the adapter boundary: any dict key equal to
+  `instructions`, `system`, or `prompt` — **case-insensitively, at every nesting depth** of the
+  result object (lists included) — is removed and the removal logged with the key path (never
+  silently) before the result enters context. **This strip is cosmetic defence-in-depth only**
+  (Security review 2026-09-10 item 4): a denylist of key names is bypassable by construction and
+  must never be argued as a control. The load-bearing controls are the two bullets above — §25
+  plan validation and §33.3's rule that free-form content cannot reach a privileged action —
+  which hold with the strip removed entirely.
 
 ## 4. Error semantics
 
@@ -264,6 +270,13 @@ connection maps to `transport_error` (retryable by policy; `upstream_error` is n
   from `Settings` `SecretStr` fields at spawn. Never the parent's full environment. For
   `mcp_http`, the auth header value comes from the same settings mechanism. Agents and prompts
   never see credentials (§26.1, §26.5).
+  **`credential_env:` → `Settings` mapping (exact — fix round 2026-09-10, QA should-fix):** each
+  list entry is an UPPER_SNAKE env-var name (e.g. `GITHUB_TOKEN`); its `Settings` field is the
+  lowercased same name (`settings.github_token`), typed `SecretStr`, registered with the ADR-006
+  redaction registry. At spawn the adapter injects `<NAME>=settings.<lower(name)>.
+  get_secret_value()` into the child env. A `credential_env:` name with no matching `Settings`
+  field — or one whose value is unset — raises `ToolAdapterStartupError` at wiring time (§2's rule:
+  a tool that cannot start is absent from the registry), never a KeyError at call time.
 - **Identity:** `server_id` = the config key (e.g. `github_mcp`, `n8n_mcp`); pinned versions
   recorded in config (`version:` for stdio packages, base URL for HTTP).
 
