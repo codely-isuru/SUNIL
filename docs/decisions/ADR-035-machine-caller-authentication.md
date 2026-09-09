@@ -5,7 +5,7 @@
 n8n cannot hold a signed browser session cookie, and no machine authentication existed anywhere in
 the plan or in M1 (ADR-007 is single-owner browser auth).
 **Context refs:** ADR-007 (owner session), ADR-008 (cookie + `X-SUNIL-Client` CSRF pair), contract
-C5 §2.3, ADR-032 (n8n at `127.0.0.1:5678`).
+C5 §2.3, ADR-032 (n8n at `127.0.0.1:5680` *[was `:5678`; ADR-032 Amendment 1, 2026-09-10]*).
 
 ## Context
 

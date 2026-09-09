@@ -2,8 +2,8 @@
 
 **Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **OpenAPI:** [`C4-approvals-openapi.yaml`](C4-approvals-openapi.yaml) (the HTTP surface).
-**Consumers:** Stream D (dashboard + service), Stream A (park hook from the Tool Manager),
-Streams E/F (their write operations park here).
+**Consumers:** Stream D (dashboard + service), Stream A (the Tool Manager's injected
+`ApprovalsService` seam, C1 §2.2), Streams E/F (their write operations park here).
 **Related decisions:** ADR-031 (park/resume execution model — the arguments live there),
 ROADMAP §12, §26.4, §33.6.
 

@@ -18,6 +18,12 @@ Deviations from M1 shapes, all in one place (house convention): the §6 envelope
 provider transport defaults to the LiteLLM gateway lane (ADR-033); auth gains the machine-caller
 lane on one route (ADR-035). Everything else keeps M1's proven shape.
 
+**Fix round 2026-09-10** (QA + Security reviews of the same date): §4/§5/§6 reconciled to the real
+host ports — **web 3001, postgres 5433, n8n 5680** (ADR-032 Amendment 1; QA B6 = Security B1);
+compose path corrected to `infra/docker-compose.yml`, image pins recorded, profiles deferred;
+`SUNIL_APPROVAL_CONSUME_GRACE_HOURS` added (C4 grace-bounded consume, Security item 1); §3's C1
+seam wording follows ADR-031 Amendment 1.
+
 ---
 
 ## 1. Stack and shape
@@ -67,14 +73,16 @@ apps/api/tests/
 apps/web/                      # Next.js 16: chat, dashboard (approvals queue, agent activity, audit browser)
 config/                        # mounted, never baked (ADR-016): models.yaml, agents.yaml,
                                # tools.yaml (ADR-034 server blocks), permissions.yaml, projects.yaml
-docker-compose.yml             # ADR-032: profiles `infra` (default) and `full`
+infra/docker-compose.yml       # ADR-032 Amendment 1: compose lives under infra/ (with postgres/,
+                               # litellm/ config); `infra`/`full` profiles deferred until the api
+                               # container exists
 ```
 
 ## 3. How the six streams plug into the contracts
 
 | Stream | Builds | Implements / consumes | Tests against |
 |---|---|---|---|
-| A — MCP tools | `tools/mcp/{stdio,http}.py`, config server blocks | **implements C1**; consumes C4 via the park hook | `FakeApprovalsService`, contract suite C1 |
+| A — MCP tools | `tools/mcp/{stdio,http}.py`, config server blocks | **implements C1**; consumes C4 via the injected `ApprovalsService` seam (C1 §2.2) | `FakeApprovalsService`, contract suite C1 |
 | B — Model gateway | `providers/gateway.py`, LiteLLM container config | **implements C2** behind the SUNIL router | `FakeProvider` parity + loopback LiteLLM double (ADR-017 seam) |
 | C — Memory & entities | `memory_providers/mem0_provider.py`, entity tables, `core/memory/service.py` | **implements C3**; embeddings via C2 | `FakeMemoryProvider`, contract suite C3 |
 | D — Approvals & dashboard | `core/approvals/*`, `api/routes/approvals.py`, web dashboard pages | **implements C4**; renders C5 `parked` | `FakeApprovalsService` behind the real routes; C4 suite |
@@ -89,15 +97,15 @@ against the fakes").
 
 | TB | Boundary | Crossing | Controls (each named in §5's inventory) |
 |---|---|---|---|
-| TB1 | browser → API | `http://localhost:3000` page → `http://localhost:8000` XHR/fetch | signed session cookie (`SESSION_SECRET`, ADR-007); CORS allow-list = `WEB_ORIGIN`; `X-SUNIL-Client: web` + Origin check (ADR-008); Pydantic 422 wall |
+| TB1 | browser → API | `http://localhost:3001` page → `http://localhost:8000` XHR/fetch (web on 3001 — ADR-032 Amendment 1) | signed session cookie (`SESSION_SECRET`, ADR-007); CORS allow-list = `WEB_ORIGIN`; `X-SUNIL-Client: web` + Origin check (ADR-008); Pydantic 422 wall |
 | TB2 | API → LiteLLM | `SUNIL_LLM_GATEWAY_BASE_URL` (`http://localhost:4000`) | ADR-033 URL validator; per-agent virtual key (`LITELLM_VIRTUAL_KEY_*`, budgets in LiteLLM); redaction registry keeps secrets out of prompts; router privacy policy upstream of transport |
 | TB3 | LiteLLM → cloud providers | `api.anthropic.com` / `api.openai.com` | provider keys live ONLY in the litellm container env; SUNIL app env carries none in gateway lane |
 | TB4 | API → MCP stdio child | spawned subprocess, JSON-RPC on pipes | minimal child env (only `credential_env` names, C1 §5); params validated pre-send; results untrusted + size-capped (C1 §3); `timeout_s` |
-| TB5 | API → MCP HTTP (n8n) | `SUNIL_N8N_MCP_BASE_URL` (`http://localhost:5678/mcp`) | ADR-033 validator; n8n-side auth header from settings; same untrusted-results posture |
+| TB5 | API → MCP HTTP (n8n) | `SUNIL_N8N_MCP_BASE_URL` (`http://localhost:5680/mcp` — ADR-032 Amendment 1) | ADR-033 validator; n8n-side auth header from settings; same untrusted-results posture |
 | TB6 | MCP server / n8n → upstream SaaS | GitHub, Gmail, Stripe, WordPress… | least-privilege credentials held in the server/n8n vault, never in agents (ADR-030 rule); pinned server versions (ADR-034 drift check) |
 | TB7 | n8n → API | `http://localhost:8000/api/v1/chat` | `SUNIL_SERVICE_TOKEN` bearer (ADR-035), constant-time compare, route-scoped; audit `channel="service"` |
 | TB8 | API → n8n webhook | `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` | ADR-033 validator; redacted summary payload only (C4 §2); fire-and-forget |
-| TB9 | API/LiteLLM/n8n → Postgres | `localhost:5432` | three databases, three role/password pairs (`sunil`/`litellm`/`n8n`) — a LiteLLM or n8n compromise reads its own DB, not `audit_events` |
+| TB9 | API/LiteLLM/n8n → Postgres | host `localhost:5433`; in-network `postgres:5432` (ADR-032 Amendment 1) | three databases, three role/password pairs (`sunil`/`litellm`/`n8n`) — a LiteLLM or n8n compromise reads its own DB, not `audit_events` |
 
 Inside TB-nothing: LLM text. Free-form model output can only become action through the plan
 validator (§25) and then the C1 chokepoint — there is no path from generated text to a privileged
@@ -110,10 +118,10 @@ call that skips `decide()` (§33.3, §33.5).
 
 | Variable | Default | Secret | Read by / validator |
 |---|---|---|---|
-| `DATABASE_URL` | `postgresql+psycopg://sunil:CHANGE_ME@localhost:5432/sunil` | yes (embedded pwd) | `db/session` |
+| `DATABASE_URL` | `postgresql+psycopg://sunil:CHANGE_ME@localhost:5433/sunil` | yes (embedded pwd) | `db/session` (host port 5433 — ADR-032 Amendment 1) |
 | `SESSION_SECRET` | — required | yes | session middleware (ADR-007) |
 | `SESSION_COOKIE_NAME` | `sunil_session` | no | session middleware; C4/C5 securitySchemes |
-| `WEB_ORIGIN` | `http://localhost:3000` | no | CORS + Origin check (ADR-008; `localhost`, never `127.0.0.1`) |
+| `WEB_ORIGIN` | `http://localhost:3001` | no | CORS + Origin check (ADR-008; `localhost`, never `127.0.0.1`; port 3001 — ADR-032 Amendment 1) |
 | `API_HOST` / `API_PORT` | `127.0.0.1` / `8000` | no | uvicorn bind |
 | `LOG_LEVEL` | `INFO` | no | logging |
 | `SUNIL_CONFIG_DIR` | `./config` | no | registry loaders (ADR-016) |
@@ -125,27 +133,30 @@ call that skips `decide()` (§33.3, §33.5).
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | unset in gateway lane | yes | direct lane only (kill-switch fallback) |
 | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` | canonical values | no | direct lane; ADR-017 validator (canonical ∨ loopback) |
 | `GITHUB_TOKEN` | — required for github servers | yes | injected into `github_mcp` child env at spawn (C1 §5), and the native tool |
-| `SUNIL_N8N_MCP_BASE_URL` | `http://localhost:5678/mcp` | no | `tools/mcp/http`; ADR-033 validator (loopback ∨ `n8n`) |
+| `SUNIL_N8N_MCP_BASE_URL` | `http://localhost:5680/mcp` | no | `tools/mcp/http`; ADR-033 validator (loopback ∨ `n8n`); port 5680 — ADR-032 Amendment 1 |
 | `SUNIL_N8N_MCP_AUTH_TOKEN` | — required when n8n_mcp configured | yes | auth header for TB5 |
 | `SUNIL_APPROVAL_TTL_HOURS` | `72` | no | approvals service (`expires_at`) |
+| `SUNIL_APPROVAL_CONSUME_GRACE_HOURS` | `1` | no | approvals service — consume-CAS time bound + stale-approved sweep (C4 §1; Security review 2026-09-10 item 1) |
 | `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` | unset (webhook off) | no | `core/approvals/notify`; ADR-033 validator |
 | `SUNIL_SERVICE_TOKEN` | unset (machine lane off) | yes | `require_service_token` on the chat route only (ADR-035) |
 | `SUNIL_MEMORY_PROVIDER` | `fake` until Stream C lands, then `mem0` | no | memory service wiring |
 
 **Web — `apps/web`:** `NEXT_PUBLIC_API_BASE_URL` = `http://localhost:8000` (MUST be `localhost`
 so the session cookie is same-site with the page origin — the ADR-008 rule; the API may bind
-`127.0.0.1`, but the browser-facing name is `localhost`).
+`127.0.0.1`, but the browser-facing name is `localhost`). Next.js dev server runs on **3001**
+(ADR-032 Amendment 1 — 3000 is occupied on the build machine).
 
-**Compose services (ADR-032; all published on `127.0.0.1`):**
+**Compose services (`infra/docker-compose.yml`, ADR-032 + Amendment 1; every publish MUST bind
+`127.0.0.1` — CI-asserted):**
 
-| Service | Image (pinned at Phase 0 platform task) | Ports (host→container) | Container env (secrets stay here) |
+| Service | Image (pinned — platform task actuals) | Ports (host→container) | Container env (secrets stay here) |
 |---|---|---|---|
-| `postgres` | `pgvector/pgvector:pg17` | `127.0.0.1:5432→5432` | `POSTGRES_USER=sunil`, `POSTGRES_PASSWORD` (secret), `POSTGRES_DB=sunil`; init script creates `litellm` + `n8n` DBs/roles (TB9) |
-| `litellm` | `ghcr.io/berriai/litellm` (pin) | `127.0.0.1:4000→4000` | `LITELLM_MASTER_KEY` (secret), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL` → `postgres:5432/litellm`; `litellm.config.yaml` mounted |
-| `n8n` | `n8nio/n8n` (pin) | `127.0.0.1:5678→5678` | `N8N_ENCRYPTION_KEY` (secret — the vault key), `DB_TYPE=postgresdb`, `DB_POSTGRESDB_HOST=postgres`, `DB_POSTGRESDB_DATABASE=n8n` + role creds; holds tool creds + `SUNIL_SERVICE_TOKEN` in its vault |
-| `openhands` (V2-D/F) | pinned at adoption | `127.0.0.1:3400→3000` | sandbox config; git creds scoped per ADR-030 item 4 |
-| `langfuse` (optional) | pinned at adoption | `127.0.0.1:3200→3000` | own secret set; adds ClickHouse if adopted |
-| `api` / `web` (full profile only) | built from repo | `8000`/`3000` as above | same app env, with in-network URLs (`http://litellm:4000`, `postgres:5432`, `http://n8n:5678/mcp`) — legal under ADR-033's named-host rule |
+| `postgres` | `pgvector/pgvector:0.8.6-pg17` | `127.0.0.1:5433→5432` | `POSTGRES_USER=sunil`, `POSTGRES_PASSWORD` (secret), `POSTGRES_DB=sunil`; init script creates `litellm` + `n8n` DBs/roles (TB9) |
+| `litellm` | `ghcr.io/berriai/litellm:v1.83.14-stable.patch.3` | `127.0.0.1:4000→4000` | `LITELLM_MASTER_KEY` (secret), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL` → `postgres:5432/litellm`; `config.yaml` mounted (`num_retries: 0`, `drop_params: false` — C2 §3 rule) |
+| `n8n` | `n8nio/n8n:2.38.5` | `127.0.0.1:5680→5678` | `N8N_ENCRYPTION_KEY` (secret — the vault key), `DB_TYPE=postgresdb`, `DB_POSTGRESDB_HOST=postgres`, `DB_POSTGRESDB_DATABASE=n8n` + role creds; holds tool creds + `SUNIL_SERVICE_TOKEN` in its vault |
+| `openhands` (V2-D/F) | pinned at adoption (not yet in compose) | `127.0.0.1:3400→3000` | sandbox config; git creds scoped per ADR-030 item 4 |
+| `langfuse` (optional) | pinned at adoption (not yet in compose) | `127.0.0.1:3200→3000` | own secret set; adds ClickHouse if adopted |
+| `api` / `web` (later — the api container is a commented stub today; profiles arrive with it, ADR-032 Amendment 1) | built from repo | `8000`/`3001` as above | same app env, with in-network URLs (`http://litellm:4000`, `postgres:5432`, `http://n8n:5678/mcp`) — legal under ADR-033's named-host rule |
 
 Nothing else reads the process environment (M1 law: `settings.py` is the single env seam).
 
@@ -155,8 +166,8 @@ Scenario (dev topology, ADR-032 `infra` profile): the owner types **"close issue
 codely-isuru/SUNIL"**. `github_mcp.issues_close` is granted `ask_user` for `project_manager` in
 `config/permissions.yaml`. Every hop names its mechanism; every mechanism appears in §4/§5.
 
-**Leg 1 — turn request (TB1).** Browser at `http://localhost:3000` sends
-`POST http://localhost:8000/api/v1/chat` — `Origin: http://localhost:3000`,
+**Leg 1 — turn request (TB1).** Browser at `http://localhost:3001` sends
+`POST http://localhost:8000/api/v1/chat` — `Origin: http://localhost:3001`,
 `Cookie: sunil_session=<signed>`, `X-SUNIL-Client: web`, `Accept: application/x-ndjson`,
 body `{"message":"close issue #42 in codely-isuru/SUNIL"}`. CORS middleware matches `WEB_ORIGIN`;
 `require_client_header` and `require_owner_session` pass (`SESSION_SECRET` verifies the cookie);
@@ -177,8 +188,8 @@ frames (`plan_created`, …) stream back on the open NDJSON response.
 **Leg 3 — park (TB9).** Executor reaches the tool step. `ToolManager.execute(project_manager,
 github_mcp, issues_close, {owner:"codely-isuru", repo:"SUNIL", issue_number:42})`: params validate
 (`extra="forbid"`); `decide()` → `ASK_USER` (`source=config:project_manager.github_mcp.
-issues_close`); no approval supplied → **park hook**: one transaction on
-`postgres@localhost:5432/sunil` inserts the approval (`status='pending'` explicit, `args_hash=
+issues_close`); no approval supplied → **park via the approvals seam**: one transaction on
+`postgres@localhost:5433/sunil` inserts the approval (`status='pending'` explicit, `args_hash=
 sha256(canonical json)`, `expires_at=now+72h`) + continuation state (plan, cursor=this step) +
 `tool_calls` audit row (`permission_decision=ask_user`) + `audit_events` `approval_requested`.
 Webhook (TB8): `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` unset in this trace — dashboard polling is the
@@ -186,7 +197,7 @@ notify path; nothing blocks. The turn finalises: task `parked`; the NDJSON strea
 single `done` frame — envelope `outcome="parked"`, `approval={approval_id:"apr-01J…",
 expires_at:…, summary:"github_mcp.issues_close on codely-isuru/SUNIL #42"}`.
 
-**Leg 4 — notify/decide (TB1 again).** The dashboard (same origin `localhost:3000`) polls
+**Leg 4 — notify/decide (TB1 again).** The dashboard (same origin `localhost:3001`) polls
 `GET http://localhost:8000/api/v1/approvals?status=pending` every 10 s (cookie + header, as Leg 1)
 and renders the queue from `params_redacted` + `summary`. The owner clicks Approve →
 `POST http://localhost:8000/api/v1/approvals/apr-01J…/decision` body `{"decision":"approve"}`.
@@ -195,9 +206,12 @@ The CAS `UPDATE … WHERE status='pending' AND expires_at > now()` wins → `app
 get `409 {current_status:"approved"}`.
 
 **Leg 5 — resume (TB4, TB6).** The decision handler schedules `run_continuation(state)` (ADR-031
-in-process task). It calls `consume(apr-01J…, binding)` — binding matches, CAS `approved→consumed`.
-`ToolManager.execute` re-runs with the consumed approval: `decide()` still says `ASK_USER`
-(policy unchanged — the approval, not a policy override, is what satisfies it). The
+in-process task). It re-enters `ToolManager.execute(…, approval="apr-01J…")` (ADR-031 Amendment 1
+— the manager, not the executor, owns consume): `decide()` still says `ASK_USER` (policy unchanged
+— the approval, not a policy override, is what satisfies it); the manager recomputes the binding
+from re-validated params and calls `ApprovalsService.consume` — binding matches, within
+`SUNIL_APPROVAL_CONSUME_GRACE_HOURS` of `decided_at`, CAS `approved→consumed`, the attempt audit
+row committing in the same transaction (C1 §2.1 step 4). The
 `MCPToolAdapter(kind=mcp_stdio)` for `github_mcp` — spawned at app start with child env containing
 ONLY `GITHUB_TOKEN` (C1 §5) — sends `tools/call issues_close {…}` over stdio (JSON-RPC,
 `timeout_s=30` from `config/tools.yaml`); the server calls `https://api.github.com` with the PAT it
@@ -214,12 +228,14 @@ Audit chain for the whole episode, in order: `request_received … plan_created`
 `request_id`.
 
 **Inventory check (the L-001 discharge):** mechanisms this trace consumed — `WEB_ORIGIN`,
-`SESSION_SECRET`/`SESSION_COOKIE_NAME`, `X-SUNIL-Client`, ports 3000/8000/4000/5432,
-`SUNIL_LLM_GATEWAY_BASE_URL` + ADR-033 validator, `LITELLM_VIRTUAL_KEY_PROJECT_MANAGER` (falls
-back to `_DEFAULT`), litellm-held `ANTHROPIC_API_KEY`, `DATABASE_URL`, `SUNIL_APPROVAL_TTL_HOURS`,
-`GITHUB_TOKEN` + `credential_env` spawn rule, `config/{models,tools,permissions}.yaml` via
-`SUNIL_CONFIG_DIR`, `SUNIL_TURN_DEADLINE_S` (legs 2–3 only — the deadline governs the turn, not
-the human wait, which is exactly why ADR-031 parks). Every item appears in §5. Two mechanisms the
+`SESSION_SECRET`/`SESSION_COOKIE_NAME`, `X-SUNIL-Client`, ports 3001/8000/4000/5433 (ADR-032
+Amendment 1), `SUNIL_LLM_GATEWAY_BASE_URL` + ADR-033 validator,
+`LITELLM_VIRTUAL_KEY_PROJECT_MANAGER` (falls back to `_DEFAULT`), litellm-held
+`ANTHROPIC_API_KEY`, `DATABASE_URL`, `SUNIL_APPROVAL_TTL_HOURS`,
+`SUNIL_APPROVAL_CONSUME_GRACE_HOURS` (leg 5's consume bound), `GITHUB_TOKEN` + `credential_env`
+spawn rule, `config/{models,tools,permissions}.yaml` via `SUNIL_CONFIG_DIR`,
+`SUNIL_TURN_DEADLINE_S` (legs 2–3 only — the deadline governs the turn, not the human wait, which
+is exactly why ADR-031 parks). Every item appears in §5. Two mechanisms the
 trace deliberately did NOT need: `SUNIL_SERVICE_TOKEN` (browser lane) and the webhook URL (unset) —
 both exist in §5 for the paths that do need them (TB7/TB8).
 
@@ -234,7 +250,10 @@ Approvals sweeper missed → lazy expiry at read/decide covers it (C4 §1).
 
 ## 8. What Phase 0 exits with
 
-The five contract files + this document + ADR-031..035 merged; fakes and contract suites
-implemented under `apps/api/tests/{fakes,contracts}/` (QA, from the specs in each contract's §
-"FAKE specification"); `docker-compose.yml` (`infra` profile) + `.env.example` regenerated from §5;
-Compose boot green. Then the six streams start against frozen paper, not against each other's code.
+The five contract files + this document + ADR-031..035 (with their fix-round amendments) merged;
+fakes and contract suites implemented under `apps/api/tests/{fakes,contracts}/` (QA, from the
+specs in each contract's § "FAKE specification"); `infra/docker-compose.yml` + `.env.example`
+**kept in parity with §5** — §5 now matches platform reality (ADR-032 Amendment 1), and the CI
+parity check the amendment requires is what keeps regeneration from ever silently reverting real
+ports again; Compose boot green. Then the six streams start against frozen paper, not against each
+other's code.

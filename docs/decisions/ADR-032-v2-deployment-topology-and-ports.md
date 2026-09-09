@@ -26,6 +26,11 @@ addressing scheme so their tests and fakes agree on where things are.
 **Fixed port allocation** (all container ports published on `127.0.0.1` only — nothing V2 runs is
 LAN-reachable):
 
+*⚠ The host-port column of this table — and the host-mode URLs quoted beneath it — were corrected
+by **Amendment 1** (below, 2026-09-10 fix round): postgres → 5433, n8n → 5680, web → 3001. The
+original text is kept verbatim per the no-silent-edit convention; read the amendment's table as
+current.*
+
 | Service | Host address | Container/in-network | Notes |
 |---|---|---|---|
 | web (Next.js) | `http://localhost:3000` | `web:3000` (full profile) | browser entry; `WEB_ORIGIN` |
@@ -59,3 +64,55 @@ can point at a container is validated by ADR-033 to exactly this set.
   up`), catching in-network URL drift early.
 - The L-001 trace in `ARCHITECTURE_V2.md` §6 runs on the `infra` profile addresses — the topology
   developers actually use daily.
+
+---
+
+## Amendment 1 — host ports, compose location and profiles reconciled to reality (2026-09-10, Phase 0 fix round, owner: Solution Architect)
+
+**Driven by:** QA review 2026-09-10 blocker B6 = Security review blocker B1. This ADR froze a port
+inventory from the plan while the parallel platform lane was discovering the dev machine's
+reality; three host ports in the original table point at FOREIGN processes on that machine — a
+stream following the frozen defaults would hand SUNIL's Postgres credentials to an unrelated
+container and its n8n token/webhooks to an unrelated n8n. The "fixed ports, changed only by ADR"
+rule was bypassed by the platform task with no amendment; this amendment closes that loop and
+restores document/reality parity. Ground truth verified against
+`origin/task/P0-platform:infra/docker-compose.yml`, `.env.example` and `docs/ENVIRONMENT.md` §9.
+
+**Corrected host-port table (current):**
+
+| Service | Host address | Container/in-network | Why it moved |
+|---|---|---|---|
+| web (Next.js) | `http://localhost:3001` | `web:3000` (full profile, later) | **3000 is occupied on the build machine** (platform `.env.example`: `WEB_HOST_PORT=3001`); `WEB_ORIGIN` follows |
+| api (uvicorn) | binds `127.0.0.1:8000`; browser addresses it as `http://localhost:8000` | `api:8000` (later) | unchanged (ADR-008 `localhost` rule unchanged) |
+| postgres (pgvector image) | `127.0.0.1:5433` | `postgres:5432` | **5432 is bound by an unrelated container** (`strapi-next-starter-db-1`) |
+| litellm | `127.0.0.1:4000` | `litellm:4000` | unchanged |
+| n8n | `127.0.0.1:5680` | `n8n:5678` | **5678 AND 5679 are bound by the host-native n8n source build** (`C:\repo\n8n`) |
+| openhands (Phase V2-D/F) | `127.0.0.1:3400` | `openhands:3000` | unchanged (reserved; not yet in compose) |
+| langfuse (optional) | `127.0.0.1:3200` | `langfuse:3000` | unchanged (reserved; not yet in compose) |
+| *(never)* | ~~4317~~ | — | Minions Portal — CI-guarded, never bind |
+
+**In-network names and ports are unchanged** (`postgres:5432`, `litellm:4000`, `n8n:5678`): only
+host publishes move, so service-to-service URLs — including C4 §2's webhook host rule and
+ADR-033's named-host set — are untouched. Host-mode processes reach containers at
+`localhost:5433 / localhost:4000 / localhost:5680`.
+
+**Compose location:** the file lives at **`infra/docker-compose.yml`** (platform's layout — infra
+config grouped with `infra/postgres/`, `infra/litellm/`), not the repo root as first written.
+
+**Profiles deferred:** the `infra`/`full` profile split is deferred until the `api` container
+exists (today it is a commented stub); the shipped file declares no profiles, and
+`--profile full` on a profile-less file would silently no-op. The two-profile design remains the
+target state; this amendment defers its introduction to the phase that adds the first
+app container.
+
+**CI parity check (required; DevOps implements):** a CI step MUST parse
+`infra/docker-compose.yml` (YAML-parsed, not grepped — long-form `published:` counts) and assert
+(a) the set of published `host:container` pairs equals this amendment's table exactly, and (b)
+every publish binds host IP `127.0.0.1`. The check exists so the next port drift is a red build,
+not a review finding.
+
+**Consequences carried forward:** ADR-033's quoted default for `SUNIL_N8N_MCP_BASE_URL` follows
+this amendment (`http://localhost:5680/mcp`) and ADR-035's context line reads n8n at
+`127.0.0.1:5680` — both annotated in place, dated; the named-host rule and the token design are
+unchanged. `ARCHITECTURE_V2.md` §4 (TB1/TB5/TB9), §5 and §6 are regenerated to this table in the
+same fix round.
