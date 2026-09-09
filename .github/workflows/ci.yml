@@ -1,0 +1,464 @@
+# SUNIL V2 — continuous integration
+# =========================================================================
+# Fresh, minimal CI for a repository that is currently docs + platform only.
+# Branch `V2` is a clean-slate rebuild: there is no application code to build
+# or test yet (ADR-030 Amendment 1). This workflow therefore validates what
+# actually exists, and is written so that jobs light up automatically as the
+# six parallel streams land code — without needing a rewrite each time.
+#
+# Two rules inherited from the V1 workflow (docs/CI.md) and kept deliberately,
+# because `codely-isuru/SUNIL` is a PUBLIC repository and every run log is
+# world-readable:
+#   1. No `secrets.*` reference anywhere in this file. A job that holds a real
+#      credential and echoes a variable publishes it to the internet.
+#   2. Workflow-level `permissions: contents: read`. Nothing here writes to
+#      the repo, comments on a PR, or touches packages — so that guarantee
+#      lives in this reviewed file, not only in a settings page an admin
+#      could flip later.
+# =========================================================================
+name: CI
+
+on:
+  push:
+    branches: [main, V2, 'task/**', 'feature/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push supersedes an in-flight run on the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -----------------------------------------------------------------------
+  # (a) The platform definition must be structurally valid, resolve its
+  #     variables, and contain no credentials.
+  # -----------------------------------------------------------------------
+  platform:
+    name: Platform (compose validation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Show Docker Compose version
+        run: docker compose version
+
+      # Positive test of the fail-closed secret guard. Every secret in the
+      # compose file is declared ${VAR:?message}, so with NO env file present
+      # Compose must REFUSE to resolve the file. If this step ever passes,
+      # someone has reintroduced a bare ${VAR} or a default for a secret —
+      # which is how the stack previously came up on an empty
+      # N8N_ENCRYPTION_KEY (n8n then silently self-generates one, leaving the
+      # credential vault encrypted under an unmanaged key). Security review
+      # D-finding 2.
+      - name: Assert secrets are mandatory (config MUST fail with no .env)
+        run: |
+          if docker compose -f infra/docker-compose.yml config --quiet 2>/dev/null; then
+            echo "::error::compose resolved with NO env file. A secret has a"
+            echo "::error::default or is declared bare \${VAR} instead of \${VAR:?...}."
+            exit 1
+          fi
+          echo "OK: compose refuses to resolve without an env file."
+
+      # The stronger assertion: .env.example must actually satisfy every
+      # variable the compose file interpolates. This is what catches a new
+      # variable added to Compose but forgotten in the template — the failure
+      # mode that otherwise surfaces as a broken `dev-up` on someone's
+      # machine three days later.
+      - name: Validate compose file against .env.example
+        run: |
+          docker compose --env-file .env.example \
+            -f infra/docker-compose.yml config > /tmp/resolved.yml
+          echo "Resolved services:"
+          docker compose --env-file .env.example \
+            -f infra/docker-compose.yml config --services
+
+      - name: Assert no unresolved variables remain
+        run: |
+          if grep -nE '\$\{[A-Z0-9_]+' /tmp/resolved.yml; then
+            echo "::error::Unresolved variable(s) in the resolved compose output."
+            exit 1
+          fi
+          echo "OK: every interpolation resolved."
+
+      - name: Assert every service pins an image digest-or-version (no :latest)
+        run: |
+          # A floating tag makes the platform irreproducible and is the
+          # classic cause of "it worked yesterday". ADR-030 Consequences
+          # requires third-party dependencies to be pinned.
+          bad=0
+          images=$(grep -oE '^\s+image: .*' /tmp/resolved.yml | awk '{print $2}')
+          echo "$images"
+          for img in $images; do
+            case "$img" in
+              *:latest|*:stable|*:main|*:next|*:beta)
+                echo "::error::Floating tag not allowed: $img"; bad=1 ;;
+              *:*) ;;
+              *) echo "::error::Unpinned image (no tag): $img"; bad=1 ;;
+            esac
+          done
+          exit $bad
+
+      # -------------------------------------------------------------------
+      # The port gate. Three assertions over the RESOLVED compose config,
+      # parsed as YAML — not grepped.
+      #
+      # Why parsed: the previous grep-based 4317 check only matched the short
+      # inline form and would have missed a long-form `published:` block
+      # entirely (QA nit). And the check that actually mattered — that no
+      # port is published on 0.0.0.0 — did not exist at all, which is how
+      # this stack shipped with a LAN-reachable n8n owner-setup screen
+      # (security review B2 / QA B8).
+      #
+      # Why it cannot fail open: PyYAML is installed explicitly, the parse is
+      # not wrapped in a try, and the step asserts a NON-ZERO number of
+      # services and published ports before it starts checking them. An empty
+      # or unparseable file is a failure, not a pass. Every exit is explicit.
+      # -------------------------------------------------------------------
+      - name: Assert port bindings (loopback-only, ADR-032 parity, 4317 free)
+        run: |
+          pip install --quiet pyyaml
+          python - <<'PY'
+          import sys, yaml
+
+          # Expected HOST ports. Source of truth: ADR-032's frozen port table
+          # (as amended 2026-09-10 to the ports this machine actually has
+          # free: 5432 is an unrelated container, 5678/5679 an unrelated
+          # host-native n8n). Changing a port here without changing the ADR,
+          # or the reverse, is the drift this assertion exists to catch — it
+          # is what let docs and infra disagree silently through all of
+          # Phase 0.
+          EXPECTED = {"postgres": 5433, "litellm": 4000, "n8n": 5680}
+          # The Minions Portal. Never bound by this stack, in any service.
+          FORBIDDEN = {4317}
+
+          with open("/tmp/resolved.yml", "r", encoding="utf-8") as fh:
+              doc = yaml.safe_load(fh)
+
+          if not isinstance(doc, dict):
+              print("::error::resolved compose config did not parse to a mapping.")
+              sys.exit(1)
+          services = doc.get("services")
+          if not isinstance(services, dict) or not services:
+              print("::error::no services in the resolved compose config.")
+              sys.exit(1)
+
+          failures = []
+          seen = {}
+          total_ports = 0
+
+          for name, svc in services.items():
+              for spec in (svc or {}).get("ports", []) or []:
+                  total_ports += 1
+                  if not isinstance(spec, dict):
+                      failures.append(
+                          f"{name}: port entry is not in long form ({spec!r}); "
+                          "`docker compose config` should have normalised it")
+                      continue
+                  host_ip = spec.get("host_ip")
+                  published = spec.get("published")
+                  if host_ip != "127.0.0.1":
+                      failures.append(
+                          f"{name}: published port {published} has host_ip "
+                          f"{host_ip!r}, not '127.0.0.1' - that publishes on "
+                          "EVERY interface (ADR-032 rejects this by name)")
+                  try:
+                      port = int(str(published))
+                  except (TypeError, ValueError):
+                      failures.append(f"{name}: published value {published!r} is not a port")
+                      continue
+                  if port in FORBIDDEN:
+                      failures.append(f"{name}: port {port} is reserved (Minions Portal)")
+                  seen[name] = port
+
+          if total_ports == 0:
+              print("::error::no published ports found at all - the check would "
+                    "have passed vacuously. Refusing.")
+              sys.exit(1)
+
+          for svc, expected in EXPECTED.items():
+              if svc not in services:
+                  failures.append(f"{svc}: service named in the ADR-032 table is missing")
+              elif seen.get(svc) != expected:
+                  failures.append(
+                      f"{svc}: host port is {seen.get(svc)}, ADR-032 says {expected}. "
+                      "Amend the ADR or the compose file - they must agree.")
+
+          for svc, port in sorted(seen.items()):
+              print(f"  {svc}: 127.0.0.1:{port}")
+          print(f"checked {total_ports} published port(s) across "
+                f"{len(services)} service(s)")
+
+          if failures:
+              for f in failures:
+                  print(f"::error::{f}")
+              sys.exit(1)
+          print("OK: all ports loopback-bound, ADR-032 parity holds, 4317 free.")
+          sys.exit(0)
+          PY
+
+      - name: Scan tracked files for credential-shaped strings
+        run: |
+          # Cheap guard, not a replacement for secret scanning: catches the
+          # specific mistake of pasting a working key into a config or a
+          # template.
+          #
+          # REWRITTEN after the QA/security review demonstrated the previous
+          # version was blind exactly where it mattered. It piped
+          # `git grep -n` output through `grep -viE 'dummy|...|example|...'`,
+          # and that filter saw the WHOLE LINE — including the filename. So
+          # every hit in a file whose PATH contains "example" was dropped:
+          # a real Anthropic key pasted into `.env.example` was invisible to
+          # the scan whose entire job is guarding `.env.example`.
+          #
+          # Now the line is split into path / lineno / content first, and the
+          # placeholder allowlist is applied to the CONTENT only. Written in
+          # Python so the parsing is explicit and the exits cannot fail open.
+          python - <<'PY'
+          import re, subprocess, sys
+
+          PATTERNS = [
+              ("anthropic", r"sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,}"),
+              ("openai",    r"sk-(proj-)?[A-Za-z0-9]{40,}"),
+              ("github-pat", r"gh[pousr]_[A-Za-z0-9]{36,}"),
+              ("aws-akid",  r"AKIA[0-9A-Z]{16}"),
+              ("private-key", r"-----BEGIN (RSA|OPENSSH|EC|PGP|DSA) PRIVATE KEY-----"),
+          ]
+          # Applied to MATCHED CONTENT ONLY, never to the path. A value that
+          # says of itself that it is fake is allowed to be key-shaped; that
+          # is what makes the templates readable.
+          PLACEHOLDER = re.compile(
+              r"dummy|change-?me|placeholder|not-a-real|example-only|"
+              r"xxxx|redacted|<[a-z-]+>",
+              re.IGNORECASE)
+          # This workflow file quotes the patterns themselves.
+          SKIP_PATHS = {".github/workflows/ci.yml"}
+
+          files = subprocess.run(["git", "ls-files", "-z"], check=True,
+                                 capture_output=True, text=True).stdout
+          paths = [p for p in files.split("\0") if p]
+          if not paths:
+              print("::error::git ls-files returned nothing - scan would pass "
+                    "vacuously. Refusing.")
+              sys.exit(1)
+
+          hits, scanned = [], 0
+          for path in paths:
+              if path in SKIP_PATHS:
+                  continue
+              try:
+                  with open(path, "r", encoding="utf-8", errors="strict") as fh:
+                      lines = fh.read().splitlines()
+              except (UnicodeDecodeError, OSError):
+                  continue  # binary or unreadable: nothing to match textually
+              scanned += 1
+              for n, line in enumerate(lines, 1):
+                  for label, pat in PATTERNS:
+                      for m in re.finditer(pat, line):
+                          content = m.group(0)
+                          if PLACEHOLDER.search(content):
+                              continue
+                          # Report a prefix only. Never echo a suspected
+                          # credential into a public build log.
+                          hits.append(f"{path}:{n}: [{label}] {content[:12]}...")
+
+          print(f"scanned {scanned} text file(s) of {len(paths)} tracked")
+          if hits:
+              print("::error::Possible credential committed:")
+              for h in hits:
+                  print(f"::error::  {h}")
+              sys.exit(1)
+          print("OK: no credential-shaped strings in tracked files.")
+          sys.exit(0)
+          PY
+
+      - name: Lint platform YAML
+        run: |
+          pip install --quiet yamllint
+          yamllint -c .yamllint.yml infra/ .github/workflows/
+
+      - name: Shell-check the POSIX scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning \
+            scripts/dev-up.sh scripts/dev-down.sh \
+            infra/postgres/init/*.sh
+
+      - name: Assert executable scripts are ASCII-only
+        run: |
+          # This is not style policing - it is a real bug class, found the hard
+          # way while building this platform.
+          #
+          # Windows PowerShell 5.1 (the default shell on the team's build
+          # machine) decodes a BOM-less file as cp1252, not UTF-8. An em dash
+          # (U+2014 = E2 80 94) therefore decodes as three cp1252 characters,
+          # the last of which is 0x94 = a RIGHT DOUBLE QUOTATION MARK - which
+          # PowerShell treats as a string delimiter. One em dash inside a
+          # comment or string silently terminates that string and the script
+          # fails to PARSE. It cost a real debugging cycle here.
+          #
+          # The pwsh step below cannot catch this: PowerShell 7 on Linux reads
+          # UTF-8 correctly and parses the file happily. Only this byte-level
+          # check catches it on a Linux runner, which is why both steps exist.
+          # Done in Python, not `grep -P`: grep's PCRE support is optional and
+          # locale-dependent, and when it bails out it returns 2 - which an
+          # `if grep -q ...` guard reads as "no match", silently passing. This
+          # check must not be able to fail open.
+          python - <<'PY'
+          import glob, sys
+
+          patterns = ["scripts/*.ps1", "scripts/*.sh", "infra/postgres/init/*.sh"]
+          files = sorted({f for p in patterns for f in glob.glob(p)})
+          if not files:
+              print("::error::ASCII guard matched no files - check the patterns.")
+              sys.exit(1)
+
+          failed = False
+          for path in files:
+              data = open(path, "rb").read()
+              bad = [(i, b) for i, b in enumerate(data) if b > 0x7F]
+              if bad:
+                  failed = True
+                  line = data[: bad[0][0]].count(b"\n") + 1
+                  print(f"::error file={path},line={line}::"
+                        f"{len(bad)} non-ASCII byte(s), first 0x{bad[0][1]:02x} on line {line}")
+              else:
+                  print(f"OK: {path}")
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Parse-check the PowerShell scripts
+        shell: pwsh
+        run: |
+          # Catches structural syntax errors without executing anything.
+          # Caveat: this runs PowerShell 7, so it does NOT catch constructs
+          # that parse in 7 but not in Windows PowerShell 5.1 (`??`, `?:`,
+          # ternaries). Those are guarded by review plus the ASCII check above;
+          # see docs/tasks/P0-platform.md for the known gap.
+          $ErrorActionPreference = 'Stop'
+          $failed = $false
+          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                  $_.FullName, [ref]$null, [ref]$errors) | Out-Null
+              if ($errors) {
+                  Write-Host "::error::Parse errors in $($_.Name)"
+                  $errors | ForEach-Object { Write-Host "  $($_.Message)" }
+                  $failed = $true
+              } else {
+                  Write-Host "OK: $($_.Name)"
+              }
+          }
+          if ($failed) { exit 1 }
+
+  # -----------------------------------------------------------------------
+  # (b) Contract linting. Phase 0 freezes five seams (C1–C5) and C4 is an
+  #     OpenAPI document. None of them exist on this branch yet, so this job
+  #     must SKIP CLEANLY rather than fail — and must start enforcing the
+  #     moment the first contract lands, with no edit to this file.
+  # -----------------------------------------------------------------------
+  contracts:
+    name: Contracts (YAML / OpenAPI lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Detect contract files
+        id: detect
+        run: |
+          shopt -s nullglob
+          files=(docs/contracts/*.yaml docs/contracts/*.yml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No files matching docs/contracts/*.y{a,}ml yet."
+            echo "Phase 0 will add C1-C5; this job starts enforcing automatically."
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            printf 'Found %d contract file(s):\n' "${#files[@]}"
+            printf '  %s\n' "${files[@]}"
+            printf '%s\n' "${files[@]}" > /tmp/contract-files.txt
+          fi
+
+      - name: YAML lint
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          pip install --quiet yamllint
+          xargs -a /tmp/contract-files.txt yamllint -c .yamllint.yml
+
+      - name: OpenAPI validate
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          pip install --quiet openapi-spec-validator
+          # Only files that declare themselves as OpenAPI get schema-validated;
+          # a plain-YAML contract (e.g. C1's tool-adapter shape) is linted by
+          # the step above and skipped here.
+          checked=0
+          while read -r f; do
+            if grep -qE '^openapi:' "$f"; then
+              echo "--> validating $f"
+              python -m openapi_spec_validator "$f"
+              checked=$((checked + 1))
+            else
+              echo "--> $f has no 'openapi:' key, YAML-lint only"
+            fi
+          done < /tmp/contract-files.txt
+          echo "OpenAPI documents validated: $checked"
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.detect.outputs.found }}" = 'true' ]; then
+            echo "Contracts linted."
+          else
+            echo "No contracts present — job passed without assertions."
+          fi
+
+  # -----------------------------------------------------------------------
+  # (c) Test job. A placeholder that passes today and becomes the real suite
+  #     when application code arrives. It is wired as a real job (not a
+  #     no-op) so that branch protection can require it from day one and the
+  #     requirement does not have to be added later, when it is easy to
+  #     forget.
+  # -----------------------------------------------------------------------
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Detect a Python test suite
+        id: detect
+        run: |
+          # `apps/api` is where the rebuilt backend will live (ADR-011).
+          if [ -f apps/api/pyproject.toml ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        if: steps.detect.outputs.found == 'true'
+        with:
+          python-version: '3.13'
+
+      - name: Install and run backend tests
+        if: steps.detect.outputs.found == 'true'
+        working-directory: apps/api
+        run: |
+          # NOTE: `python`, never `python3` — the team's Windows build machine
+          # has a broken python3 Store stub (docs/ENVIRONMENT.md §1), and the
+          # commands here are meant to be typed identically in both places.
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          python -m pytest -q -m "not live"
+
+      - name: Placeholder (no application code on this branch yet)
+        if: steps.detect.outputs.found != 'true'
+        run: |
+          echo "Branch V2 is a clean-slate rebuild: no application code yet"
+          echo "(ADR-030 Amendment 1)."
+          echo "This job passes deliberately and will run the real suite as"
+          echo "soon as apps/api/pyproject.toml exists."
+          exit 0

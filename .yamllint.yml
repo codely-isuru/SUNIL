@@ -1,0 +1,46 @@
+# SUNIL V2 — yamllint configuration.
+#
+# Scope: the platform YAML in infra/ and the frozen contracts in
+# docs/contracts/ (see .github/workflows/ci.yml). Deliberately lenient on
+# cosmetics and strict on the things that actually break a parse or change
+# meaning silently.
+extends: default
+
+rules:
+  # 130 accommodates the explanatory comments in infra/docker-compose.yml
+  # (longest real line is 123). Comments there carry the "why" for image and
+  # port choices and are worth more than an 80-column rule.
+  line-length:
+    max: 130
+    allow-non-breakable-words: true
+    level: warning
+
+  # Compose and OpenAPI conventionally indent sequences under their key
+  # without extra indentation; both styles appear in upstream examples.
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+
+  # `on:` in a GitHub workflow, and `yes`/`no` in some vendor configs, are
+  # legitimately unquoted strings that YAML 1.1 truthiness would mangle.
+  # Flagging them as errors produces noise, not safety, in this repo.
+  truthy:
+    allowed-values: ['true', 'false']
+    check-keys: false
+
+  # A missing document start is not a defect for our files.
+  document-start: disable
+
+  # Two spaces before an inline comment is the common style here.
+  comments:
+    min-spaces-from-content: 1
+
+  # Disabled deliberately. Both infra/docker-compose.yml and
+  # infra/litellm/config.yaml carry large commented-out blocks (the app
+  # container stub, the OmniRoute dev lane) that are indented to match the
+  # code they will become, not the surrounding live content. That is the
+  # readable choice, and this rule objects to it.
+  comments-indentation: disable
+
+  # Duplicate keys DO silently change meaning — keep this fatal.
+  key-duplicates: enable
