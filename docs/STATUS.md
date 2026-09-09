@@ -34,6 +34,17 @@ run 34370950604, 8 commits). Independent QA + Security reviews IN FLIGHT; known 
 drift to resolve before merge: ADR-032 ports (5432/5678) vs actual host bindings (5433/5680).
 Merge to `V2` only after PASS/APPROVE, then Gate 2 (owner).
 
+**Reviews returned (2026-09-10): Security BLOCK · QA FAIL — bounced to owners, fixes in flight.**
+Reports: [`reviews/2026-09-10-P0-security-review.md`](reviews/2026-09-10-P0-security-review.md) ·
+[`reviews/2026-09-10-P0-qa-review.md`](reviews/2026-09-10-P0-qa-review.md). Blockers: port
+inventory drift (ADR-032 5432/5678 vs real 5433/5680/3001), 0.0.0.0 publishes (live-verified
+LAN-reachable), single-superuser Postgres vs TB9, C1/C4 consume-twice contradiction, C3
+audit_event_id unobtainable + dedupe contradictions, C1 hook fakes unspecified, C2 model-id
+namespace mismatch, CRLF first-boot failure. DM rulings for the fix round: TB9 stands (three DB
+roles); gateway alias namespace is authoritative for C2; retries live SUNIL-side (gateway
+num_retries: 0); drop_params off. Fakes + contract suites (exit criteria 3–4) follow with QA
+once contract fixes land.
+
 **Engagement:** Minions team on branch `V2`, due **2026-10-08**, budget **$300**, urgency ASAP.
 Models per owner: developers Opus 4.8 · QA Opus 5 · Solution Architect Fable 5.1 · Security
 Reviewer Fable (hard rule). First unit of work: **Phase 0 — contracts C1–C5 + Compose platform
