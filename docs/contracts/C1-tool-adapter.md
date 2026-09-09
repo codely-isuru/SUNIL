@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream A (MCP tools), Stream E (n8n MCP server tools), Stream D (approvals — via the
-park hook), core orchestrator (Tool Manager caller).
+injected approvals seam, C4 §4), core orchestrator (Tool Manager caller).
 **Informed by:** M1 reference `main:apps/api/sunil/core/tool_framework/base.py` (greenfield rebuild
 per ADR-030 Amendment 1 — this document is the contract, not the M1 file).
 **Related decisions:** ADR-034 (MCP permission mapping & trust), ADR-031 (park semantics),
@@ -30,7 +30,7 @@ All types live in `apps/api/sunil/core/tool_framework/base.py` (rebuilt). Python
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -97,37 +97,126 @@ never half-present.
 
 ### 2.1 The Tool Manager pipeline (normative)
 
-`ToolManager.execute(agent_id, tool, operation, params, *, trace, approval=None)` runs exactly
-these steps, in order, for every call regardless of adapter kind:
+```python
+class ToolManager:
+    def __init__(self, adapters: list[ToolAdapter], permission_hook: PermissionHook,
+                 approvals: "ApprovalsService", audit_hook: AuditHook) -> None: ...
 
-1. **Resolve** tool + operation from the registry; unknown → `ToolResult(ok=False, error_kind="unknown_operation")`.
-2. **Validate params** against `params_model` (`extra="forbid"`); failure → `error_kind="invalid_params"`. Validation happens BEFORE the permission check so the audit row records what was actually attempted, in canonical form.
-3. **Permission decision** via the injected `PermissionHook` (§2.2). `DENY` → `error_kind="permission_denied"`. `ASK_USER` without a consumable approval → **park** via the injected `ParkHook` (C4) and return `error_kind="approval_required"` with `data=None`; the approval id travels in the park hook's return and is surfaced by the orchestrator (C5 `outcome=parked`). `ASK_USER` with a valid single-use approval bound to `(agent_id, tool, operation, args_hash)` → proceed (C4 §1 binding rule).
-4. **Execute** `operation.handler(validated_params)` under `asyncio.timeout(operation.timeout_s)`; timeout → `error_kind="timeout"`.
-5. **Audit** via the injected `AuditHook` — one `tool_calls` row per attempt, written for EVERY outcome of steps 1–4 (including denials and parks), carrying `permission_decision`, `permission_reason`, `adapter_kind`, `server_id`, `args_hash`, `approval_id?`.
-6. **Wrap as untrusted** (§3) and return.
+    async def execute(self, agent_id: str, tool: str, operation: str, params: dict,
+                      *, trace: TraceContext, approval: str | None = None) -> ToolResult: ...
+```
+
+Parameter types (fix round 2026-09-10, QA B2): `params` is the raw candidate dict from the
+validated plan step (validated against `params_model` at step 2 below); `trace` is the
+`TraceContext` defined in §2.2 — the correlation ids every audit row and park request carries;
+`approval` is the **C4 approval id string** (`ParkedApproval.approval_id` / the `Approval.id` of
+the OpenAPI schema) minted at park time — `None` on every first attempt, set only by the
+continuation executor (ADR-031). It is an opaque id, never a C4 object: the manager recomputes the
+binding itself (step 3), so a caller cannot vouch for a binding it did not compute.
+
+`execute` runs exactly these steps, in order, for every call regardless of adapter kind:
+
+1. **Resolve** tool + operation from the registry; unknown → early exit, `error_kind="unknown_operation"`.
+2. **Validate params** against `params_model` (`extra="forbid"`); failure → early exit,
+   `error_kind="invalid_params"`. Validation happens BEFORE the permission check so the audit row
+   records what was actually attempted, in canonical form. Plan-step `params` are **immutable
+   literals** fixed at plan-validation time (C2 §2 plan-literal rule) — nothing between validation
+   and execution may rewrite them, which is what keeps `args_hash` meaningful.
+3. **Permission decision** via the injected `PermissionHook` (§2.2).
+   - `DENY` → early exit, `error_kind="permission_denied"`.
+   - `ALLOW` → proceed. A supplied `approval` id under an `ALLOW` grant is **ignored, not
+     consumed** (policy alone authorises; the orphaned `approved` row is expired by C4 §1's
+     stale-approved sweep).
+   - `ASK_USER`, `approval is None` → **park** via `approvals.park(ParkRequest(...))` (C4 §4) and
+     early-exit `error_kind="approval_required"` with `data=None`; the approval id travels in
+     `ParkedApproval` and is surfaced by the orchestrator (C5 `outcome=parked`).
+   - `ASK_USER`, `approval` supplied → the manager recomputes
+     `ApprovalBinding(agent_id, tool, operation, args_hash)` from the **freshly validated** params
+     of THIS call and calls `approvals.consume(approval, binding=...)` (C4 §4). `ok=False` → early
+     exit, `error_kind="approval_invalid"` (a binding mismatch does not burn the approval — C4 §6
+     rule 3). `ok=True` → proceed. **The Tool Manager is the single consume owner** (fix round
+     2026-09-10, QA B3): the continuation executor never issues the consume CAS itself — it
+     re-enters this pipeline with the approval id (ADR-031 Amendment 1). Rationale: the binding
+     must be recomputed from re-validated params by the same code that computed it at park time,
+     or the executor would duplicate steps 1–2 and the chokepoint would fork.
+4. **Audit attempt** via `AuditHook.attempt(ToolCallAttempt(...))` (§2.2) — one attempt row per
+   `execute` call, for EVERY path. On early exits (steps 1–3) the attempt is written at the exit
+   point and immediately finalised with the error outcome. On the execute path the attempt row is
+   written BEFORE the handler runs, so a process kill mid-execution can never leave a side effect
+   with no `tool_calls` row (Security review 2026-09-10 item 3, two-phase audit). Transactional
+   rule for the real implementation: on the continuation path the attempt row MUST commit in the
+   same DB transaction as the consume CAS of step 3; on the park path it commits in the park
+   transaction (C4 §1). The seam split does not prevent this — both real implementations share the
+   request-scoped session; fakes assert ordering, not atomicity.
+5. **Execute** `operation.handler(validated_params)` under `asyncio.timeout(operation.timeout_s)`;
+   timeout → `error_kind="timeout"`.
+6. **Audit finalise** via `AuditHook.finalise(audit_id, ...)` — outcome, `error_kind`,
+   `duration_ms`.
+7. **Wrap as untrusted** (§3) and return.
 
 ### 2.2 Injected hooks (the seams streams fake)
 
 ```python
+class PermissionDecision(StrEnum):
+    ALLOW = "allow"
+    DENY = "deny"
+    ASK_USER = "ask_user"
+
+
+@dataclass(frozen=True)
+class PermissionResult:
+    """M1 engine shape kept verbatim; default-deny is structural in the engine, not config."""
+    decision: PermissionDecision
+    reason: str                # human-readable why, e.g. "granted" / "no grant for this triple (default deny)"
+    source: str                # what decided, e.g. "config:project_manager.github_mcp.issues_close"
+
+
+@dataclass(frozen=True)
+class TraceContext:
+    """Correlation ids for audit rows and park requests. Continuations reuse the ORIGINAL
+    turn's request_id (ADR-031 lineage)."""
+    request_id: str
+    task_id: str
+    conversation_id: str
+
+
+@dataclass(frozen=True)
+class ToolCallAttempt:
+    """The pre-execution audit record (two-phase: attempt → finalise)."""
+    request_id: str
+    task_id: str
+    agent_id: str
+    tool: str
+    operation: str
+    adapter_kind: AdapterKind | None   # None iff the tool itself was unknown (step 1)
+    server_id: str | None
+    args_hash: str | None              # None when validation failed/never ran (steps 1–2 exits)
+    params_redacted: dict | None       # None when validation failed/never ran
+    permission_decision: PermissionDecision | None  # None when the pipeline exited before step 3
+    permission_reason: str | None
+    approval_id: str | None
+    created_at: str                    # ISO-8601 UTC
+
+
 class PermissionHook(Protocol):
     def __call__(self, *, agent_id: str, tool: str, operation: str) -> PermissionResult: ...
-    # PermissionResult = {decision: ALLOW|DENY|ASK_USER, reason: str, source: str} —
-    # M1 engine shape kept verbatim; default-deny is structural in the engine, not config.
 
-class ParkHook(Protocol):
-    async def __call__(self, park: ParkRequest) -> ParkedApproval: ...
-    # ParkRequest / ParkedApproval are C4 §4 types. The Tool Manager never talks to the
-    # approvals tables directly.
 
 class AuditHook(Protocol):
-    async def __call__(self, record: ToolCallAudit) -> None: ...
-    # ToolCallAudit: {request_id, task_id, agent_id, tool, operation, adapter_kind,
-    #   server_id, args_hash, params_redacted, permission_decision, permission_reason,
-    #   approval_id, outcome, error_kind, duration_ms, created_at}
+    async def attempt(self, record: ToolCallAttempt) -> str: ...
+    # Returns the audit row id. Called once per execute() call, before any handler runs.
+
+    async def finalise(self, audit_id: str, *, outcome: Literal["ok", "error"],
+                       error_kind: str | None, duration_ms: int) -> None: ...
+    # Called exactly once per attempt, after the pipeline resolves (immediately, on early exits).
 ```
 
-`ToolManager` is constructed with `(adapters, permission_hook, park_hook, audit_hook)`. There is no
+The approvals seam is **C4 §4's `ApprovalsService`** (`park` + `consume`) — one protocol, defined
+once, injected here (fix round 2026-09-10: the narrower `ParkHook` was deleted with QA B3's
+consume-ownership fix; the Tool Manager still never talks to the approvals tables directly, only
+to the protocol).
+
+`ToolManager` is constructed with `(adapters, permission_hook, approvals, audit_hook)`. There is no
 default hook: constructing a manager without an audit hook is a `TypeError`, so "forgot to audit"
 is not an expressible program.
 

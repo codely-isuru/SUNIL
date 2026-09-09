@@ -56,3 +56,25 @@ with unfinalised tasks); double-execution is impossible because consume is the g
   to audit, entered at two points.
 - Owner-visible behaviour: a parked task says so in the conversation; the answer to "what happened
   to X?" is in the dashboard queue, never a hung spinner.
+
+---
+
+## Amendment 1 — consume ownership clarified (2026-09-10, Phase 0 fix round)
+
+**Driven by:** QA review 2026-09-10 blocker B3 — as first written, Decision item 3 ("it consumes
+the approval … executes the approved call through the full C1 pipeline") and C1 §2.1 step 3 could
+each be read as issuing the consume CAS, and a literal implementation consumed twice: the second
+consume failed and nothing executed.
+
+**Clarification (one owner):** the continuation does **not** issue the consume CAS itself. It
+re-enters `ToolManager.execute(..., approval=<approval_id>)`; the **Tool Manager** recomputes the
+binding from freshly re-validated params and calls `ApprovalsService.consume`, which performs the
+binding check and the `approved→consumed` CAS in one transaction (C1 §2.1 step 3, C4 §4). Decision
+item 3's sentence remains true read at the continuation level — the continuation's call chain
+consumes then executes — but the component issuing the CAS is the manager, single chokepoint,
+because the binding must be recomputed by the same code that computed it at park time; an
+executor-side consume would duplicate C1's validation/canonicalisation steps outside the
+chokepoint. The single-use property is unchanged: the CAS inside the ApprovalsService remains the
+gate, and restart safety still follows from persisted continuation state + that CAS. The startup
+re-scan gains the reconciliation rules recorded in C4 §3 (stale-approved → `approval_expired`;
+consumed + unfinalised → `continuation_interrupted`; Security review 2026-09-10 items 1–2).
