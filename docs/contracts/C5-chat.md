@@ -88,8 +88,9 @@ with the identical envelope. No heartbeats (the stub is never silent for 15 s).
 Contract tests (`apps/api/tests/contracts/test_c5_chat.py`):
 1. JSON lane: each of the five message prefixes → exact envelope shape; the exactly-one rule holds
    in all five (assert the other two of message/failure/approval are null).
-2. NDJSON lane: frames parse line-by-line; token concatenation equals `done.envelope.message.content`
-   minus the `STUB: ` prefix handling (projection property); exactly one `done`, and it is last.
+2. NDJSON lane: frames parse line-by-line; token concatenation equals
+   `done.envelope.message.content` exactly (projection property — tokens carry a trailing space
+   except the last, as in C2's `FakeProvider.stream`); exactly one `done`, and it is last.
 3. `message` of length 0 and 8001 → 422; unknown body key → 422; `input_modality:"voice"` → 422.
 4. cookie lane without `X-SUNIL-Client` → 403; with header but no session → 401.
 5. bearer lane: valid `SUNIL_SERVICE_TOKEN` + no cookie → 200; same token on

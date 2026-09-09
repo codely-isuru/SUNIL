@@ -102,7 +102,7 @@ these steps, in order, for every call regardless of adapter kind:
 
 1. **Resolve** tool + operation from the registry; unknown → `ToolResult(ok=False, error_kind="unknown_operation")`.
 2. **Validate params** against `params_model` (`extra="forbid"`); failure → `error_kind="invalid_params"`. Validation happens BEFORE the permission check so the audit row records what was actually attempted, in canonical form.
-3. **Permission decision** via the injected `PermissionHook` (§2.2). `DENY` → `error_kind="permission_denied"`. `ASK_USER` without a consumable approval → **park** via the injected `ParkHook` (C4) and return `error_kind="approval_required"` with `data=None`; the approval id travels in the park hook's return and is surfaced by the orchestrator (C5 `outcome=parked`). `ASK_USER` with a valid single-use approval bound to `(agent_id, tool, operation, args_hash)` → proceed (C4 §5 binding rule).
+3. **Permission decision** via the injected `PermissionHook` (§2.2). `DENY` → `error_kind="permission_denied"`. `ASK_USER` without a consumable approval → **park** via the injected `ParkHook` (C4) and return `error_kind="approval_required"` with `data=None`; the approval id travels in the park hook's return and is surfaced by the orchestrator (C5 `outcome=parked`). `ASK_USER` with a valid single-use approval bound to `(agent_id, tool, operation, args_hash)` → proceed (C4 §1 binding rule).
 4. **Execute** `operation.handler(validated_params)` under `asyncio.timeout(operation.timeout_s)`; timeout → `error_kind="timeout"`.
 5. **Audit** via the injected `AuditHook` — one `tool_calls` row per attempt, written for EVERY outcome of steps 1–4 (including denials and parks), carrying `permission_decision`, `permission_reason`, `adapter_kind`, `server_id`, `args_hash`, `approval_id?`.
 6. **Wrap as untrusted** (§3) and return.
@@ -117,7 +117,7 @@ class PermissionHook(Protocol):
 
 class ParkHook(Protocol):
     async def __call__(self, park: ParkRequest) -> ParkedApproval: ...
-    # ParkRequest / ParkedApproval are C4 §6 types. The Tool Manager never talks to the
+    # ParkRequest / ParkedApproval are C4 §4 types. The Tool Manager never talks to the
     # approvals tables directly.
 
 class AuditHook(Protocol):
