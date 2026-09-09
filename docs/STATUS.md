@@ -34,6 +34,14 @@ run 34370950604, 8 commits). Independent QA + Security reviews IN FLIGHT; known 
 drift to resolve before merge: ADR-032 ports (5432/5678) vs actual host bindings (5433/5680).
 Merge to `V2` only after PASS/APPROVE, then Gate 2 (owner).
 
+**Fix rounds returned and MERGED to `V2` (2026-09-10):** both lanes fixed every blocker and
+every should — see the disposition tables in [`tasks/P0-contracts.md`](tasks/P0-contracts.md) and
+[`tasks/P0-platform.md`](tasks/P0-platform.md). ADR-032 Amendment 1 lands the real ports
+(5433/5680/3001); ADR-031 Amendment 1 fixes consume ownership (Tool Manager, single actor);
+platform now loopback-only with 3 DB roles, fixture-tested CI gates, true first-boot evidence.
+IN FLIGHT: Security delta re-verification of the merged tip (B1/B2/B3 lift check) · QA building
+the C1–C4 fakes + contract suites (exit criteria 3–4). Then Gate 2 (owner).
+
 **Reviews returned (2026-09-10): Security BLOCK · QA FAIL — bounced to owners, fixes in flight.**
 Reports: [`reviews/2026-09-10-P0-security-review.md`](reviews/2026-09-10-P0-security-review.md) ·
 [`reviews/2026-09-10-P0-qa-review.md`](reviews/2026-09-10-P0-qa-review.md). Blockers: port
