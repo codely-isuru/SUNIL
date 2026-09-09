@@ -30,6 +30,9 @@ cd "$REPO_ROOT"
 
 COMPOSE_FILE='infra/docker-compose.yml'
 ENV_FILE='.env'
+# Provider keys are scoped to the LiteLLM container only (ADR-030 S2), so
+# they live in their own env file rather than the shared one.
+LITELLM_ENV_FILE='infra/.env.litellm'
 # Explicit --env-file: without it Compose looks for infra/.env next to the
 # compose file, not the repo-root .env we actually keep.
 compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
@@ -56,27 +59,153 @@ if ! docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; then
 fi
 ok "Docker engine $(docker info --format '{{.ServerVersion}}')"
 
-if [ ! -f "$ENV_FILE" ]; then
-	warn 'No .env found - creating one from .env.example (dummy values).'
-	cp .env.example "$ENV_FILE"
-	warn 'Edit .env before using this stack for anything real.'
-fi
+# --- secrets ---------------------------------------------------------------
+# The rule this section enforces (Phase 0 security + QA review, D-finding 1):
+# THE STACK NEVER BOOTS ON A COMMITTED DUMMY VALUE. The old behaviour was to
+# copy .env.example over and check the values were merely non-EMPTY, so a
+# clean checkout booted straight onto passwords published in a public repo -
+# and with the ports on 0.0.0.0 at the time, that was a LAN-reachable n8n
+# credential vault behind a password anyone could read on GitHub.
+#
+# So: on auto-create, generate real random values; on every run, reject any
+# secret still carrying `dummy` or `change-me`.
 
-# Fail fast and specifically on the required secrets, rather than letting a
-# container die with a cryptic error 40 seconds from now.
-for required in POSTGRES_PASSWORD LITELLM_MASTER_KEY LITELLM_SALT_KEY N8N_ENCRYPTION_KEY; do
-	if ! grep -Eq "^[[:space:]]*${required}[[:space:]]*=[[:space:]]*[^[:space:]]" "$ENV_FILE"; then
-		err "${required} is missing or empty in ${ENV_FILE}. See .env.example."
-		exit 1
+# 32 hex characters from a CSPRNG. Three sources tried in order because this
+# script has to work in Git Bash on Windows, where openssl may be absent and
+# /dev/urandom may or may not be wired up. If ALL of them fail we refuse to
+# invent a value - a weak secret that looks generated is worse than a hard
+# stop that tells the user what to do.
+rand_secret() {
+	if command -v openssl >/dev/null 2>&1; then
+		openssl rand -hex 24 2>/dev/null && return 0
 	fi
-done
-ok 'Required variables present.'
+	if [ -r /dev/urandom ]; then
+		local v
+		v="$(LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 48)"
+		if [ "${#v}" -eq 48 ]; then printf '%s' "$v"; return 0; fi
+	fi
+	if command -v python >/dev/null 2>&1; then
+		python -c 'import secrets;print(secrets.token_hex(24))' 2>/dev/null && return 0
+	fi
+	return 1
+}
+
+# Replace `KEY=anything` with `KEY=<value>` in place. Values are hex, so no
+# sed metacharacter can appear in the replacement.
+set_env_value() {
+	local file="$1" key="$2" value="$3"
+	if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+		sed -i.bak -E "s|^[[:space:]]*${key}[[:space:]]*=.*$|${key}=${value}|" "$file"
+		rm -f "${file}.bak"
+	else
+		printf '%s=%s\n' "$key" "$value" >> "$file"
+	fi
+}
 
 env_val() {
-	local v
-	v="$(grep -E "^[[:space:]]*$1[[:space:]]*=" "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '[:space:]')"
+	local v file="${3:-$ENV_FILE}"
+	[ -f "$file" ] || { printf '%s' "$2"; return 0; }
+	v="$(grep -E "^[[:space:]]*$1[[:space:]]*=" "$file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]')"
 	[ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"
 }
+
+# Secrets that MUST be real for the three infrastructure services to be
+# trustworthy. Anything the app will need but no running process consumes yet
+# is warned about instead (see SOFT_SECRETS below) - blocking a platform boot
+# on a variable nothing reads would just teach people to bypass this check.
+HARD_SECRETS='POSTGRES_PASSWORD LITELLM_MASTER_KEY N8N_ENCRYPTION_KEY LITELLM_DB_PASSWORD N8N_DB_PASSWORD'
+SOFT_SECRETS='SESSION_SECRET SUNIL_SERVICE_TOKEN SUNIL_N8N_MCP_AUTH_TOKEN LITELLM_VIRTUAL_KEY_DEFAULT'
+
+if [ ! -f "$ENV_FILE" ]; then
+	warn "No ${ENV_FILE} found - creating it from .env.example."
+	cp .env.example "$ENV_FILE"
+	generated=0
+	for k in $HARD_SECRETS $SOFT_SECRETS; do
+		# LITELLM_VIRTUAL_KEY_DEFAULT is minted BY LiteLLM (POST /key/generate)
+		# against the master key; a random string here would just 401. Leave it
+		# for a human and rely on the soft warning.
+		[ "$k" = 'LITELLM_VIRTUAL_KEY_DEFAULT' ] && continue
+		if v="$(rand_secret)"; then
+			# LiteLLM requires its master key to look like an API key.
+			case "$k" in LITELLM_MASTER_KEY) v="sk-${v}" ;; esac
+			set_env_value "$ENV_FILE" "$k" "$v"
+			generated=$((generated + 1))
+		else
+			rm -f "$ENV_FILE"
+			err 'No source of randomness available (tried openssl, /dev/urandom, python),'
+			err "so ${ENV_FILE} was NOT created with dummy values - that would boot the"
+			err 'stack on passwords published in a public repository.'
+			err "Do this instead:  cp .env.example ${ENV_FILE}  and edit every value"
+			err 'marked REQUIRED by hand.'
+			exit 1
+		fi
+	done
+	ok "Generated ${generated} random secret(s) into ${ENV_FILE}."
+	warn 'DATABASE_URL still carries the template password - update it by hand'
+	warn 'to match POSTGRES_PASSWORD before running the app against this stack.'
+fi
+
+if [ ! -f "$LITELLM_ENV_FILE" ]; then
+	warn "No ${LITELLM_ENV_FILE} found - creating it from the template."
+	cp infra/.env.litellm.example "$LITELLM_ENV_FILE"
+	if v="$(rand_secret)"; then
+		set_env_value "$LITELLM_ENV_FILE" LITELLM_SALT_KEY "sk-${v}"
+		ok "Generated LITELLM_SALT_KEY into ${LITELLM_ENV_FILE}."
+	else
+		rm -f "$LITELLM_ENV_FILE"
+		err "Could not generate a salt key; create ${LITELLM_ENV_FILE} by hand."
+		exit 1
+	fi
+fi
+
+# Present-and-not-a-dummy, for both files.
+check_secret() {
+	local key="$1" file="$2" fatal="$3" value
+	value="$(env_val "$key" '' "$file")"
+	if [ -z "$value" ]; then
+		if [ "$fatal" = 'yes' ]; then
+			err "${key} is missing or empty in ${file}. See ${file}.example."
+			return 1
+		fi
+		warn "${key} is empty in ${file} (no process needs it yet)."
+		return 0
+	fi
+	# Case-insensitive: the template markers are lowercase, but a human
+	# writing CHANGE-ME must not slip through.
+	if printf '%s' "$value" | grep -Eqi 'dummy|change-me|changeme'; then
+		if [ "$fatal" = 'yes' ]; then
+			err "${key} in ${file} is still a TEMPLATE value."
+			err 'That value is committed to a PUBLIC repository - it is not a secret.'
+			err 'Replace it with a generated value: openssl rand -hex 24'
+			return 1
+		fi
+		warn "${key} in ${file} is still a template value (nothing reads it yet)."
+	fi
+	return 0
+}
+
+secret_failures=0
+for key in $HARD_SECRETS; do
+	check_secret "$key" "$ENV_FILE" yes || secret_failures=$((secret_failures + 1))
+done
+check_secret LITELLM_SALT_KEY "$LITELLM_ENV_FILE" yes || secret_failures=$((secret_failures + 1))
+for key in $SOFT_SECRETS; do
+	check_secret "$key" "$ENV_FILE" no || true
+done
+# Upstream provider keys are allowed to stay dummy: the proxy boots and
+# serves health without them, and this machine has no ambient Anthropic key
+# (docs/ENVIRONMENT.md S8). Say so once rather than failing.
+for key in ANTHROPIC_API_KEY OPENAI_API_KEY; do
+	v="$(env_val "$key" '' "$LITELLM_ENV_FILE")"
+	if [ -z "$v" ] || printf '%s' "$v" | grep -Eqi 'dummy|not-a-real'; then
+		warn "${key} is a placeholder - completion calls to that provider will fail."
+	fi
+done
+if [ "$secret_failures" -gt 0 ]; then
+	err "${secret_failures} secret(s) rejected. Refusing to boot."
+	exit 1
+fi
+ok 'Required secrets present and not template values.'
 
 PG_PORT="$(env_val POSTGRES_HOST_PORT 5433)"
 LL_PORT="$(env_val LITELLM_HOST_PORT 4000)"

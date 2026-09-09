@@ -38,8 +38,11 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
-$ComposeFile = 'infra/docker-compose.yml'
-$EnvFile     = '.env'
+$ComposeFile   = 'infra/docker-compose.yml'
+$EnvFile       = '.env'
+# Provider keys are scoped to the LiteLLM container only (ADR-030 S2), so
+# they live in their own env file rather than the shared one.
+$LitellmEnvFile = 'infra/.env.litellm'
 # Explicit --env-file: without it Compose looks for infra/.env next to the
 # compose file, not the repo-root .env we actually keep.
 $ComposeArgs = @('compose', '--env-file', $EnvFile, '-f', $ComposeFile)
@@ -67,22 +70,130 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok ("Docker engine " + (docker info --format '{{.ServerVersion}}'))
 
-if (-not (Test-Path $EnvFile)) {
-    Write-Warn2 "No .env found - creating one from .env.example (dummy values)."
-    Copy-Item '.env.example' $EnvFile
-    Write-Warn2 "Edit .env before using this stack for anything real."
+# --- secrets ---------------------------------------------------------------
+# The rule this section enforces (Phase 0 security + QA review, D-finding 1):
+# THE STACK NEVER BOOTS ON A COMMITTED DUMMY VALUE. The old behaviour was to
+# copy .env.example over and check the values were merely non-EMPTY, so a
+# clean checkout booted straight onto passwords published in a public repo -
+# and with the ports on 0.0.0.0 at the time, that was a LAN-reachable n8n
+# credential vault behind a password anyone could read on GitHub.
+#
+# Keep this logic behaviourally identical to scripts/dev-up.sh.
+
+# 48 hex characters from the OS CSPRNG. Not Get-Random: that is a seeded
+# pseudo-random generator, not a cryptographic one, and these values protect
+# a credential vault.
+function New-RandomSecret {
+    $bytes = New-Object 'byte[]' 24
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
 }
 
-# Fail fast and specifically on the required secrets, rather than letting a
-# container die with a cryptic error 40 seconds from now.
-$envText = Get-Content $EnvFile -Raw
-foreach ($required in @('POSTGRES_PASSWORD', 'LITELLM_MASTER_KEY', 'LITELLM_SALT_KEY', 'N8N_ENCRYPTION_KEY')) {
-    if ($envText -notmatch "(?m)^\s*$required\s*=\s*\S+") {
-        Write-Err2 "$required is missing or empty in $EnvFile. See .env.example."
-        exit 1
+# Replace `KEY=anything` with `KEY=<value>`. Values are hex, so no regex
+# metacharacter can appear in the replacement.
+function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
+    $lines = @(Get-Content $Path)
+    $found = $false
+    $out = foreach ($line in $lines) {
+        if ($line -match "^\s*$Key\s*=") { $found = $true; "$Key=$Value" } else { $line }
+    }
+    if (-not $found) { $out = $out + "$Key=$Value" }
+    # utf8 without BOM is not available on 5.1's Set-Content, and these files
+    # are pure ASCII, so ascii is the honest encoding to write.
+    Set-Content -Path $Path -Value $out -Encoding ascii
+}
+
+function Get-EnvFileValue([string]$Path, [string]$Key) {
+    if (-not (Test-Path $Path)) { return '' }
+    $match = @(Get-Content $Path | Where-Object { $_ -match "^\s*$Key\s*=" })
+    if ($match.Count -eq 0) { return '' }
+    $parts = $match[-1] -split '=', 2
+    if ($parts.Count -lt 2) { return '' }
+    return $parts[1].Trim()
+}
+
+# Secrets that MUST be real for the three infrastructure services to be
+# trustworthy. Anything the app will need but no running process consumes yet
+# is warned about instead - blocking a platform boot on a variable nothing
+# reads would just teach people to bypass this check.
+$HardSecrets = @('POSTGRES_PASSWORD', 'LITELLM_MASTER_KEY', 'N8N_ENCRYPTION_KEY',
+                 'LITELLM_DB_PASSWORD', 'N8N_DB_PASSWORD')
+$SoftSecrets = @('SESSION_SECRET', 'SUNIL_SERVICE_TOKEN', 'SUNIL_N8N_MCP_AUTH_TOKEN',
+                 'LITELLM_VIRTUAL_KEY_DEFAULT')
+
+if (-not (Test-Path $EnvFile)) {
+    Write-Warn2 "No $EnvFile found - creating it from .env.example."
+    Copy-Item '.env.example' $EnvFile
+    $generated = 0
+    foreach ($k in ($HardSecrets + $SoftSecrets)) {
+        # LITELLM_VIRTUAL_KEY_DEFAULT is minted BY LiteLLM (POST /key/generate)
+        # against the master key; a random string here would just 401. Leave it
+        # for a human and rely on the soft warning.
+        if ($k -eq 'LITELLM_VIRTUAL_KEY_DEFAULT') { continue }
+        $v = New-RandomSecret
+        # LiteLLM requires its master key to look like an API key.
+        if ($k -eq 'LITELLM_MASTER_KEY') { $v = "sk-$v" }
+        Set-EnvValue $EnvFile $k $v
+        $generated++
+    }
+    Write-Ok "Generated $generated random secret(s) into $EnvFile."
+    Write-Warn2 'DATABASE_URL still carries the template password - update it by hand'
+    Write-Warn2 'to match POSTGRES_PASSWORD before running the app against this stack.'
+}
+
+if (-not (Test-Path $LitellmEnvFile)) {
+    Write-Warn2 "No $LitellmEnvFile found - creating it from the template."
+    Copy-Item 'infra/.env.litellm.example' $LitellmEnvFile
+    Set-EnvValue $LitellmEnvFile 'LITELLM_SALT_KEY' ("sk-" + (New-RandomSecret))
+    Write-Ok "Generated LITELLM_SALT_KEY into $LitellmEnvFile."
+}
+
+# Present-and-not-a-dummy, for both files.
+function Test-Secret([string]$Key, [string]$Path, [bool]$Fatal) {
+    $value = Get-EnvFileValue $Path $Key
+    if (-not $value) {
+        if ($Fatal) {
+            Write-Err2 "$Key is missing or empty in $Path. See $Path.example."
+            return $false
+        }
+        Write-Warn2 "$Key is empty in $Path (no process needs it yet)."
+        return $true
+    }
+    # Case-insensitive (-match is): the template markers are lowercase, but a
+    # human writing CHANGE-ME must not slip through.
+    if ($value -match 'dummy|change-?me') {
+        if ($Fatal) {
+            Write-Err2 "$Key in $Path is still a TEMPLATE value."
+            Write-Err2 'That value is committed to a PUBLIC repository - it is not a secret.'
+            Write-Err2 'Replace it with a generated value: openssl rand -hex 24'
+            return $false
+        }
+        Write-Warn2 "$Key in $Path is still a template value (nothing reads it yet)."
+    }
+    return $true
+}
+
+$secretFailures = 0
+foreach ($key in $HardSecrets) {
+    if (-not (Test-Secret $key $EnvFile $true)) { $secretFailures++ }
+}
+if (-not (Test-Secret 'LITELLM_SALT_KEY' $LitellmEnvFile $true)) { $secretFailures++ }
+foreach ($key in $SoftSecrets) { Test-Secret $key $EnvFile $false | Out-Null }
+# Upstream provider keys are allowed to stay dummy: the proxy boots and serves
+# health without them, and this machine has no ambient Anthropic key
+# (docs/ENVIRONMENT.md S8). Say so once rather than failing.
+foreach ($key in @('ANTHROPIC_API_KEY', 'OPENAI_API_KEY')) {
+    $v = Get-EnvFileValue $LitellmEnvFile $key
+    if ((-not $v) -or ($v -match 'dummy|not-a-real')) {
+        Write-Warn2 "$key is a placeholder - completion calls to that provider will fail."
     }
 }
-Write-Ok 'Required variables present.'
+if ($secretFailures -gt 0) {
+    Write-Err2 "$secretFailures secret(s) rejected. Refusing to boot."
+    exit 1
+}
+Write-Ok 'Required secrets present and not template values.'
 
 # Host-level port check. Learned the hard way: `docker ps` is not enough -
 # a host-native process can own the port with no container in sight.
