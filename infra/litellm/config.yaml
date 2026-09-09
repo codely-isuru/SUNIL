@@ -93,7 +93,16 @@ general_settings:
   # store_model_in_db is set via the STORE_MODEL_IN_DB env var in Compose.
 
 litellm_settings:
-  drop_params: true          # tolerate provider-specific params the target model lacks
+  # DM ruling (Phase 0 fix round, 2026-09-10): drop_params MUST be false.
+  # It was true, to "tolerate provider-specific params the target model
+  # lacks". Both reviews rejected that: silently dropping `response_format`
+  # turns a structured-output request into a free-text one, so C2's plan
+  # stage fails schema validation for a reason invisible in the request that
+  # was sent. It also contradicts the audit-fidelity argument used to reject
+  # OmniRoute — a gateway that mutates the request is a gateway whose audit
+  # trail is a guess. Fail the call instead: an explicit provider 400 names
+  # the offending parameter, and SUNIL's own validator stays load-bearing.
+  drop_params: false
   set_verbose: false         # NEVER true outside local debugging: verbose logs prompt bodies
   request_timeout: 600       # seconds; long enough for streamed analysis calls (ADR-028)
   # Redact message/response bodies from LiteLLM's own logs. SUNIL's audit
@@ -104,6 +113,16 @@ litellm_settings:
 
 router_settings:
   routing_strategy: simple-shuffle
-  num_retries: 2
+  # DM ruling (Phase 0 fix round, 2026-09-10): num_retries MUST be 0.
+  # Retries live SUNIL-side, per C2 §4 — one policy, one place, one set of
+  # audit rows. A gateway retry is invisible to the caller: it multiplies
+  # token spend that the A-2 usage rule cannot see, it can turn one logical
+  # turn into three provider calls under a turn deadline, and it stacks
+  # multiplicatively with the app-side policy (2 x 2 = 4 upstream calls for
+  # one user request). The gateway's job here is routing and accounting, not
+  # reliability engineering.
+  num_retries: 0
+  # Still useful and NOT a retry: these govern when a repeatedly failing
+  # deployment is taken out of rotation, which is a routing decision.
   allowed_fails: 3
   cooldown_time: 30
