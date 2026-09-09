@@ -1,3 +1,4 @@
+---
 openapi: 3.1.0
 info:
   title: SUNIL Approvals API (C4)
@@ -15,7 +16,8 @@ info:
 
 servers:
   - url: http://localhost:8000
-    description: dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
+    description: >-
+      dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
 
 security:
   - sessionCookie: []
@@ -160,7 +162,8 @@ components:
       type: apiKey
       in: cookie
       name: sunil_session
-      description: Owner session (signed cookie, ADR-007). Approvals are owner-only.
+      description: >-
+        Owner session (signed cookie, ADR-007). Approvals are owner-only.
     clientHeader:
       type: apiKey
       in: header
@@ -260,7 +263,9 @@ components:
         summary:
           type: string
           maxLength: 500
-          description: One-line human description built by SUNIL code (never LLM free-form).
+          description: >-
+            One-line human description built by SUNIL code (never LLM
+            free-form).
         decided_at:
           type: [string, 'null']
           format: date-time
@@ -274,7 +279,8 @@ components:
         consumed_at:
           type: [string, 'null']
           format: date-time
-          description: Set by the continuation's single-use CAS (approved -> consumed).
+          description: >-
+            Set by the continuation's single-use CAS (approved -> consumed).
 
     ApprovalListResponse:
       type: object
@@ -326,13 +332,25 @@ components:
           properties:
             kind:
               type: string
-              enum: [unauthenticated, forbidden_client, not_found, validation_error]
+              enum:
+                - unauthenticated
+                - forbidden_client
+                - not_found
+                - validation_error
             message:
               type: string
 
     ApprovalRequestedEvent:
       type: object
-      required: [event, approval_id, agent_id, tool, operation, summary, created_at, expires_at]
+      required:
+        - event
+        - approval_id
+        - agent_id
+        - tool
+        - operation
+        - summary
+        - created_at
+        - expires_at
       properties:
         event:
           type: string

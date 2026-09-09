@@ -1,3 +1,4 @@
+---
 openapi: 3.1.0
 info:
   title: SUNIL Chat Turn API (C5)
@@ -18,7 +19,8 @@ info:
 
 servers:
   - url: http://localhost:8000
-    description: dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
+    description: >-
+      dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
 
 paths:
   /api/v1/chat:
@@ -82,7 +84,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: conversation_id supplied but unknown (or not the caller's).
+          description: >-
+            conversation_id supplied but unknown (or not the caller's).
           content:
             application/json:
               schema:
@@ -109,7 +112,8 @@ components:
       type: apiKey
       in: header
       name: X-SUNIL-Client
-      description: Literal value "web" (ADR-008 CSRF control). Paired with sessionCookie.
+      description: >-
+        Literal value "web" (ADR-008 CSRF control). Paired with sessionCookie.
     serviceToken:
       type: http
       scheme: bearer
@@ -130,7 +134,8 @@ components:
           type: string
           minLength: 1
           maxLength: 8000
-          description: Out-of-range is a 422 before any turn machinery runs (M1 rule).
+          description: >-
+            Out-of-range is a 422 before any turn machinery runs (M1 rule).
         conversation_id:
           type: [string, 'null']
           description: Omit/null to start a new conversation.
@@ -172,7 +177,8 @@ components:
           type: string
         status:
           type: string
-          description: Task lifecycle value at response time; includes "parked" on V2.
+          description: >-
+            Task lifecycle value at response time; includes "parked" on V2.
         assigned_agent:
           type: string
 
@@ -226,13 +232,16 @@ components:
       properties:
         stage:
           type: string
-          description: One of the twelve spine stages (ROADMAP section 28; ADR-023 - the set does not grow per feature).
+          description: >-
+            One of the twelve spine stages (ROADMAP section 28; ADR-023 -
+            the set does not grow per feature).
         offset_ms:
           type: integer
         detail:
           type: [object, 'null']
           additionalProperties: true
-          description: Enums and numbers only - never prose, never LLM output (M1 rule).
+          description: >-
+            Enums and numbers only - never prose, never LLM output (M1 rule).
 
     ChatUsage:
       type: object
@@ -244,11 +253,22 @@ components:
           type: integer
         cost_usd:
           type: number
-          description: Summed across every provider attempt, including failed ones (M1 A-2 rule).
+          description: >-
+            Summed across every provider attempt, including failed ones
+            (M1 A-2 rule).
 
     ChatResponse:
       type: object
-      required: [request_id, conversation_id, outcome, message, task, failure, approval, trace, usage]
+      required:
+        - request_id
+        - conversation_id
+        - outcome
+        - message
+        - task
+        - failure
+        - approval
+        - trace
+        - usage
       description: >
         Exactly-one rule - outcome=ok: message set, failure and approval null.
         outcome=failed: failure set, message and approval null. outcome=parked:
@@ -307,7 +327,9 @@ components:
           const: token
         token:
           type: string
-          description: Analysis-stage tokens only (ADR-028 - the plan call never streams).
+          description: >-
+            Analysis-stage tokens only (ADR-028 - the plan call never
+            streams).
 
     HeartbeatFrame:
       type: object
@@ -355,6 +377,10 @@ components:
           properties:
             kind:
               type: string
-              enum: [unauthenticated, forbidden_client, not_found, validation_error]
+              enum:
+                - unauthenticated
+                - forbidden_client
+                - not_found
+                - validation_error
             message:
               type: string
