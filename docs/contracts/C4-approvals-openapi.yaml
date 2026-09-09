@@ -1,0 +1,356 @@
+openapi: 3.1.0
+info:
+  title: SUNIL Approvals API (C4)
+  version: 1.0.0
+  description: >
+    Human-approval lifecycle for ASK_USER-parked privileged actions:
+    park -> notify -> decide -> resume/refuse. Frozen Phase 0 contract
+    (2026-09-10). Rationale and the in-process park/consume seam:
+    C4-approvals.md. State machine is a single status enum column,
+    written explicitly at creation (never a schema default) and advanced
+    only by compare-and-swap transitions; there is no boolean approval
+    column and no service-level auto-approve mode.
+  contact:
+    name: Solution Architect, SUNIL V2
+
+servers:
+  - url: http://localhost:8000
+    description: dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
+
+security:
+  - sessionCookie: []
+    clientHeader: []
+
+paths:
+  /api/v1/approvals:
+    get:
+      operationId: listApprovals
+      summary: List approvals, newest first (dashboard queue + audit browser)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by lifecycle status. Omit for all.
+          schema:
+            $ref: '#/components/schemas/ApprovalStatus'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor from a previous response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of approvals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/approvals/{approval_id}:
+    get:
+      operationId: getApproval
+      summary: One approval with full (redacted) detail
+      parameters:
+        - $ref: '#/components/parameters/ApprovalId'
+      responses:
+        '200':
+          description: The approval.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/approvals/{approval_id}/decision:
+    post:
+      operationId: decideApproval
+      summary: Approve or refuse a pending approval (owner only)
+      description: >
+        The only mutating endpoint. The transition is a single conditional
+        UPDATE guarded by status='pending' (and expires_at in the future);
+        a lost race returns 409 with the current status. Approving schedules
+        the continuation (resume); refusing finalises the parked task as
+        failed with failure kind approval_refused. Decisions are terminal:
+        there is no un-decide.
+      parameters:
+        - $ref: '#/components/parameters/ApprovalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      responses:
+        '200':
+          description: The approval after the transition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: >
+            Not pending any more (already approved/refused/expired/consumed),
+            or expired at decision time. Body carries the current status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+webhooks:
+  approvalRequested:
+    post:
+      operationId: approvalRequestedWebhook
+      summary: Outbound notification when an approval is parked
+      description: >
+        Sent once per parked approval to SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL
+        (optional; loopback or the Compose host `n8n` per ADR-033's URL rule).
+        Fire-and-forget with 3 retries (1s/5s/25s backoff); delivery failure
+        never blocks parking - the dashboard queue remains the source of
+        truth. Payload is a redacted summary: never params, never prompts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalRequestedEvent'
+      responses:
+        '200':
+          description: Receiver acknowledged (any 2xx accepted).
+
+components:
+  parameters:
+    ApprovalId:
+      name: approval_id
+      in: path
+      required: true
+      schema:
+        type: string
+        description: ULID/UUID string id.
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sunil_session
+      description: Owner session (signed cookie, ADR-007). Approvals are owner-only.
+    clientHeader:
+      type: apiKey
+      in: header
+      name: X-SUNIL-Client
+      description: Must be the literal value "web" (ADR-008 CSRF control).
+
+  responses:
+    Unauthenticated:
+      description: No/invalid owner session.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ForbiddenClient:
+      description: Missing/invalid X-SUNIL-Client header or Origin mismatch.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: No approval with that id.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Request shape invalid (FastAPI/Pydantic 422).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ApprovalStatus:
+      type: string
+      description: >
+        The single source of lifecycle truth. Rows are INSERTed with an
+        explicit 'pending'; the column has NO schema default, so a
+        creation path that forgets the status fails loudly instead of
+        minting a decided row (central-memory lesson 2026-08-17,
+        boolean/state-column defaults).
+      enum: [pending, approved, refused, expired, consumed]
+
+    Approval:
+      type: object
+      required:
+        - id
+        - status
+        - created_at
+        - expires_at
+        - agent_id
+        - tool
+        - operation
+        - args_hash
+        - params_redacted
+        - request_id
+        - conversation_id
+        - task_id
+        - summary
+      properties:
+        id:
+          type: string
+        status:
+          $ref: '#/components/schemas/ApprovalStatus'
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          description: created_at + SUNIL_APPROVAL_TTL_HOURS (default 72).
+        agent_id:
+          type: string
+          description: Requesting agent, e.g. project_manager.
+        tool:
+          type: string
+          description: Tool id in the permission matrix, e.g. github.
+        operation:
+          type: string
+          description: Operation name, e.g. issues.close.
+        args_hash:
+          type: string
+          description: >
+            sha256 hex of the canonical JSON of the VALIDATED params
+            (C1 canonicalisation rule). The approval binds to exactly
+            these arguments; consume re-verifies it.
+        params_redacted:
+          type: object
+          additionalProperties: true
+          description: Redacted (ADR-006) validated params for human review.
+        request_id:
+          type: string
+        conversation_id:
+          type: string
+        task_id:
+          type: string
+        summary:
+          type: string
+          maxLength: 500
+          description: One-line human description built by SUNIL code (never LLM free-form).
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+          description: Null until a decision transition; set exactly once.
+        decided_by:
+          type: [string, 'null']
+          description: Owner user id; null until decided.
+        decision_reason:
+          type: [string, 'null']
+          maxLength: 1000
+        consumed_at:
+          type: [string, 'null']
+          format: date-time
+          description: Set by the continuation's single-use CAS (approved -> consumed).
+
+    ApprovalListResponse:
+      type: object
+      required: [approvals, next_cursor]
+      properties:
+        approvals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Approval'
+        next_cursor:
+          type: [string, 'null']
+
+    DecisionRequest:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [approve, refuse]
+        reason:
+          type: string
+          maxLength: 1000
+          description: Optional for both decisions; stored verbatim, audited.
+
+    StateConflict:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [kind, message, current_status]
+          properties:
+            kind:
+              type: string
+              const: state_conflict
+            message:
+              type: string
+            current_status:
+              $ref: '#/components/schemas/ApprovalStatus'
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [kind, message]
+          properties:
+            kind:
+              type: string
+              enum: [unauthenticated, forbidden_client, not_found, validation_error]
+            message:
+              type: string
+
+    ApprovalRequestedEvent:
+      type: object
+      required: [event, approval_id, agent_id, tool, operation, summary, created_at, expires_at]
+      properties:
+        event:
+          type: string
+          const: approval.requested
+        approval_id:
+          type: string
+        agent_id:
+          type: string
+        tool:
+          type: string
+        operation:
+          type: string
+        summary:
+          type: string
+          maxLength: 500
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
