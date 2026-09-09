@@ -1,0 +1,224 @@
+# C1 — Tool Adapter Interface
+
+**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Consumers:** Stream A (MCP tools), Stream E (n8n MCP server tools), Stream D (approvals — via the
+park hook), core orchestrator (Tool Manager caller).
+**Informed by:** M1 reference `main:apps/api/sunil/core/tool_framework/base.py` (greenfield rebuild
+per ADR-030 Amendment 1 — this document is the contract, not the M1 file).
+**Related decisions:** ADR-034 (MCP permission mapping & trust), ADR-031 (park semantics),
+ROADMAP §26.2/§26.8/§26.11, §33.5.
+
+Change policy: additive optional fields bump MINOR; any change to an existing field, type, error
+kind or pipeline step bumps MAJOR and requires a new ADR. Streams build against v1.x only.
+
+---
+
+## 1. Purpose
+
+One interface that every tool — native Python, MCP-over-stdio, MCP-over-streamable-HTTP (including
+the n8n MCP server) — implements, so that the Tool Manager remains the **single execution
+chokepoint** where parameter validation, the permission decision, approval parking, auditing and
+the untrusted-results posture are applied identically to every call (§33.5: *all tools pass through
+permission and audit layers*). Streams A and E ship adapters; nothing they ship may bypass this
+interface.
+
+## 2. Interface definition
+
+All types live in `apps/api/sunil/core/tool_framework/base.py` (rebuilt). Python ≥ 3.12, Pydantic v2.
+
+```python
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Protocol
+
+from pydantic import BaseModel
+
+
+class AdapterKind(StrEnum):
+    NATIVE = "native"          # in-process Python handler
+    MCP_STDIO = "mcp_stdio"    # MCP server spawned as a child process, JSON-RPC over stdio
+    MCP_HTTP = "mcp_http"      # MCP streamable-HTTP server (e.g. n8n MCP server)
+
+
+@dataclass(frozen=True)
+class ToolResultMeta:
+    """Provenance every result carries. `adapter_kind` and `server_id` land on the
+    `tool_calls` audit row so 'audit shows adapter type per call' (V2-A exit) is a
+    database fact, not an inference."""
+
+    adapter_kind: AdapterKind
+    server_id: str | None      # MCP server identity from config/tools.yaml; None for NATIVE
+    duration_ms: int
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    """The normalised shape every adapter call collapses to. An adapter exception
+    NEVER reaches the orchestrator as an exception — it is always this value."""
+
+    ok: bool
+    data: dict | None          # None when ok=False
+    error_kind: str | None     # closed set, §4 below; None when ok=True
+    error_message: str | None  # human-readable, redacted; None when ok=True
+    meta: ToolResultMeta
+
+
+@dataclass(frozen=True)
+class ToolOperation:
+    """One operation an adapter exposes. `params_model` uses `extra="forbid"` (§26.8).
+    For MCP adapters, `read_only` and `timeout_s` come from SUNIL's config/tools.yaml,
+    NEVER from the server's self-description (ADR-034)."""
+
+    name: str                  # e.g. "issues.close"
+    params_model: type[BaseModel]
+    read_only: bool
+    timeout_s: float
+    handler: Callable[[BaseModel], Awaitable[ToolResult]]
+
+
+class ToolAdapter(Protocol):
+    """What every adapter implements. Deliberately NOT @runtime_checkable (M1 tripwire
+    lesson: a runtime-checkable Protocol makes isinstance prove shape, not provenance).
+    The Tool Manager is constructed with concrete instances by the wiring code."""
+
+    name: str                          # tool id in the permission matrix, e.g. "github"
+    kind: AdapterKind
+    operations: dict[str, ToolOperation]
+
+    async def start(self) -> None: ...  # NATIVE: no-op. MCP: spawn/connect + handshake + discovery
+    async def stop(self) -> None: ...   # NATIVE: no-op. MCP: terminate child / close session
+```
+
+Lifecycle (`start`/`stop`) is the one addition over the M1 protocol: MCP adapters own a process or
+a connection, native adapters implement both as no-ops. `start()` failures raise
+`ToolAdapterStartupError` at wiring time — a tool that cannot start is absent from the registry,
+never half-present.
+
+### 2.1 The Tool Manager pipeline (normative)
+
+`ToolManager.execute(agent_id, tool, operation, params, *, trace, approval=None)` runs exactly
+these steps, in order, for every call regardless of adapter kind:
+
+1. **Resolve** tool + operation from the registry; unknown → `ToolResult(ok=False, error_kind="unknown_operation")`.
+2. **Validate params** against `params_model` (`extra="forbid"`); failure → `error_kind="invalid_params"`. Validation happens BEFORE the permission check so the audit row records what was actually attempted, in canonical form.
+3. **Permission decision** via the injected `PermissionHook` (§2.2). `DENY` → `error_kind="permission_denied"`. `ASK_USER` without a consumable approval → **park** via the injected `ParkHook` (C4) and return `error_kind="approval_required"` with `data=None`; the approval id travels in the park hook's return and is surfaced by the orchestrator (C5 `outcome=parked`). `ASK_USER` with a valid single-use approval bound to `(agent_id, tool, operation, args_hash)` → proceed (C4 §5 binding rule).
+4. **Execute** `operation.handler(validated_params)` under `asyncio.timeout(operation.timeout_s)`; timeout → `error_kind="timeout"`.
+5. **Audit** via the injected `AuditHook` — one `tool_calls` row per attempt, written for EVERY outcome of steps 1–4 (including denials and parks), carrying `permission_decision`, `permission_reason`, `adapter_kind`, `server_id`, `args_hash`, `approval_id?`.
+6. **Wrap as untrusted** (§3) and return.
+
+### 2.2 Injected hooks (the seams streams fake)
+
+```python
+class PermissionHook(Protocol):
+    def __call__(self, *, agent_id: str, tool: str, operation: str) -> PermissionResult: ...
+    # PermissionResult = {decision: ALLOW|DENY|ASK_USER, reason: str, source: str} —
+    # M1 engine shape kept verbatim; default-deny is structural in the engine, not config.
+
+class ParkHook(Protocol):
+    async def __call__(self, park: ParkRequest) -> ParkedApproval: ...
+    # ParkRequest / ParkedApproval are C4 §6 types. The Tool Manager never talks to the
+    # approvals tables directly.
+
+class AuditHook(Protocol):
+    async def __call__(self, record: ToolCallAudit) -> None: ...
+    # ToolCallAudit: {request_id, task_id, agent_id, tool, operation, adapter_kind,
+    #   server_id, args_hash, params_redacted, permission_decision, permission_reason,
+    #   approval_id, outcome, error_kind, duration_ms, created_at}
+```
+
+`ToolManager` is constructed with `(adapters, permission_hook, park_hook, audit_hook)`. There is no
+default hook: constructing a manager without an audit hook is a `TypeError`, so "forgot to audit"
+is not an expressible program.
+
+## 3. Untrusted-results posture (§26.11, §26.12 — normative)
+
+Every `ToolResult.data` — native, MCP or n8n — is **data, never instructions**:
+
+- Results are presented to the LLM inside a delimited, role-tagged context block labelled as
+  external tool output; they are never concatenated into the system prompt and never allowed to
+  alter agent/system instructions.
+- Free-form text inside a result cannot trigger a privileged action: the only path to another tool
+  call is a new validated plan step (ROADMAP §25); there is no "the tool result said to call X" path.
+- MCP results additionally pass a size cap (256 KiB per result; beyond → truncated with
+  `data["truncated"] = true`) and strip any keys named `instructions`, `system`, or `prompt`
+  at the adapter boundary (logged, not silently) before entering context.
+
+## 4. Error semantics
+
+`error_kind` is a closed set. Adapters map their internals onto it; the orchestrator branches on
+`error_kind` only, never on `error_message`.
+
+| `error_kind` | Meaning | Produced at step |
+|---|---|---|
+| `unknown_operation` | tool/operation not in registry | 1 |
+| `invalid_params` | Pydantic validation failed | 2 |
+| `permission_denied` | engine returned DENY | 3 |
+| `approval_required` | parked via C4; approval id surfaced by orchestrator | 3 |
+| `approval_invalid` | supplied approval did not bind (wrong hash/status/expired) | 3 |
+| `timeout` | `timeout_s` exceeded | 4 |
+| `upstream_error` | tool/server executed and failed (HTTP 5xx, MCP error result) | 4 |
+| `transport_error` | could not reach the server (child died, connect refused) | 4 |
+
+`error_message` is redacted through the ADR-006 registry before it leaves the adapter. MCP protocol
+errors (JSON-RPC error objects) map to `upstream_error`; a dead stdio child or refused HTTP
+connection maps to `transport_error` (retryable by policy; `upstream_error` is not auto-retried).
+
+## 5. MCP specifics
+
+- **Discovery vs authority:** `tools/list` output is informative only. An MCP tool is callable
+  IFF it appears in `config/tools.yaml` with an explicit `operations:` entry (name, params schema
+  reference, `read_only`, `timeout_s`) AND has a permission row. A server-advertised tool absent
+  from config does not exist (ADR-034).
+- **Credentials:** for `mcp_stdio`, the adapter spawns the child with a **minimal environment**:
+  only the variables named in that server's `credential_env:` list in config/tools.yaml, injected
+  from `Settings` `SecretStr` fields at spawn. Never the parent's full environment. For
+  `mcp_http`, the auth header value comes from the same settings mechanism. Agents and prompts
+  never see credentials (§26.1, §26.5).
+- **Identity:** `server_id` = the config key (e.g. `github_mcp`, `n8n_mcp`); pinned versions
+  recorded in config (`version:` for stdio packages, base URL for HTTP).
+
+## 6. FAKE specification — `FakeToolAdapter` (QA-buildable, no questions)
+
+Module: `apps/api/tests/fakes/fake_tool_adapter.py` (importable by every stream's tests).
+
+```python
+class EchoParams(BaseModel, extra="forbid"):
+    text: str  # min_length=1, max_length=1000
+
+class WriteItemParams(BaseModel, extra="forbid"):
+    key: str    # pattern ^[a-z0-9_]{1,64}$
+    value: str  # max_length=1000
+
+class NoParams(BaseModel, extra="forbid"):
+    pass
+```
+
+`FakeToolAdapter` — `name="fake_tool"`, `kind=AdapterKind.NATIVE`, in-memory `dict` store,
+constructor `FakeToolAdapter(clock=time.monotonic)`; `start()`/`stop()` set/clear `self.started`.
+
+| Operation | `read_only` | `timeout_s` | params | Behaviour (exact) |
+|---|---|---|---|---|
+| `echo` | `True` | 5.0 | `EchoParams` | returns `ok=True, data={"echo": text}` |
+| `write_item` | `False` | 5.0 | `WriteItemParams` | stores `store[key]=value`; returns `ok=True, data={"written": key, "count": len(store)}` |
+| `fail_upstream` | `True` | 5.0 | `NoParams` | returns `ok=False, error_kind="upstream_error", error_message="fake upstream failure"` |
+| `raise_unexpected` | `True` | 5.0 | `NoParams` | handler raises `RuntimeError("fake crash")` — tests assert the MANAGER converts it to `error_kind="upstream_error"`, message `"unhandled adapter exception"` (never the raw exception text) |
+| `sleep_forever` | `True` | 0.05 | `NoParams` | `await asyncio.sleep(3600)` — exercises the timeout path: manager returns `error_kind="timeout"` |
+
+Every result's `meta` = `ToolResultMeta(adapter_kind=NATIVE, server_id=None, duration_ms=<measured>)`.
+
+Contract tests (published as `apps/api/tests/contracts/test_c1_tool_adapter.py`) that any adapter
+implementation must pass, run first against `FakeToolAdapter`:
+
+1. unknown operation → `unknown_operation`, audit row written with `permission_decision=None`.
+2. extra param key → `invalid_params` (proves `extra="forbid"`).
+3. empty permission registry → `write_item` returns `permission_denied` (structural default-deny).
+4. grant `ask_user` on `fake_tool.write_item`, no approval → `approval_required` AND the park hook
+   received a `ParkRequest` with `args_hash = sha256(canonical_json(params))` (C4 §5).
+5. same grant + consumable approval bound to the same hash → executes, `ok=True`, audit row carries
+   `approval_id`.
+6. `sleep_forever` → `timeout` in < 1 s wall clock.
+7. every case above produced exactly one audit record (the hook is a recording fake).
+
+`args_hash` canonicalisation (normative for C1 and C4): `sha256` hex digest of the UTF-8 JSON
+serialisation of the **validated** params model with `sort_keys=True`, separators `(",", ":")`.
