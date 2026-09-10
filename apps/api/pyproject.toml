@@ -34,7 +34,10 @@ testpaths = ["tests"]
 # silently not executed, which is exactly the "fake pass" a contract suite must
 # never produce.
 asyncio_mode = "auto"
-addopts = "-q --strict-markers"
+# No -q here. ci.yml's test job already passes `-q`, and a second -q raises the
+# quiet level far enough to suppress the "N passed" summary line — a CI job with
+# no visible result is worse than a verbose one.
+addopts = "--strict-markers"
 markers = [
   "contract: a numbered test from a frozen Phase 0 contract document",
 ]
