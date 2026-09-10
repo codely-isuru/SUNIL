@@ -39,7 +39,11 @@ every should — see the disposition tables in [`tasks/P0-contracts.md`](tasks/P
 [`tasks/P0-platform.md`](tasks/P0-platform.md). ADR-032 Amendment 1 lands the real ports
 (5433/5680/3001); ADR-031 Amendment 1 fixes consume ownership (Tool Manager, single actor);
 platform now loopback-only with 3 DB roles, fixture-tested CI gates, true first-boot evidence.
-IN FLIGHT: Security delta re-verification of the merged tip (B1/B2/B3 lift check) · QA building
+**Security delta re-verify (merged tip 8b0dafa): BLOCK LIFTED — Phase-0 architecture baseline
+approved.** Residuals S-1..S-6 non-blocking (S-1 driver-token drift psycopg vs asyncpg and S-2
+missing SUNIL_APPROVAL_CONSUME_GRACE_HOURS in .env.example go to the next engineering round);
+12-item deferred-to-build checklist recorded in the re-verify report; highest-priority open item:
+prove n8n MCP auth-token enforcement (Stream E). IN FLIGHT: QA building
 the C1–C4 fakes + contract suites (exit criteria 3–4). Then Gate 2 (owner).
 
 **Reviews returned (2026-09-10): Security BLOCK · QA FAIL — bounced to owners, fixes in flight.**
