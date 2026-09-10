@@ -1,6 +1,6 @@
 # C4 — Approvals: rationale, in-process seam, and fake
 
-**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.1.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **OpenAPI:** [`C4-approvals-openapi.yaml`](C4-approvals-openapi.yaml) (the HTTP surface).
 **Consumers:** Stream D (dashboard + service), Stream A (the Tool Manager's injected
 `ApprovalsService` seam, C1 §2.2), Streams E/F (their write operations park here).
@@ -35,7 +35,8 @@ transition the invariant must survive; anything not listed is impossible by cons
 
 No transition out of `refused`, `expired`, or `consumed` exists. Rows are never deleted (audit).
 Restart safety: the park `INSERT` commits in the same transaction as the persisted continuation
-state (plan + step cursor + `args_hash`), *before* the turn returns `parked` — an API crash after
+state (plan + step cursor + `args_hash`; the `continuation` the orchestrator supplied via C1 §2.2
+`ParkContext`, non-empty by construction — v1.1.0, F3), *before* the turn returns `parked` — an API crash after
 park loses nothing; an approved-but-unconsumed approval is re-consumable by the restarted
 continuation because consume is the CAS, not an in-memory flag.
 
@@ -105,8 +106,13 @@ class ParkRequest(BaseModel):
     agent_id: str; tool: str; operation: str
     args_hash: str; params_redacted: dict
     request_id: str; conversation_id: str; task_id: str
-    summary: str                      # built by SUNIL code, never LLM output
-    continuation: dict                # opaque persisted plan-cursor state (ADR-031)
+    summary: str = Field(min_length=1, max_length=500)
+                                      # built by SUNIL code, never LLM output; caps match the
+                                      # Approval schema's summary field (v1.1.0, F3)
+    continuation: dict = Field(min_length=1)
+                                      # opaque persisted plan-cursor state (ADR-031); NEVER empty —
+                                      # an empty continuation mints a never-resumable approval
+                                      # (v1.1.0, F3)
 
 class ParkedApproval(BaseModel):
     approval_id: str; expires_at: str
@@ -123,6 +129,16 @@ Both methods have exactly one caller: the Tool Manager (C1 §2.1 step 3). `consu
 binding check and the `approved → consumed` CAS (grace-bounded, §1) in one transaction; `ok=False`
 maps to C1 `approval_invalid`. A stale-approved consume (past grace) lazily expires the row and
 returns `not_approved`.
+
+**Provenance (v1.1.0, backend review F3):** `summary` and `continuation` are the two fields the
+Tool Manager cannot derive from its own frozen inputs; the orchestrator supplies them through C1
+§2.2's `ParkContext` and the manager copies them **verbatim** into the `ParkRequest` it composes.
+Every other field is computed by the manager at park time — the identity triple, `args_hash` from
+the freshly validated params, `params_redacted`, and the trace ids (one composer, one hasher: C1
+§2.1 step 3). The `Field(min_length=…)` constraints above are load-bearing fail-closed checks,
+enforced identically by the real service and the fake: a park with an empty `continuation` would
+mint exactly the never-resumable approval §5's scope note exists to prevent. `continuation` is
+persisted in the park transaction (§1) and never leaves this service over HTTP.
 
 **`summary` rendering rule (normative for Stream D — Security review 2026-09-10 item 8):**
 `summary` is built by SUNIL code but embeds attacker-influenceable values (repo names, issue
@@ -160,11 +176,20 @@ park); `expires_at = created_at + 72h`; webhook calls recorded in `self.webhook_
 
 Exact behaviours:
 1. `park(req)` → new approval, `status="pending"` set explicitly, returns `ParkedApproval`.
-   Appends the `ApprovalRequestedEvent` payload to `webhook_sent`.
-2. `decide(approval_id, decision, reason, now)` (used by the fake HTTP layer):
-   `pending` + `now < expires_at` → transition, set `decided_at=now`, `decided_by="owner"`, return
-   row. `pending` + `now >= expires_at` → transition to `expired` first, then return
-   `state_conflict(current_status="expired")`. Any other status → `state_conflict` with it.
+   Appends the `ApprovalRequestedEvent` payload to `webhook_sent`. Retains the full `ParkRequest`
+   as `self.parked[approval_id]` (v1.1.0, F3 — C1 test 4 asserts `continuation`/`summary`
+   provenance against it; the real service persists `continuation` inside the park transaction,
+   §1). Empty `summary`/`continuation` are rejected by the `ParkRequest` model itself (§4) — the
+   fake inherits that structurally and MUST NOT relax it.
+2. `decide(approval_id, decision, reason, now)` (used by the fake HTTP layer) returns
+   `Approval | StateConflict | None` — normative for the real service layer too (v1.0.1; the QA
+   fakes-build implemented this shape and it is hereby blessed — Stream D builds on it):
+   unknown `approval_id` → `None`, which the HTTP layer maps to §5's `404 not_found` (already in
+   the YAML); `pending` + `now < expires_at` → transition, set `decided_at=now`,
+   `decided_by="owner"`, return the row; `pending` + `now >= expires_at` → transition to `expired`
+   first, then return `StateConflict(current_status="expired")` → 409; any other status →
+   `StateConflict` carrying it → 409. `decide` never raises for absence or conflict — both are
+   return values, so status-code mapping lives in the HTTP layer and nowhere else.
 3. `consume(approval_id, binding)`: unknown id → `not_found`; status ≠ `approved` →
    `not_approved`; status `approved` but `now >= decided_at + consume_grace_hours` → transition to
    `expired` (lazy) and return `not_approved`; binding tuple ≠ stored tuple (compare all four
@@ -191,8 +216,31 @@ Contract tests (`apps/api/tests/contracts/test_c4_approvals.py`):
    a stale `approved` row it reaches first. (The startup reconciliation of `consumed`+unfinalised
    tasks — §3 rule 3 — is orchestrator-level and is tested with the continuation executor in
    Phase 2, not against this fake alone.)
+8. fail-closed park material (v1.1.0, F3): constructing `ParkRequest(..., continuation={})` and
+   `ParkRequest(..., summary="")` each raise `pydantic.ValidationError` — the seam itself refuses
+   to mint a never-resumable approval, independently of the Tool Manager's `park_context`
+   precondition (C1 §2.1 / C1 test 8).
 
 ## Changelog
+
+- **v1.1.0 — 2026-09-10 (backend fakes-review round, F3).** §4: provenance paragraph —
+  `summary`/`continuation` are supplied by the orchestrator via C1 §2.2 `ParkContext` and copied
+  verbatim by the Tool Manager, which computes every other field (one composer, one hasher);
+  `summary` gains `Field(min_length=1, max_length=500)` (matching the Approval schema) and
+  `continuation` gains `Field(min_length=1)` — fail-closed against minting a never-resumable
+  approval, the exact hole the backend probe demonstrated (`continuation={}` passed the suite).
+  §1 restart-safety cross-references the provenance. §6 behaviour 1: fake retains
+  `self.parked[approval_id]` for C1 test 4's provenance assertions; new contract test 8 pins the
+  model-level rejection of empty park material. MINOR: the seam's method set and the HTTP surface
+  are unchanged; the constraints add normative validation behaviour that v1.0.x's own restart-safety
+  rule already presupposed (a real, resumable continuation). No transition, CAS or single-use
+  property touched — Security's verified-sound list preserved.
+
+- **v1.0.1 — 2026-09-10 (C3-scope round).** §6 behaviour 2: `decide`'s return shape specified
+  normatively as `Approval | StateConflict | None` with `None` = unknown id → HTTP 404 (the YAML
+  already carried the 404; the in-process shape was unspecified). Blesses the QA fakes-build
+  judgment call recorded in `docs/tasks/P0-fakes.md` — patch: clarification of the fake/service
+  layer, no change to the §4 seam (`park`/`consume`) or the HTTP surface.
 
 - **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
   merged). Consume ownership: `approved→consumed` actor corrected to the Tool Manager via

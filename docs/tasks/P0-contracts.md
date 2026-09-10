@@ -113,3 +113,88 @@ config-authoritative.
 - Test evidence: C4/C5 YAML parsed clean with PyYAML (documented in Progress); no code claimed.
 - Notes: Phase 0 exit additionally requires the platform task (fakes, contract suites, Compose
   boot) which builds FROM these specs; that task is not this one.
+
+## C3-scope round (2026-09-10, branch `task/P0-c3-scope` — post-merge, post-fakes-build)
+
+Adjudication of the QA fakes-build findings (`docs/tasks/P0-fakes.md`) plus the security-delta
+residuals S-1..S-5 assigned to the contract owner.
+
+| Item | Where | Disposition |
+|---|---|---|
+| F-1 blocker — `write` carries no scope | C3 §2/§4a/§5 | **Fixed, v1.1.0** — `write(item, rules, *, scope: MemoryScope, audit_event_id: str)`; parameter-not-field argued in §2 (addressing of the call; §3 resolution rule; no vendor-persisted scope copies); §4a/§5 grounded on the parameter; contract test 7 pins the new signature. MINOR-not-MAJOR classification defended in the changelog (restores the document's own frozen semantics; v1.0.0's write path was self-contradictory and unimplemented) |
+| QA call — `decide` returns `Approval \| StateConflict \| None`, unknown id → 404 | C4 §6.2 | **Blessed, normative, v1.0.1** — `None` = unknown id → §5's 404 (already in the YAML); conflict and absence are return values, status-code mapping lives only in the HTTP layer |
+| QA call — `ToolManagerProtocol` in `base.py`, concrete pipeline in `manager.py` | C1 §2.1 | **Blessed, recorded, v1.0.1** — matches ARCHITECTURE_V2 §2's layout (`base.py, manager.py (the chokepoint)`); a concrete class in the transcription module would be a vacuous-pass risk and QA must not author what it tests |
+| S-1 driver-token drift | ARCH §5 / .env.example / compose stub | **Ruled `+psycopg`** (ADR-002's recorded driver; one dependency serves async engine + Alembic sync path); all three sites now agree |
+| S-2 missing grace var | .env.example | **Added** `SUNIL_APPROVAL_CONSUME_GRACE_HOURS=1` with C4 §1 rationale comment |
+| S-3 turn deadline 40 vs 120 | ARCH §5 / .env.example / compose stub | **Ruled 40** (M1 ~6 s live turn, 30 s p95 target + headroom; fail-closed deadlines must be hittable in dev); all three sites now agree |
+| S-4 dev defaults undocumented | ARCH §5 + .env.example comments | **Documented, no behaviour change** — dev-up generates `SUNIL_SERVICE_TOKEN` (lane ON in generated dev env; absent = lane OFF fail-closed); `SUNIL_MEMORY_PROVIDER` runs `fake` until Stream C, `mem0` is the committed end-state value |
+| S-5 Get-Random hint | .env.example | **Fixed** — points to dev-up's CSPRNG generators; manual hint now `RandomNumberGenerator`/`openssl rand`; Get-Random explicitly banned as seeded PRNG |
+
+QA follow-ups this round creates (owner: qa_engineer, branch `task/P0-fakes`): rebuild
+`FakeMemoryProvider.write` on the v1.1.0 signature (delete `current_scope`/`write_in`/
+`DEFAULT_SCOPE`-as-state), migrate the C3 suite's `write_in(scope, …)` calls to
+`write(…, scope=…, audit_event_id=…)`, replace `test_c3_write_signature_is_the_frozen_one` with
+contract test 7's v1.1.0 pin, and align `decide`'s docstring to C4 §6.2's now-normative return
+shape (code already matches). Residual for the platform owner when the compose api stub activates:
+the stub's environment block does not yet pass `SUNIL_APPROVAL_CONSUME_GRACE_HOURS` (app default 1
+applies; outside this round's permitted stub edits, which were the S-1/S-3 values only).
+
+C4 §6's clock note (QA should-fix: `consume` reads time from inside — injected clock in the fake,
+database clock in the real service) is endorsed as-is; it needed no contract text because §6
+already specifies the injectable clock.
+
+## Backend fakes-review round (2026-09-10, branch `task/P0-c3-scope`, continued)
+
+Adjudication of three findings from the backend engineer's independent review of the fakes build
+(PASS-with-conditions; he built a probe ToolManager against the interfaces to surface them — full
+review in the DM's record).
+
+| Finding | Where | Disposition |
+|---|---|---|
+| F3 — the Tool Manager cannot populate `ParkRequest.continuation`/`summary` from its own frozen inputs; the probe parked `continuation={}` + a synthesised summary (a never-resumable approval) and the suite passed because C1 test 4 asserted only `args_hash` + trace ids | C1 §2.1 vs C4 §4 | **Fixed — C1 v1.1.0 + C4 v1.1.0.** `execute` gains keyword-only `park_context: ParkContext \| None = None` (`ParkContext` typed in C1 §2.2: non-empty `continuation` + `summary`, 1..500 chars), REQUIRED on every first attempt (`approval is None`; missing → `TypeError` before step 1, no attempt row — caller contract violation, same class as constructing without an audit hook), ignored on continuation calls. The manager stays the single `ParkRequest` composer: the two caller fields are copied verbatim; identity triple / `args_hash` / `params_redacted` / trace ids are manager-computed (one composer, one hasher). C4 §4: provenance paragraph + `Field(min_length=1[, max_length=500])` on both fields; §6 fake retains `self.parked[approval_id]`; new C4 test 8 pins model-level rejection of empty park material. C1 test 4 now REQUIRED to assert `continuation`/`summary` by EQUALITY against the caller's non-empty fixture (a never-resumable park can no longer pass); new C1 test 8 pins the precondition; tests 1/5/7 reworded. **Rejected alternative:** orchestrator-composed `ParkRequest` + narrowed park hook — forks the chokepoint QA B3 un-forked (a second `args_hash` hasher outside the manager; validated params escaping the pipeline pre-authorisation) and opens a crash window between `execute` returning `approval_required` and an external park, violating C4 §1's park-transaction-before-return restart safety |
+| F4 — `ToolResultMeta.adapter_kind: AdapterKind` non-optional, but the step-1 unknown-tool exit has no adapter (probe wrote `adapter_kind=NATIVE`, a lie); disagrees with `ToolCallAttempt.adapter_kind: AdapterKind \| None` | C1 §2 | **Fixed — C1 v1.1.0 (same bump).** `adapter_kind: AdapterKind \| None`, None iff the tool itself was unknown — the exact rule `ToolCallAttempt` already carried, one convention across both types; an unknown OPERATION on a known tool records the resolved adapter's kind. `\| None` over an `UNKNOWN` member: None already models "no adapter resolved", while an enum member would force every exhaustive match over real adapter kinds to carry an impossible-past-step-1 case and would land a fabricated kind on `tool_calls` audit rows as fact. C1 test 1 probes both sides |
+| F11 — `CompletionRequest` has no `extra` policy; `CompletionRequest(..., tools=[...])` is silently ignored, so the no-tools property erodes silently at call sites | C2 §2 | **Fixed — C2 v1.0.1.** Normative closed-models rule: ALL §2 request/result models (`ChatMessage`, `CompletionRequest`, `Usage`, `CompletionResult`, `StreamEvent`) set `extra="forbid"` (property normative; shared `_ClosedModel` base the recommended mechanism). All models, not just `CompletionRequest`: `ChatMessage(..., tool_calls=[...])` is the same erosion channel, and result models are built field-by-field so forbid costs nothing and catches typo'd fields. New contract test 7 (`ValidationError` probes). Strengthens the Security verified-sound no-tools shape; nothing on that list weakened |
+
+Version classifications defended in each changelog: C1/C4 MINOR (the frozen park path was
+unimplementable as written — the probe proved implementations must fabricate fields; the change
+restores the documents' own frozen semantics, per the C3 v1.1.0/F-1 precedent), C2 PATCH (no field
+added/changed/removed; the already-declared closed shape becomes mechanically enforced).
+
+### QA migration delta from this round (consolidated; owner: qa_engineer, branch `task/P0-fakes`)
+
+1. `apps/api/sunil/core/tool_framework/base.py` — add `ParkContext` frozen dataclass
+   (`continuation: dict`, `summary: str` — C1 §2.2); `ToolResultMeta.adapter_kind` →
+   `AdapterKind | None`; `ToolManagerProtocol.execute` gains keyword-only
+   `park_context: ParkContext | None = None`.
+2. `apps/api/sunil/core/approvals/base.py` — `ParkRequest.summary: str =
+   Field(min_length=1, max_length=500)`; `ParkRequest.continuation: dict = Field(min_length=1)`.
+3. `apps/api/sunil/providers/base.py` — add `_ClosedModel(BaseModel)` with
+   `model_config = ConfigDict(extra="forbid")`; `ChatMessage`/`CompletionRequest`/`Usage`/
+   `CompletionResult`/`StreamEvent` inherit it (per-model `model_config` equally conformant —
+   the property is normative).
+4. `apps/api/tests/fakes/fake_approvals.py` — `FakeApprovalsService` gains
+   `self.parked: dict[str, ParkRequest]`; `park()` stores `self.parked[approval_id] = req`.
+5. `apps/api/tests/contracts/test_c1_tool_adapter.py` — fixture adds
+   `park_ctx = ParkContext(continuation={"plan_id": "plan-1", "cursor": "step_1"},
+   summary="fake_tool.write_item: key=demo")` and every first-attempt `execute` passes
+   `park_context=park_ctx`; `test_c1_1_unknown_operation` → two calls (unknown tool →
+   `meta.adapter_kind is None`; unknown op on `fake_tool` → `AdapterKind.NATIVE`);
+   `test_c1_4_ask_user_without_approval_parks` → add the REQUIRED equality assertions on
+   `approvals.parked[approval_id].continuation`/`.summary` vs `park_ctx`;
+   `test_c1_5_approved_id_executes_once_then_is_spent` → continuation call passes no
+   `park_context`; test 7 pairing accounting per `execute` call; new
+   `test_c1_8_first_attempt_without_park_context_raises` (TypeError, zero approvals, zero
+   attempts).
+6. `apps/api/tests/contracts/test_c2_provider.py` — new test 7
+   (`CompletionRequest(..., tools=[{"name": "x"}])` and `ChatMessage(role="assistant",
+   content="hi", tool_calls=[])` each raise `pydantic.ValidationError`); the existing model-level
+   no-tools test may remain but no longer stands alone.
+7. `apps/api/tests/contracts/test_c4_approvals.py` — new test 8 (`ParkRequest(...,
+   continuation={})` and `ParkRequest(..., summary="")` each raise `pydantic.ValidationError`);
+   verify existing park fixtures already supply non-empty `summary`/`continuation` (any empty
+   fixture now fails validation by design).
+
+Out of scope for QA: the concrete `ToolManager` pipeline in `core/tool_framework/manager.py`
+implementing the `park_context` precondition and the verbatim-copy composition is production code
+owned by the implementing stream (C1 §2.1 module-placement rule); the backend engineer's probe
+manager is his own artefact.
