@@ -42,6 +42,12 @@ platform now loopback-only with 3 DB roles, fixture-tested CI gates, true first-
 **Security delta re-verify (merged tip 8b0dafa): BLOCK LIFTED — Phase-0 architecture baseline
 approved.** Residuals S-1..S-6 non-blocking (S-1 driver-token drift psycopg vs asyncpg and S-2
 missing SUNIL_APPROVAL_CONSUME_GRACE_HOURS in .env.example go to the next engineering round);
+QA fakes build DONE (task/P0-fakes: 102 passed/22 documented skips, mutation-proven, CI green)
+— and it exposed a real C3 contract defect (write() had no scope). Backend engineer independent
+review: PASS-with-conditions (AST-level transcription diff clean; buildability proven with a
+probe ToolManager). SA closed C3 v1.1.0 + C4/C1 v1.0.1 + S-1..S-5 on task/P0-c3-scope; SA
+follow-up adjudicating BE findings F3 (ParkRequest continuation source) / F4 (adapter_kind) /
+F11 (extra=forbid) IN FLIGHT; then one consolidated QA update, merge, Gate 2.
 12-item deferred-to-build checklist recorded in the re-verify report; highest-priority open item:
 prove n8n MCP auth-token enforcement (Stream E). IN FLIGHT: QA building
 the C1–C4 fakes + contract suites (exit criteria 3–4). Then Gate 2 (owner).
