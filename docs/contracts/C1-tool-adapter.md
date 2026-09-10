@@ -1,6 +1,6 @@
 # C1 — Tool Adapter Interface
 
-**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.0.1 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream A (MCP tools), Stream E (n8n MCP server tools), Stream D (approvals — via the
 injected approvals seam, C4 §4), core orchestrator (Tool Manager caller).
 **Informed by:** M1 reference `main:apps/api/sunil/core/tool_framework/base.py` (greenfield rebuild
@@ -113,6 +113,16 @@ validated plan step (validated against `params_model` at step 2 below); `trace` 
 the OpenAPI schema) minted at park time — `None` on every first attempt, set only by the
 continuation executor (ADR-031). It is an opaque id, never a C4 object: the manager recomputes the
 binding itself (step 3), so a caller cannot vouch for a binding it did not compute.
+
+**Module placement (v1.0.1 — blesses the QA fakes-build judgment call, `docs/tasks/P0-fakes.md`):**
+`base.py` holds interface types only. The callable shape above is transcribed there as
+`ToolManagerProtocol` (identical `__init__`/`execute` signatures); the concrete `ToolManager` —
+the pipeline below — lives in `core/tool_framework/manager.py`, exactly where ARCHITECTURE_V2 §2's
+layout already put it (`base.py, manager.py (the chokepoint)`), and is production code owned by
+the implementing stream, never by QA. Rationale: a concrete class in the transcription module
+would be an importable, non-functional chokepoint a test could pass against vacuously, and QA must
+not author the pipeline it independently tests. The pipeline steps below bind the concrete class;
+the Protocol exists for typing and dependency injection at the orchestrator seam.
 
 `execute` runs exactly these steps, in order, for every call regardless of adapter kind:
 
@@ -380,6 +390,12 @@ conversation_id="conv-1")`.
 serialisation of the **validated** params model with `sort_keys=True`, separators `(",", ":")`.
 
 ## Changelog
+
+- **v1.0.1 — 2026-09-10 (C3-scope round).** §2.1 module placement recorded: the callable shape is
+  transcribed as `ToolManagerProtocol` in `base.py`; the concrete `ToolManager` pipeline lives in
+  `core/tool_framework/manager.py` (matching ARCHITECTURE_V2 §2's layout). Blesses the QA
+  fakes-build judgment call — patch: naming/placement clarification, no signature, field, error
+  kind or pipeline step changed.
 
 - **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
   merged). `execute` signature typed: `TraceContext` + `approval: str | None` (QA B2). Consume

@@ -1,6 +1,6 @@
 # C4 — Approvals: rationale, in-process seam, and fake
 
-**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.0.1 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **OpenAPI:** [`C4-approvals-openapi.yaml`](C4-approvals-openapi.yaml) (the HTTP surface).
 **Consumers:** Stream D (dashboard + service), Stream A (the Tool Manager's injected
 `ApprovalsService` seam, C1 §2.2), Streams E/F (their write operations park here).
@@ -161,10 +161,15 @@ park); `expires_at = created_at + 72h`; webhook calls recorded in `self.webhook_
 Exact behaviours:
 1. `park(req)` → new approval, `status="pending"` set explicitly, returns `ParkedApproval`.
    Appends the `ApprovalRequestedEvent` payload to `webhook_sent`.
-2. `decide(approval_id, decision, reason, now)` (used by the fake HTTP layer):
-   `pending` + `now < expires_at` → transition, set `decided_at=now`, `decided_by="owner"`, return
-   row. `pending` + `now >= expires_at` → transition to `expired` first, then return
-   `state_conflict(current_status="expired")`. Any other status → `state_conflict` with it.
+2. `decide(approval_id, decision, reason, now)` (used by the fake HTTP layer) returns
+   `Approval | StateConflict | None` — normative for the real service layer too (v1.0.1; the QA
+   fakes-build implemented this shape and it is hereby blessed — Stream D builds on it):
+   unknown `approval_id` → `None`, which the HTTP layer maps to §5's `404 not_found` (already in
+   the YAML); `pending` + `now < expires_at` → transition, set `decided_at=now`,
+   `decided_by="owner"`, return the row; `pending` + `now >= expires_at` → transition to `expired`
+   first, then return `StateConflict(current_status="expired")` → 409; any other status →
+   `StateConflict` carrying it → 409. `decide` never raises for absence or conflict — both are
+   return values, so status-code mapping lives in the HTTP layer and nowhere else.
 3. `consume(approval_id, binding)`: unknown id → `not_found`; status ≠ `approved` →
    `not_approved`; status `approved` but `now >= decided_at + consume_grace_hours` → transition to
    `expired` (lazy) and return `not_approved`; binding tuple ≠ stored tuple (compare all four
@@ -193,6 +198,12 @@ Contract tests (`apps/api/tests/contracts/test_c4_approvals.py`):
    Phase 2, not against this fake alone.)
 
 ## Changelog
+
+- **v1.0.1 — 2026-09-10 (C3-scope round).** §6 behaviour 2: `decide`'s return shape specified
+  normatively as `Approval | StateConflict | None` with `None` = unknown id → HTTP 404 (the YAML
+  already carried the 404; the in-process shape was unspecified). Blesses the QA fakes-build
+  judgment call recorded in `docs/tasks/P0-fakes.md` — patch: clarification of the fake/service
+  layer, no change to the §4 seam (`park`/`consume`) or the HTTP surface.
 
 - **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
   merged). Consume ownership: `approved→consumed` actor corrected to the Tool Manager via
