@@ -1,6 +1,6 @@
 # C3 — Memory Provider Interface
 
-**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.1.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream C (Mem0 + entities), core orchestrator (context loading, stage 3
 `memory_retrieved`), Stream D (audit browser shows memory writes).
 **Informed by:** M1 reference `main:apps/api/sunil/core/memory/short_term.py` (short-term = the
@@ -81,7 +81,7 @@ class MemoryProvider(Protocol):
 
     async def recall(self, query: str, scope: MemoryScope, *, limit: int = 8) -> RecallResult: ...
     async def write(self, item: MemoryItem, rules: WriteRules,
-                    *, audit_event_id: str) -> WriteReceipt: ...
+                    *, scope: MemoryScope, audit_event_id: str) -> WriteReceipt: ...
 ```
 
 **Why `audit_event_id` is a keyword-only parameter (fix round 2026-09-10, QA B4 — it was a required
@@ -94,9 +94,26 @@ cannot positionally confuse it with anything else. The type-level effect stands:
 implementation cannot be called without receiving the linkage id, so "vendor library skipped
 auditing" remains inexpressible.
 
+**Why `scope` is a keyword-only parameter, not a `MemoryItem` field (v1.1.0, QA fakes-build
+finding F-1 — v1.0.0's `write` carried no scope at all, while §2's enforcement rule, §4a's
+same-scope duplicate definition and §5's `list[tuple[MemoryScope, MemoryItem]]` storage all
+presuppose one; as frozen, a real adapter could not know where to file a write):** the same
+taxonomy that put `audit_event_id` on the call — scope is *addressing of the call*, not content of
+the item. `recall` already receives scope as a call argument and the provider must enforce it as a
+filter; `write` now hands the provider the same object at the same seam, so enforcement has one
+anchor in both directions. A `MemoryItem` field would break §3's resolution rule — the memory
+service resolves scope ids (project key → entity id) *before* the vendor call, so a field would
+force the service either to rewrite a caller-constructed item or to trust callers to pre-resolve,
+the exact bug §3 exists to prevent. It would also ride into vendor persistence as ordinary item
+metadata — inviting an adapter to store-and-trust the embedded copy instead of enforcing the
+filter — and would reappear on recall results as a copy the provider is under no obligation to
+keep consistent with its actual filing. Keyword-only for `audit_event_id`'s reason: it cannot be
+positionally confused with `rules`, and an unmigrated call site fails loudly, by name.
+
 Normative rules:
 
-- **Scope is a filter the provider must enforce**, not a hint: a recall with
+- **Scope is a filter the provider must enforce**, not a hint: a write files its item under the
+  call's `scope` parameter (v1.1.0); a recall with
   `kind="entity", id="client_x"` returns only items carrying that `EntityRef` (or written in that
   scope); `kind="user"` returns cross-conversation items for that user. Tests probe leakage.
 - **Privacy filtering is caller-side policy, provider-side data**: the provider stores and returns
@@ -142,8 +159,9 @@ class MemoryWriteRejected(Exception):
 
 Strictness is the total order `local_only(4) > confidential(3) > internal(2) > public(1)`
 ("stricter" = higher = fewer readers; **widening** = equal content becoming available under a
-lower label than it already carries in that scope). Two items are **duplicates** when they are in
-the SAME scope and their `content.strip()` compare equal case-insensitively — that definition is
+lower label than it already carries in that scope). Two items are **duplicates** when they were
+written under the SAME scope (each `write` call's `scope` parameter — v1.1.0) and their
+`content.strip()` compare equal case-insensitively — that definition is
 exact for the fake and the contract suite; a real provider may detect duplicates semantically, but
 rules 1–3 below bind whatever it detects identically.
 
@@ -175,10 +193,11 @@ visible, ROADMAP §13 write rules).
 ## 5. FAKE specification — `FakeMemoryProvider` (QA-buildable, no questions)
 
 Module: `apps/api/tests/fakes/fake_memory_provider.py`. `name="fake"`. In-memory
-`list[tuple[MemoryScope, MemoryItem]]`, ids `mem-1`, `mem-2`, … in write order;
+`list[tuple[MemoryScope, MemoryItem]]` — the stored scope is the write call's `scope` argument
+(v1.1.0) — ids `mem-1`, `mem-2`, … in write order;
 `created_at` = `"2026-01-01T00:00:00Z"` plus `write_index` seconds.
 
-`write(item, rules, audit_event_id=...)` — exact behaviour, in this order:
+`write(item, rules, scope=..., audit_event_id=...)` — exact behaviour, in this order:
 1. `rules.capture == "none"` → return `WriteReceipt(memory_id="", op="skipped",
    audit_event_id=<the parameter, echoed>)`; store nothing.
 2. `len(item.content.encode()) > 32768` → raise `MemoryWriteRejected(reason="payload_too_large")`.
@@ -221,8 +240,29 @@ Contract tests (`apps/api/tests/contracts/test_c3_memory_provider.py`):
 5. deterministic ordering: three seeded items, one query, exact expected id order asserted —
    including two items with EQUAL scores, asserting newest-write-first between them.
 6. `unavailable=True`: recall degrades to empty via the service, write raises.
+7. signature pin (v1.1.0): `write`'s parameters are exactly `(self, item, rules, *, scope,
+   audit_event_id)` — `scope` and `audit_event_id` keyword-only with no defaults — and `recall`'s
+   are `(self, query, scope, *, limit=8)`; asserted via `inspect.signature`, so the v1.0.0 scope
+   gap (or any silent regression of it) cannot drift into an implementation. Replaces the
+   fakes-build's interim `test_c3_write_signature_is_the_frozen_one`, which pinned the DEFECTIVE
+   v1.0.0 shape (`"scope" not in write.parameters`) precisely so it could not be implemented
+   unnoticed before this ruling.
 
 ## Changelog
+
+- **v1.1.0 — 2026-09-10 (post-merge, C3-scope round).** `write` gains keyword-only
+  `scope: MemoryScope` (QA fakes-build finding F-1, `docs/tasks/P0-fakes.md`): v1.0.0's signature
+  carried no scope while §2's enforcement rule, §4a's same-scope duplicate definition and §5's
+  `list[tuple[MemoryScope, MemoryItem]]` storage all required one — as frozen, a real Mem0 adapter
+  could not know where to file a write, and §4a plus contract test 1's leak probe were
+  unimplementable against the real signature. Parameter-not-field argued in §2 (addressing of the
+  call, §3 resolution rule, no vendor-persisted scope copies). Versioning: classified MINOR, not
+  MAJOR — the change restores the document's own already-frozen semantics rather than altering any
+  behaviour an implementation could have been built against (v1.0.0's write path was
+  self-contradictory, and the only extant code is QA's fake, which deliberately pinned the gap
+  pending this ruling); the MAJOR-plus-ADR bar remains for semantic changes to an implementable
+  seam. §2 scope bullet, §4a and §5 grounded on the parameter; contract test 7 (signature pin)
+  added.
 
 - **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
   merged). `write` gains keyword-only `audit_event_id: str`, echoed in the receipt — the receipt
