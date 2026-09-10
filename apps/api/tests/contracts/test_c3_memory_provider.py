@@ -1,16 +1,14 @@
 """C3 — Memory Provider contract suite.
 
-Source of truth: ``docs/contracts/C3-memory-provider.md`` v1.0.0 (FROZEN
+Source of truth: ``docs/contracts/C3-memory-provider.md`` **v1.1.0** (FROZEN
 2026-09-10); §4a is the single normative dedupe/privacy rule and §5 is the fake
-specification. The six numbered tests of C3 §5 are cited in the docstrings.
+specification. The seven numbered tests of C3 §5 are cited in the docstrings.
 
-Open contract gap this suite is written around (finding F-1 in
-``docs/tasks/P0-fakes.md``): ``MemoryProvider.write`` takes no scope, yet §2's
-normative rules and §5's fake both store and filter items BY scope. The suite
-uses the fake's ``write_in(scope, …)`` test helper, which sets the scope for one
-write and then calls the frozen ``write(item, rules, *, audit_event_id)``
-unchanged. The contract owner must decide how a real caller names a write's
-scope before Stream C implements C3.
+Migrated to v1.1.0 (finding F-1, adjudicated in ``docs/tasks/P0-contracts.md``):
+``write`` now carries the scope as a keyword-only parameter, so every call below
+is the real seam call ``write(item, rules, scope=…, audit_event_id=…)`` — the
+interim ``write_in`` helper and the fake's scope-as-state are gone, and contract
+test 7 pins the new signature so the v1.0.0 gap cannot come back.
 """
 
 from __future__ import annotations
@@ -78,8 +76,11 @@ async def test_c3_1_in_scope_hit_and_sibling_scope_leak_probe(
     """C3 contract test 1 — write then recall in-scope hits; recall from a sibling
     conversation scope misses (leak probe). C3 §2: scope is a filter the provider
     MUST enforce, not a hint."""
-    receipt = await memory.write_in(
-        CONV_1, item("Winch recovery signed off"), rules(), audit_event_id=AUDIT_ID
+    receipt = await memory.write(
+        item("Winch recovery signed off"),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
 
     assert isinstance(receipt, WriteReceipt)
@@ -106,19 +107,19 @@ async def test_c3_2_entity_scope_reaches_across_conversations(
     conversation scope but ref'd to the entity (§3 linkage point 1:
     ``entity_refs`` are persisted verbatim so recall can filter by entity without
     joining SUNIL tables)."""
-    await memory.write_in(
-        CONV_1,
+    await memory.write(
         item(
             "Client X prefers Monday deliveries",
             entity_refs=[EntityRef(entity_type="client", entity_id="client_x")],
         ),
         rules(),
+        scope=CONV_1,
         audit_event_id=AUDIT_ID,
     )
-    await memory.write_in(
-        CONV_1,
+    await memory.write(
         item("Unrelated note about client Y", entity_refs=[]),
         rules(),
+        scope=CONV_1,
         audit_event_id=AUDIT_ID,
     )
 
@@ -136,13 +137,16 @@ async def test_c3_3a_merge_upgrades_the_stored_label(
     """C3 contract test 3(a) — write ``"Fact X"`` ``internal``, then ``"fact x "``
     ``confidential`` with ``dedupe=True`` → ``op="merged"``, same id, recall shows
     ``privacy="confidential"`` (stored row upgraded — stricter wins, §4a rule 1)."""
-    first = await memory.write_in(
-        CONV_1, item("Fact X", privacy="internal"), rules(), audit_event_id=AUDIT_ID
+    first = await memory.write(
+        item("Fact X", privacy="internal"),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
-    second = await memory.write_in(
-        CONV_1,
+    second = await memory.write(
         item("fact x ", privacy="confidential"),
         rules(dedupe=True),
+        scope=CONV_1,
         audit_event_id="audit-evt-2",
     )
 
@@ -162,13 +166,16 @@ async def test_c3_3b_merge_retains_a_stricter_stored_label_without_raising(
     ``"fact y"`` ``internal`` with ``dedupe=True`` → ``op="merged"``, recall still
     shows ``"confidential"`` (stored stricter retained, NO exception: §4a rule 1
     never raises over privacy and never lowers a label)."""
-    await memory.write_in(
-        CONV_1, item("Fact Y", privacy="confidential"), rules(), audit_event_id=AUDIT_ID
+    await memory.write(
+        item("Fact Y", privacy="confidential"),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
-    receipt = await memory.write_in(
-        CONV_1,
+    receipt = await memory.write(
         item("fact y", privacy="internal"),
         rules(dedupe=True),
+        scope=CONV_1,
         audit_event_id=AUDIT_ID,
     )
 
@@ -188,23 +195,26 @@ async def test_c3_3c_widening_append_is_rejected_but_narrowing_appends(
     ``MemoryWriteRejected(reason="invalid_privacy_transition")``; the same append
     with ``privacy="confidential"`` → ``op="created"``, two rows (§4a rule 2 — the
     genuine widening case)."""
-    await memory.write_in(
-        CONV_1, item("Fact Z", privacy="confidential"), rules(), audit_event_id=AUDIT_ID
+    await memory.write(
+        item("Fact Z", privacy="confidential"),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
 
     with pytest.raises(MemoryWriteRejected) as err:
-        await memory.write_in(
-            CONV_1,
+        await memory.write(
             item("fact z", privacy="internal"),
             rules(dedupe=False),
+            scope=CONV_1,
             audit_event_id=AUDIT_ID,
         )
     assert err.value.reason == "invalid_privacy_transition"
 
-    receipt = await memory.write_in(
-        CONV_1,
+    receipt = await memory.write(
         item("fact z", privacy="confidential"),
         rules(dedupe=False),
+        scope=CONV_1,
         audit_event_id=AUDIT_ID,
     )
     assert (receipt.op, receipt.memory_id) == ("created", "mem-2")
@@ -218,16 +228,16 @@ async def test_c3_3_non_duplicate_content_appends_regardless_of_labels(
 ) -> None:
     """C3 §4a rule 3 — non-duplicate content appends regardless of labels; no
     cross-item privacy interaction."""
-    await memory.write_in(
-        CONV_1,
+    await memory.write(
         item("Alpha", privacy="local_only"),
         rules(dedupe=False),
+        scope=CONV_1,
         audit_event_id=AUDIT_ID,
     )
-    receipt = await memory.write_in(
-        CONV_1,
+    receipt = await memory.write(
         item("Beta", privacy="public"),
         rules(dedupe=False),
+        scope=CONV_1,
         audit_event_id=AUDIT_ID,
     )
 
@@ -239,11 +249,17 @@ async def test_c3_3_duplicate_detection_is_scope_local(
 ) -> None:
     """C3 §4a — two items are duplicates only when they are in the SAME scope, so
     identical content in a sibling scope appends rather than merging."""
-    await memory.write_in(
-        CONV_1, item("Fact X", privacy="internal"), rules(), audit_event_id=AUDIT_ID
+    await memory.write(
+        item("Fact X", privacy="internal"),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
-    receipt = await memory.write_in(
-        CONV_2, item("Fact X", privacy="public"), rules(), audit_event_id=AUDIT_ID
+    receipt = await memory.write(
+        item("Fact X", privacy="public"),
+        rules(),
+        scope=CONV_2,
+        audit_event_id=AUDIT_ID,
     )
 
     assert (receipt.op, receipt.memory_id) == ("created", "mem-2")
@@ -257,10 +273,10 @@ async def test_c3_4_capture_none_stores_nothing_and_says_so(
 ) -> None:
     """C3 contract test 4 — ``capture="none"`` stores nothing and says so; the
     receipt echoes the passed ``audit_event_id`` (§5 step 1)."""
-    receipt = await memory.write_in(
-        CONV_1,
+    receipt = await memory.write(
         item("never stored"),
         rules(capture="none"),
+        scope=CONV_1,
         audit_event_id="audit-evt-none",
     )
 
@@ -275,14 +291,20 @@ async def test_c3_4_capture_none_stores_nothing_and_says_so(
 async def test_c3_payload_over_32_kib_is_rejected(memory: FakeMemoryProvider) -> None:
     """C3 §4/§5 step 2 — content over 32 KiB (UTF-8 bytes) raises
     ``MemoryWriteRejected(reason="payload_too_large")``; 32 KiB exactly is fine."""
-    at_limit = await memory.write_in(
-        CONV_1, item("x" * 32768), rules(), audit_event_id=AUDIT_ID
+    at_limit = await memory.write(
+        item("x" * 32768),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
     assert at_limit.op == "created"
 
     with pytest.raises(MemoryWriteRejected) as err:
-        await memory.write_in(
-            CONV_1, item("y" * 32769), rules(), audit_event_id=AUDIT_ID
+        await memory.write(
+            item("y" * 32769),
+            rules(),
+            scope=CONV_1,
+            audit_event_id=AUDIT_ID,
         )
     assert err.value.reason == "payload_too_large"
 
@@ -292,8 +314,11 @@ async def test_c3_capture_none_precedes_the_size_check(
 ) -> None:
     """C3 §5 — the write steps run "in this order", so an oversized payload with
     ``capture="none"`` is skipped, not rejected."""
-    receipt = await memory.write_in(
-        CONV_1, item("z" * 40000), rules(capture="none"), audit_event_id=AUDIT_ID
+    receipt = await memory.write(
+        item("z" * 40000),
+        rules(capture="none"),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
 
     assert receipt.op == "skipped"
@@ -315,8 +340,11 @@ async def test_c3_5_recall_ordering_is_deterministic(
         "recovery only",  # mem-3 — one token → 0.5
         "entirely unrelated",  # mem-4 — 0.0, dropped
     ):
-        await memory.write_in(
-            CONV_1, item(content), rules(dedupe=False), audit_event_id=AUDIT_ID
+        await memory.write(
+            item(content),
+            rules(dedupe=False),
+            scope=CONV_1,
+            audit_event_id=AUDIT_ID,
         )
 
     found = await memory.recall("winch recovery", CONV_1)
@@ -331,7 +359,7 @@ async def test_c3_5_scores_round_to_four_decimal_places(
 ) -> None:
     """C3 §5 recall step 2 — ``score`` is rounded to 4 decimal places, and items
     scoring ``0.0`` are dropped."""
-    await memory.write_in(CONV_1, item("winch"), rules(), audit_event_id=AUDIT_ID)
+    await memory.write(item("winch"), rules(), scope=CONV_1, audit_event_id=AUDIT_ID)
 
     found = await memory.recall("winch recovery training", CONV_1)
 
@@ -341,10 +369,10 @@ async def test_c3_5_scores_round_to_four_decimal_places(
 async def test_c3_5_recall_truncates_to_limit(memory: FakeMemoryProvider) -> None:
     """C3 §2/§5 — ``limit`` defaults to 8 and truncates the descending list."""
     for index in range(10):
-        await memory.write_in(
-            CONV_1,
+        await memory.write(
             item(f"winch note {index}"),
             rules(dedupe=False),
+            scope=CONV_1,
             audit_event_id=AUDIT_ID,
         )
 
@@ -360,8 +388,11 @@ async def test_c3_5_tokenisation_is_lowercased_substring_matching(
 ) -> None:
     """C3 §5 recall step 2 — the query is tokenised on whitespace and lowercased;
     a token counts when found as a SUBSTRING of the lowercased content."""
-    await memory.write_in(
-        CONV_1, item("Winches Recovered"), rules(), audit_event_id=AUDIT_ID
+    await memory.write(
+        item("Winches Recovered"),
+        rules(),
+        scope=CONV_1,
+        audit_event_id=AUDIT_ID,
     )
 
     found = await memory.recall("WINCH   recover", CONV_1)
@@ -382,7 +413,12 @@ async def test_c3_6_unavailable_provider_raises_on_every_call() -> None:
         await memory.recall("anything", CONV_1)
 
     with pytest.raises(MemoryUnavailableError):
-        await memory.write_in(CONV_1, item("anything"), rules(), audit_event_id=AUDIT_ID)
+        await memory.write(
+            item("anything"),
+            rules(),
+            scope=CONV_1,
+            audit_event_id=AUDIT_ID,
+        )
 
 
 @pytest.mark.skip(
@@ -398,25 +434,27 @@ def test_c3_6_service_degrades_recall_and_surfaces_write_failure() -> None:
 # --------------------------------------------------------------------------- #
 # C3 §2 — the frozen signature and the audit-linkage parameter
 # --------------------------------------------------------------------------- #
-def test_c3_write_signature_is_the_frozen_one() -> None:
-    """C3 §2 — ``write(item, rules, *, audit_event_id)``: ``audit_event_id`` is
-    keyword-only so a vendor adapter cannot positionally confuse it with anything
-    else, and a provider cannot be called without receiving the linkage id
-    ("vendor library skipped auditing" stays inexpressible).
+def test_c3_7_write_signature_is_the_v1_1_0_one() -> None:
+    """C3 contract test 7 (v1.1.0) — ``write``'s parameters are exactly
+    ``(self, item, rules, *, scope, audit_event_id)`` with BOTH keyword-only and
+    NEITHER defaulted, and ``recall``'s are ``(self, query, scope, *, limit=8)``.
 
-    The scope gap (finding F-1) is visible here: no parameter names the scope a
-    write files into, although §2/§5 require the provider to enforce scope.
+    Keyword-only for the same reason ``audit_event_id`` is: neither can be
+    positionally confused with ``rules``, and an unmigrated call site fails
+    loudly, by name. No default on ``scope``: a provider that could be called
+    without one would be back to v1.0.0, where a write could not name where it
+    files — the F-1 defect this test exists to keep dead.
     """
     write = signature(MemoryProvider.write)
     recall = signature(MemoryProvider.recall)
 
-    assert list(write.parameters) == ["self", "item", "rules", "audit_event_id"]
-    assert write.parameters["audit_event_id"].kind.name == "KEYWORD_ONLY"
-    assert write.parameters["audit_event_id"].default is write.empty
+    assert list(write.parameters) == ["self", "item", "rules", "scope", "audit_event_id"]
+    for name in ("scope", "audit_event_id"):
+        assert write.parameters[name].kind.name == "KEYWORD_ONLY"
+        assert write.parameters[name].default is write.empty
+    assert write.parameters["scope"].annotation == "MemoryScope"
     assert list(recall.parameters) == ["self", "query", "scope", "limit"]
     assert recall.parameters["limit"].default == 8
-    # F-1, asserted so the gap cannot drift silently into an implementation:
-    assert "scope" not in write.parameters
 
 
 def test_c3_memory_item_privacy_is_required_with_no_default() -> None:

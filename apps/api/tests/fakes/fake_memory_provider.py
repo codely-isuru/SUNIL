@@ -1,30 +1,16 @@
 """``FakeMemoryProvider`` — C3 §5's fake specification, verbatim.
 
 Source of truth: ``docs/contracts/C3-memory-provider.md`` §5 with §4a's
-duplicate/privacy rule applied verbatim (v1.0.0, FROZEN 2026-09-10).
+duplicate/privacy rule applied verbatim (**v1.1.0**, FROZEN 2026-09-10).
 ``name="fake"``. In-memory, deterministic, no I/O.
 
-**Open contract gap — how a write names its scope (finding F-1,
-``docs/tasks/P0-fakes.md``).** C3 §2's frozen signature is
-``write(item, rules, *, audit_event_id)``: it carries no scope. But §2's
-normative rules ("scope is a filter the provider must enforce"), §4a's duplicate
-definition ("in the SAME scope") and §5's own storage shape
-(``list[tuple[MemoryScope, MemoryItem]]``) all require every stored item to have
-a scope. Nothing in the contract says where it comes from, and ``MemoryItem`` has
-no scope field.
-
-Assumption implemented here, chosen to keep the frozen signature untouched:
-
-* ``self.current_scope`` holds the scope the next ``write()`` files into and
-  defaults to ``MemoryScope(user_id="owner", kind="user", id=None)`` — the only
-  scope kind that needs no id (C3 §2).
-* ``await provider.write_in(scope, item, rules, audit_event_id=…)`` is a
-  test-only helper that sets ``current_scope`` for exactly one write and then
-  calls the unmodified ``write()``. Contract suites use it.
-
-The real answer (a scope parameter on ``write``, a service-side scope binding, or
-a scope field on ``MemoryItem``) is the contract owner's decision and must land
-before Stream C implements C3 — a Mem0 adapter cannot infer the scope either.
+Scope comes from the call (v1.1.0): ``write(item, rules, *, scope,
+audit_event_id)`` files its item under the ``scope`` argument, which is also what
+``_find_duplicate`` compares ("the SAME scope", §4a) and what ``recall``
+filters on. The interim ``current_scope``/``write_in`` machinery of the
+fakes-build round — which existed only because v1.0.0's ``write`` named no scope
+(finding F-1) — is deleted: scope is no longer state on this object, so nothing
+here can file a write anywhere other than where its caller said.
 """
 
 from __future__ import annotations
@@ -34,7 +20,6 @@ from datetime import timedelta
 from sunil.core.memory.provider import (
     PRIVACY_STRICTNESS,
     MemoryItem,
-    MemoryProvider,
     MemoryScope,
     MemoryUnavailableError,
     MemoryWriteRejected,
@@ -49,9 +34,6 @@ from tests.fakes.clock import DEFAULT_START, from_iso, to_iso
 #: C3 §4 — content over 32 KiB (UTF-8 bytes) is rejected.
 MAX_CONTENT_BYTES = 32768
 
-#: The default write scope (see the module docstring's F-1 assumption).
-DEFAULT_SCOPE = MemoryScope(user_id="owner", kind="user", id=None)
-
 
 def _write_order(memory_id: str) -> int:
     """C3 §5 recall step 3 — the integer suffix of ``mem-N``, numerically.
@@ -62,24 +44,37 @@ def _write_order(memory_id: str) -> int:
     return int(memory_id.rsplit("-", 1)[1])
 
 
-class FakeMemoryProvider(MemoryProvider):
+class FakeMemoryProvider:
     """C3 §5 fake. ``unavailable=True`` → every call raises
     ``MemoryUnavailableError`` (tests assert the SERVICE degrades recall and
-    surfaces write failure)."""
+    surfaces write failure).
+
+    Structural conformance to ``MemoryProvider`` only — the Protocol is
+    deliberately NOT a base class (backend review F2: an explicitly-inherited
+    Protocol turns every method the fake forgets into an inherited ``...`` stub
+    that returns ``None``, which a contract test can pass against vacuously).
+    ``_check`` at the bottom of this module is the static conformance assertion;
+    ``tests/contracts/test_fake_conformance.py`` is the runtime one.
+    """
 
     def __init__(self, unavailable: bool = False) -> None:
         self.name = "fake"
         self.unavailable = unavailable
         self.items: list[tuple[MemoryScope, MemoryItem]] = []
-        self.current_scope: MemoryScope = DEFAULT_SCOPE
 
     # -- C3 §2 protocol ---------------------------------------------------- #
     async def write(
-        self, item: MemoryItem, rules: WriteRules, *, audit_event_id: str
+        self,
+        item: MemoryItem,
+        rules: WriteRules,
+        *,
+        scope: MemoryScope,
+        audit_event_id: str,
     ) -> WriteReceipt:
         """C3 §5's exact behaviour, in this order: capture-none skip → size
-        rejection → §4a duplicate/privacy resolution → append. Every receipt
-        echoes the ``audit_event_id`` parameter."""
+        rejection → §4a duplicate/privacy resolution → append. The item is filed
+        under the ``scope`` argument (v1.1.0) and every receipt echoes the
+        ``audit_event_id`` parameter."""
         if self.unavailable:
             raise MemoryUnavailableError("fake memory provider is unavailable")
 
@@ -93,8 +88,7 @@ class FakeMemoryProvider(MemoryProvider):
         if len(item.content.encode()) > MAX_CONTENT_BYTES:
             raise MemoryWriteRejected("payload_too_large")
 
-        # 3. §4a — duplicate detection + privacy resolution.
-        scope = self.current_scope
+        # 3. §4a — duplicate detection + privacy resolution, within this scope.
         duplicate = self._find_duplicate(scope, item.content)
         if duplicate is not None:
             stored = duplicate
@@ -148,23 +142,6 @@ class FakeMemoryProvider(MemoryProvider):
         )
         return RecallResult(items=scored[:limit])
 
-    # -- test-only helper (see the module docstring, F-1) ------------------- #
-    async def write_in(
-        self,
-        scope: MemoryScope,
-        item: MemoryItem,
-        rules: WriteRules,
-        *,
-        audit_event_id: str,
-    ) -> WriteReceipt:
-        """Set the scope for exactly one ``write()`` and perform it."""
-        previous = self.current_scope
-        self.current_scope = scope
-        try:
-            return await self.write(item, rules, audit_event_id=audit_event_id)
-        finally:
-            self.current_scope = previous
-
     # -- internals ---------------------------------------------------------- #
     def _append(
         self, scope: MemoryScope, item: MemoryItem, audit_event_id: str
@@ -185,7 +162,7 @@ class FakeMemoryProvider(MemoryProvider):
         )
 
     def _find_duplicate(self, scope: MemoryScope, content: str) -> MemoryItem | None:
-        """C3 §4a — duplicates are items in the SAME scope whose
+        """C3 §4a — duplicates are items written under the SAME scope whose
         ``content.strip()`` compare equal case-insensitively."""
         needle = content.strip().casefold()
         for stored_scope, stored in self.items:

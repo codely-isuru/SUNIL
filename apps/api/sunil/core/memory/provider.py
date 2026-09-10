@@ -1,8 +1,15 @@
 """C3 — Memory Provider interface (frozen contract transcription).
 
-Source of truth: ``docs/contracts/C3-memory-provider.md`` v1.0.0 (FROZEN, Phase 0
-2026-09-10) §2 "Interface definition" and §4 "Error semantics" (incl. §4a, the
-single normative dedupe/privacy rule).
+Source of truth: ``docs/contracts/C3-memory-provider.md`` **v1.1.0** (FROZEN,
+Phase 0 2026-09-10) §2 "Interface definition" and §4 "Error semantics" (incl.
+§4a, the single normative dedupe/privacy rule).
+
+v1.1.0 changed one thing in this module: ``write`` carries the scope it files
+into as a keyword-only parameter (finding F-1 — v1.0.0's ``write`` named no
+scope at all, while §2's enforcement rule, §4a's same-scope duplicate definition
+and §5's ``list[tuple[MemoryScope, MemoryItem]]`` storage all presupposed one).
+Keyword-only, and no default, for ``audit_event_id``'s reason: it cannot be
+positionally confused with ``rules``, and an unmigrated call site fails loudly.
 
 Zero business logic lives here: protocols, models and exceptions only. The memory
 *service* (audit-outside-vendor, scope resolution, the latency-budget degrade) is
@@ -77,7 +84,12 @@ class MemoryProvider(Protocol):
     ) -> RecallResult: ...
 
     async def write(
-        self, item: MemoryItem, rules: WriteRules, *, audit_event_id: str
+        self,
+        item: MemoryItem,
+        rules: WriteRules,
+        *,
+        scope: MemoryScope,
+        audit_event_id: str,
     ) -> WriteReceipt: ...
 
 
