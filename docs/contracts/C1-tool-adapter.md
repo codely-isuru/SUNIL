@@ -397,7 +397,9 @@ constructor `FakeToolAdapter(clock=time.monotonic)`; `start()`/`stop()` set/clea
 | `raise_unexpected` | `True` | 5.0 | `NoParams` | handler raises `RuntimeError("fake crash")` — tests assert the MANAGER converts it to `error_kind="upstream_error"`, message `"unhandled adapter exception"` (never the raw exception text) |
 | `sleep_forever` | `True` | 0.05 | `NoParams` | `await asyncio.sleep(3600)` — exercises the timeout path: manager returns `error_kind="timeout"` |
 
-Every result's `meta` = `ToolResultMeta(adapter_kind=NATIVE, server_id=None, duration_ms=<measured>)`.
+Every result the ADAPTER returns carries `meta = ToolResultMeta(adapter_kind=NATIVE,
+server_id=None, duration_ms=<measured>)`; the manager's step-1 unknown-TOOL exit is not an adapter
+result and carries `adapter_kind=None` (§2, F4).
 
 ### 6.4 Contract tests
 
