@@ -27,6 +27,14 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**✅ PHASE 0 COMPLETE — 2026-09-10, awaiting Gate 2 (owner).** All exit criteria met on `V2`:
+C1–C5 frozen (C1/C3/C4 v1.1.0, C2 v1.0.1, C5 v1.0.0) with OpenAPI; fakes + contract suites
+published (170 tests: 145 pass, 25 self-activating skips; two mutation proofs); Compose platform
+boots green loopback-only with 3 DB roles; CI: 3 gates green. Review chain: Security BLOCK →
+fixes → BLOCK LIFTED; QA FAIL → fixes → suites green; independent backend review of the fakes
+PASS-w-conditions → conditions closed. Open should for Stream A: empty-but-present ParkContext
+behaviour (P0-fakes task file). Next: Gate 2 ratification, then the six parallel streams.
+
 **Phase 0 progress (2026-09-10):** both lanes DONE and DM-verified — `task/P0-contracts`
 (SA: C1–C5 frozen v1.0.0, ARCHITECTURE_V2, ADR-031..035, 9 commits) and `task/P0-platform`
 (DevOps: Compose stack pg17+pgvector:5433 / LiteLLM:4000 / n8n:5680 booted + probed, CI green
