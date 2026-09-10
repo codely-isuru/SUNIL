@@ -214,3 +214,86 @@ task followed red-then-green from the start.
 - **Notes:** the interface transcription needs an independent backend review
   before merge, and finding F-1 (C3 write scope) needs the contract owner. QA
   does not approve its own transcription and has not merged anything.
+
+## Consolidated update round (2026-09-10, branch `task/P0-fakes`)
+
+One round closing (a) the contract-version migrations the Solution Architect
+adjudicated in `docs/tasks/P0-contracts.md` — C3 v1.1.0, C1 v1.1.0, C4 v1.1.0,
+C2 v1.0.1 — and (b) every condition from the backend engineer's independent
+review of the fakes build. Nothing below was written before its test.
+
+### Contract migration (SA's consolidated delta)
+
+| Item | Landed |
+|---|---|
+| C3 v1.1.0 — `write(item, rules, *, scope, audit_event_id)` | Seam + fake + all 23 suite call sites; `current_scope`/`write_in`/`DEFAULT_SCOPE`-as-state deleted; the F-1 defect pin replaced by contract test 7's v1.1.0 signature pin (both keyword-only, neither defaulted, `scope` annotated `MemoryScope`) |
+| C1 v1.1.0 — `ParkContext`, `adapter_kind \| None`, `execute(..., park_context=)` | Seam; suite tests 1–7 migrated; test 1 probes BOTH `adapter_kind` sides; test 4 asserts `parked[id].continuation/.summary` BY EQUALITY; test 5's continuation calls pass no `park_context`; test 7 re-worded to per-CALL accounting; NEW test 8 (+ a sibling for explicit `park_context=None`) |
+| C4 v1.1.0 — fail-closed park material | `ParkRequest.summary` `Field(min_length=1, max_length=500)`, `continuation` `Field(min_length=1)`; `FakeApprovalsService.parked` retention; NEW contract test 8 (three probes) + a legal-minimum guard + a park-retention test; `decide`'s docstring demoted from QA assumption to C4 §6.2 normative |
+| C2 v1.0.1 — closed models | `_ClosedModel` base, all five §2 models inherit; NEW contract test 7 (six probes) plus a config-level test so a §2 model added later that forgets the base fails in the suite rather than at the first call site that smuggles a field past it |
+
+`park_ctx` is a FIXTURE, not a module constant: `continuation` is a mutable dict
+inside a frozen dataclass, and a shared instance would let one test's edit reach
+the next — the F1 lesson (below) applied one seam over.
+
+### Backend-review conditions
+
+| Finding | Disposition |
+|---|---|
+| **F1** — fakes returned shared mutable module state | **Fixed.** `_usage()` (`model_copy(deep=True)`) and `_plan()` (`deepcopy`) in `fake_provider.py`. `deepcopy`, not `dict(FIXED_PLAN)`: pydantic copies the OUTER dict of a `dict` field but keeps nested values by identity, so a shallow copy still shared `steps[0]["params"]`. Regression test mutates a returned result at three levels (top-level key, nested param, usage field) and asserts the module fixtures AND a second call are untouched — every assertion against a pristine pre-mutation snapshot, because comparing to `FIXED_PLAN` itself is exactly the assertion that passes while both sides rot |
+| **F2** — every fake inherited its Protocol, so a missing method silently returned `None` | **Fixed.** No fake inherits its Protocol. Static guard: a module-level `_check: <Protocol> = <Fake>(…)` witness per fake module (`fake_hooks` carries two). Runtime guard: NEW `tests/contracts/test_fake_conformance.py` — Protocol absent from the MRO, every declared member present AND defined in the fake's own class body, async-ness matching, witnesses present with the right annotation, plus one test pinning the hazard itself as executable fact |
+| **F5** — 13 of 22 skips were bare `@pytest.mark.skip` on empty bodies | **Fixed.** All 13 now use the C1 import-guard pattern. FULL bodies where the contract specifies enough: C2 test 2's schema clause (whatever `plan_models` exports as `Plan` must validate C2 §5's fixed plan) and C5 test 8 (route-table walk matching `require_service_token` by function IDENTITY through FastAPI's dependency tree — no request, no session, no stub, and it catches the failure a request-level test cannot: a dependency slipped onto a ROUTER). Honest intent-stubs — guard + `pytest.fail` listing the exact assertions — for **C2 test 3 (retry policy), C2 test 5 (router), C3 test 6 (memory service), C5 tests 1, 2, 3, 4, 5, 6, 7, 9**: those rules are frozen but no callable is named, and the C5 route tests additionally need the auth/stub harness whose shape C5 does not fix (session cookie name, whether an ABSENT `Origin` is a mismatch, how the `StubTurnExecutor` is injected). None can sit green having asserted nothing. **Activation proven**, not assumed: with throwaway `sunil/main.py` + `sunil/api/deps.py` stubs, 7 of the 9 C5 tests activated and failed loudly (1–2 correctly stayed skipped on the still-missing `sunil.api.routes.chat`); the stubs were then removed |
+| **F6** — uncovered normative areas absent from the debt table | **Fixed** — three rows added below, and the third area (§2.1 step 3's ALLOW-grant burn rule) is now a contract test rather than debt, because it IS testable against these fakes |
+| **F8** — two §6.5 pagination readings left loose | **Pinned to the contract's literal words.** `id desc` is LEXICOGRAPHIC (`apr-9` above `apr-10`) — the plain meaning of ordering a string column, and what `ORDER BY created_at DESC, id DESC` will do; C3 §5's numeric rule is not borrowed because C3 states it in words and C4 does not. `next_cursor` is `None` ONLY for a short page, so an exactly-full FINAL page still returns a cursor and the client learns it is done from the following empty page; the look-ahead would have obliged the real service to run a query the contract never specifies. `_park_order` deleted; both readings asserted, and the tiebreak test constructs the tie deliberately because `park` advances the clock 1 s per row |
+| **F7** (nit) — a Protocol `__init__` is unverifiable | **Kept as documentation, plus the 4-arg shape test.** A Protocol's `__init__` binds nothing structurally, so its value is documentary — and the test is what keeps the document honest: the parameter list and the absence of defaults (no default audit hook ⇒ "forgot to audit" is not an expressible program) cannot drift inside `base.py` unnoticed |
+| **F9** (nit) — `GATEWAY_MODEL_ALIASES` placement + untested; `ToolErrorKind` invented | **Both kept, both now tested.** The alias tuple stays in `providers/base.py` (where the startup parity check will read it) but is asserted against the CONTRACT TEXT, not a copy of the list, so a frozen-namespace change fails here instead of agreeing with a stale constant; mutation-checked (`gpt-mini` → `gpt-nano`: red). `ToolErrorKind`'s membership is pinned to C1 §4's table verbatim — a closed set that exists only in prose cannot be checked, but it must never become a second source of truth |
+| **F10** (nit) — empty `conftest.py` | **Deleted, on evidence.** The full suite collects and passes identically without it (145 passed / 25 skipped both ways): `sunil` is installed editable, pytest's prepend import mode already puts `apps/api` on `sys.path` via the tests package boundary, and rootdir comes from `pyproject`'s `[tool.pytest.ini_options]` |
+
+### Deferred coverage — additions (F6)
+
+Extends the table above; same rule, each row names the missing module and its
+owner.
+
+| Uncovered normative area | Why it is not testable here | Owner |
+|---|---|---|
+| **C1 §3 untrusted-results posture** — the 256 KiB per-result cap with `data["truncated"] = true`, and the recursive case-insensitive strip of `instructions`/`system`/`prompt` keys at EVERY nesting depth (lists included) with the removal LOGGED by key path, never silently | All three happen at the MCP adapter boundary / in the context builder, of which nothing exists: there is no MCP adapter (`tool_adapters/mcp_*.py`) and no context block builder. `FakeToolAdapter` is NATIVE, and §3 exempts native results from the cap and strip, so no fake in this repo can exercise them. Note for whoever builds it: §3 calls the strip **cosmetic defence-in-depth** — a key denylist is bypassable by construction and must never be argued as a control, so its test must not be written as a security proof. The load-bearing controls (plan-validated steps only; free-form content cannot reach a privileged action) hold with the strip removed entirely | Stream A (MCP adapters) + core (context builder) |
+| **C1 §5 `credential_env:` → `Settings` mapping** — each UPPER_SNAKE entry maps to the lowercased `SecretStr` field, injected into a MINIMAL child env at spawn (never the parent's environment); a name with no matching field, or an unset value, raises `ToolAdapterStartupError` at WIRING time, never a `KeyError` at call time | Needs `sunil/settings.py`, `config/tools.yaml` and the stdio adapter's spawn path. `ToolAdapterStartupError` is transcribed in `base.py` and unraised by anything QA owns; the fail-closed property (a tool that cannot start is ABSENT from the registry, never half-present) is only assertable against real wiring. Two tests to write there: the mapping/redaction round-trip, and a spawned child's env containing exactly the named variables and nothing else | Stream A / backend |
+| ~~**C1 §2.1 step 3** — an approval id under an ALLOW grant is ignored, NOT consumed~~ | **No longer debt — tested now.** `test_c1_allow_grant_ignores_an_approval_id_without_burning_it`: parks under ASK_USER, approves, widens the grant to ALLOW, re-executes with the id → `ok=True`, row still `approved`, `consumed_at` still `None`, and the approval is then still consumable. The bug it catches is invisible on the happy path (the call succeeds either way) and expensive: an opportunistic consume burns a single-use approval the owner granted for a different call, and the real continuation then fails `approval_invalid` with nothing to show them | — (was Stream A) |
+
+### Test evidence for this round
+
+- **Before:** 124 collected — 102 passed, 22 skipped. **After:** 170 collected —
+  **145 passed, 25 skipped**, identical across two consecutive runs
+  (`ci.yml`'s three commands: `-v --strict-markers`, `--strict-markers`, and
+  `-q -m "not live"`). +43 passed, +3 skipped. Per contract:
+  C1 28/11, C2 31/4, C3 18/1, C4 22/0, C5 10/9, conformance 19/0, OpenAPI 17/0.
+- **Mutation proof 1 (re-run, C4 single-use):** letting `consume` accept an
+  already-`consumed` row produced
+  `FAILED test_c4_approvals.py::test_c4_1_park_decide_consume_is_single_use`;
+  reverted, green again.
+- **Mutation proof 2 (new, a `ParkContext` property):** making the fake store
+  `summary=""` on park. The contract's own `Field(min_length=1)` now makes that
+  unreachable through the constructor, so the mutation was applied as
+  `req.model_copy(update={"summary": ""})` — validation-skipping, exactly like a
+  real service writing the row through an ORM. It produced
+  `FAILED test_c4_approvals.py::test_c4_park_retains_the_full_request_for_provenance`,
+  and C1 test 4 (the equality assertions) is the same property one seam up,
+  skipped only because `manager.py` does not exist yet.
+- **Mutation proof 3 (F9 pin):** `gpt-mini` → `gpt-nano` in
+  `GATEWAY_MODEL_ALIASES` → red on the contract-text parity test.
+- **yamllint:** no YAML was touched this round (the only YAML this task owns is
+  `.github/workflows/tests.yml`, unchanged); nothing to re-lint.
+
+### Lessons taken from the review
+
+- **F1 / shared fixtures.** A fake that hands out module-level state is not
+  deterministic — it is deterministic until its first caller. Every fake fixture
+  is now either immutable or copied per call, and the same reasoning produced
+  `park_ctx` as a fixture rather than a constant.
+- **F2 / vacuous conformance.** Inheriting a `Protocol` looks like a conformance
+  assertion and is the opposite: it fills in whatever the fake forgot with a
+  `None`-returning stub. Structural typing plus an explicit witness says the
+  same thing without the trapdoor.
+- **F5 / self-activating debt.** A skip that cannot notice its own dependency
+  arriving is not debt, it is a hole. Import guards make the debt due
+  automatically; where the body cannot honestly be written, the guard fails
+  loudly with the assertion list rather than passing empty.
