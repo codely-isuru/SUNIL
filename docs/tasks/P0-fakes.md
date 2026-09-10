@@ -297,3 +297,35 @@ owner.
   arriving is not debt, it is a hole. Import guards make the debt due
   automatically; where the body cannot honestly be written, the guard fails
   loudly with the assertion list rather than passing empty.
+
+### New finding from this round — should (contract owner)
+
+`docs/contracts/C1-tool-adapter.md` §2.1 + §2.2 (v1.1.0) — **an empty-but-present
+`park_context` has no specified behaviour.** §2.1 pins the MISSING case exactly
+(`TypeError` before step 1, no attempt row) and C4 §4 pins the model-level
+rejection of empty park material, but nothing pins the case in between:
+`execute(..., park_context=ParkContext(continuation={}, summary=""))` on a first
+attempt. `ParkContext` is a frozen dataclass, so §2.2's "Both values MUST be
+non-empty" is a rule on the caller that nothing enforces; the pipeline would
+reach step 3, write its attempt row, and then take an unhandled
+`pydantic.ValidationError` out of `approvals.park(...)` — a raise from `execute`,
+which C1 §2 forbids in spirit ("an adapter exception NEVER reaches the
+orchestrator as an exception"), with no matching kind in §4's closed error set
+and an unfinalised attempt row left behind.
+
+Two clean fixes, both cheap, contract owner's call:
+
+1. `ParkContext.__post_init__` raises `ValueError` on either empty field — the
+   violation surfaces at construction, in the orchestrator, where the plan
+   cursor actually is; or
+2. §2.1's precondition becomes "non-None **and** non-empty → otherwise
+   `TypeError` before step 1", which keeps one rule and one failure mode for
+   "the caller cannot resume this".
+
+Preference: (1), because it makes the invalid value unconstructible rather than
+merely rejected, which is the same argument §2.2 already makes for the type
+existing at all. QA has NOT implemented either — both change frozen contract
+text or seam behaviour, and this round was migration + review conditions only.
+No test is added: the failure is a manager behaviour, and `manager.py` does not
+exist. C1 test 8 and its sibling cover the missing/`None` cases that ARE
+specified.
