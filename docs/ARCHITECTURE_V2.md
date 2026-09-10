@@ -141,6 +141,19 @@ call that skips `decide()` (§33.3, §33.5).
 | `SUNIL_SERVICE_TOKEN` | unset (machine lane off) | yes | `require_service_token` on the chat route only (ADR-035) |
 | `SUNIL_MEMORY_PROVIDER` | `fake` until Stream C lands, then `mem0` | no | memory service wiring |
 
+Rulings on this inventory (2026-09-10 security-delta residuals S-1/S-3/S-4): **driver token** —
+`+psycopg` (psycopg v3) is normative because it is ADR-002's recorded driver and one dependency
+serves both SQLAlchemy 2's async engine and Alembic's sync migration path (`+asyncpg` would add a
+second driver against a closed decision). **`SUNIL_TURN_DEADLINE_S=40`** is normative — M1's
+live-verified turn ran ~6 s against a 30 s p95 target, and a fail-closed deadline must be tight
+enough that a hang surfaces in dev (raise it per-machine in `.env` for step-debugging, never in
+this inventory; per-operation tool budgets are C1 `timeout_s`, and a parked turn's human wait is
+outside the deadline — §6). **Dev defaults** (documented, no behaviour change): `scripts/dev-up.*`
+generates `SUNIL_SERVICE_TOKEN` on `.env` auto-create, so the TB7 machine lane is ON in a
+generated dev environment — the table's `unset (machine lane off)` stays the fail-closed
+application default when the variable is absent; `SUNIL_MEMORY_PROVIDER` runs `fake` until
+Stream C lands (the table default), `mem0` being the committed end-state value in `.env.example`.
+
 **Web — `apps/web`:** `NEXT_PUBLIC_API_BASE_URL` = `http://localhost:8000` (MUST be `localhost`
 so the session cookie is same-site with the page origin — the ADR-008 rule; the API may bind
 `127.0.0.1`, but the browser-facing name is `localhost`). Next.js dev server runs on **3001**

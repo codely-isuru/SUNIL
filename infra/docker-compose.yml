@@ -269,7 +269,7 @@ services:
   #   restart: unless-stopped
   #   environment:
   #     # user/db default to `sunil`; see POSTGRES_USER / POSTGRES_DB.
-  #     DATABASE_URL: postgresql+asyncpg://sunil:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/sunil
+  #     DATABASE_URL: postgresql+psycopg://sunil:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/sunil
   #     SESSION_SECRET: ${SESSION_SECRET:?set in .env}
   #     SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sunil_session}
   #     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3001}
@@ -277,7 +277,7 @@ services:
   #     API_PORT: 8000               # port is 127.0.0.1-bound below
   #     LOG_LEVEL: ${LOG_LEVEL:-INFO}
   #     SUNIL_CONFIG_DIR: /app/config
-  #     SUNIL_TURN_DEADLINE_S: ${SUNIL_TURN_DEADLINE_S:-120}
+  #     SUNIL_TURN_DEADLINE_S: ${SUNIL_TURN_DEADLINE_S:-40}
   #     # C2 provider base-URL override (ADR-017): the router policy does not
   #     # change, only where it sends the call. Rollback = unset this.
   #     SUNIL_LLM_PROVIDER_LANE: ${SUNIL_LLM_PROVIDER_LANE:-gateway}
