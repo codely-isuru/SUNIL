@@ -1,6 +1,7 @@
 """C1 — Tool Adapter contract suite.
 
-Source of truth: ``docs/contracts/C1-tool-adapter.md`` v1.0.0 (FROZEN 2026-09-10).
+Source of truth: ``docs/contracts/C1-tool-adapter.md`` **v1.1.0** (FROZEN
+2026-09-10).
 
 Two halves, deliberately separated:
 
@@ -20,17 +21,20 @@ from __future__ import annotations
 
 import asyncio
 import time
+from inspect import signature
 
 import pytest
 from pydantic import ValidationError
 
-from sunil.core.approvals.base import ApprovalStatus
+from sunil.core.approvals.base import ApprovalBinding, ApprovalStatus
 from sunil.core.tool_framework.base import (
     AdapterKind,
+    ParkContext,
     PermissionDecision,
     PermissionResult,
     ToolCallAttempt,
     ToolErrorKind,
+    ToolManagerProtocol,
     ToolResult,
     ToolResultMeta,
     TraceContext,
@@ -62,6 +66,20 @@ def tool_manager_class():
             "assertions in this test are ready; the suite activates when it lands."
         )
     return ToolManager
+
+
+@pytest.fixture
+def park_ctx() -> ParkContext:
+    """C1 §6.4's fixture, verbatim (v1.1.0): the caller-supplied park material
+    every FIRST attempt must carry, non-empty on both fields.
+
+    A fixture rather than a module constant on purpose — ``continuation`` is a
+    mutable dict inside a frozen dataclass, so a shared instance would let one
+    test's edit reach the next (the F1 lesson, one seam over)."""
+    return ParkContext(
+        continuation={"plan_id": "plan-1", "cursor": "step_1"},
+        summary="fake_tool.write_item: key=demo",
+    )
 
 
 @pytest.fixture
@@ -383,27 +401,56 @@ def test_args_hash_is_canonical_and_order_independent() -> None:
 # Bodies complete against the frozen §2.1 signature; skipped until
 # sunil/core/tool_framework/manager.py exists (backend deliverable).
 # ========================================================================== #
-async def test_c1_1_unknown_operation(manager, audit: RecordingAuditHook) -> None:
-    """C1 contract test 1 — unknown operation → ``unknown_operation``; one attempt
-    row with ``permission_decision=None``, finalised ``outcome="error"``."""
-    result = await manager.execute(
-        "agent-1", "fake_tool", "does.not.exist", {}, trace=TRACE
+async def test_c1_1_unknown_tool_and_unknown_operation(
+    manager, audit: RecordingAuditHook, park_ctx: ParkContext
+) -> None:
+    """C1 contract test 1 (v1.1.0, F4) — two calls, both ``unknown_operation``,
+    probing BOTH sides of ``ToolResultMeta.adapter_kind``:
+
+    * unknown TOOL → ``meta.adapter_kind is None`` — no adapter was ever
+      resolved, so a kind on that row would be a fabricated fact on the
+      ``tool_calls`` audit trail (the backend probe wrote ``NATIVE``: F4);
+    * unknown OPERATION on the known ``fake_tool`` → ``AdapterKind.NATIVE``, the
+      resolved adapter's real kind.
+
+    Each call: one attempt row with ``permission_decision=None`` and the matching
+    ``adapter_kind``, finalised ``outcome="error"``.
+    """
+    unknown_tool = await manager.execute(
+        "agent-1", "no_such_tool", "echo", {}, trace=TRACE, park_context=park_ctx
     )
 
-    assert result.ok is False
-    assert result.error_kind == "unknown_operation"
-    assert len(audit.attempts) == 1
-    assert audit.attempts[0].permission_decision is None
+    assert unknown_tool.ok is False
+    assert unknown_tool.error_kind == "unknown_operation"
+    assert unknown_tool.meta.adapter_kind is None
+    assert unknown_tool.meta.server_id is None
+
+    unknown_operation = await manager.execute(
+        "agent-1", "fake_tool", "does.not.exist", {}, trace=TRACE, park_context=park_ctx
+    )
+
+    assert unknown_operation.error_kind == "unknown_operation"
+    assert unknown_operation.meta.adapter_kind == AdapterKind.NATIVE
+
+    assert len(audit.attempts) == 2
+    assert [row.adapter_kind for row in audit.attempts] == [None, AdapterKind.NATIVE]
+    assert [row.permission_decision for row in audit.attempts] == [None, None]
     assert audit.finalised["audit-1"]["outcome"] == "error"
+    assert audit.finalised["audit-2"]["outcome"] == "error"
 
 
 async def test_c1_2_extra_param_key_is_invalid_params(
-    manager, audit: RecordingAuditHook
+    manager, audit: RecordingAuditHook, park_ctx: ParkContext
 ) -> None:
     """C1 contract test 2 — extra param key → ``invalid_params`` (proves
     ``extra="forbid"``); the attempt row has ``args_hash=None``."""
     result = await manager.execute(
-        "agent-1", "fake_tool", "echo", {"text": "hi", "nope": 1}, trace=TRACE
+        "agent-1",
+        "fake_tool",
+        "echo",
+        {"text": "hi", "nope": 1},
+        trace=TRACE,
+        park_context=park_ctx,
     )
 
     assert result.error_kind == "invalid_params"
@@ -411,28 +458,47 @@ async def test_c1_2_extra_param_key_is_invalid_params(
     assert audit.attempts[0].args_hash is None
 
 
-async def test_c1_3_empty_grant_registry_denies(manager) -> None:
+async def test_c1_3_empty_grant_registry_denies(
+    manager, park_ctx: ParkContext
+) -> None:
     """C1 contract test 3 — empty grant registry → ``write_item`` returns
     ``permission_denied`` (structural default-deny)."""
     result = await manager.execute(
-        "agent-1", "fake_tool", "write_item", {"key": "demo", "value": "1"}, trace=TRACE
+        "agent-1",
+        "fake_tool",
+        "write_item",
+        {"key": "demo", "value": "1"},
+        trace=TRACE,
+        park_context=park_ctx,
     )
 
     assert result.error_kind == "permission_denied"
 
 
 async def test_c1_4_ask_user_without_approval_parks(
-    manager, hook: FakePermissionHook, approvals: FakeApprovalsService
+    manager,
+    hook: FakePermissionHook,
+    approvals: FakeApprovalsService,
+    park_ctx: ParkContext,
 ) -> None:
     """C1 contract test 4 — ASK_USER with no ``approval`` → ``approval_required``
     AND ``FakeApprovalsService`` holds exactly one ``pending`` approval whose
     ``args_hash == sha256(canonical_json(validated params))`` and whose
-    ``request_id``/``task_id``/``conversation_id`` equal the ``TraceContext``."""
+    ``request_id``/``task_id``/``conversation_id`` equal the ``TraceContext``.
+
+    REQUIRED (v1.1.0, F3): the retained ``ParkRequest`` carries
+    ``continuation``/``summary`` equal BY VALUE to the caller's non-empty
+    ``park_ctx``. The backend probe parked ``continuation={}`` plus a synthesised
+    summary — a never-resumable approval — and the v1.0.0 version of this test
+    passed, because it asserted only ``args_hash`` and the trace ids. Equality
+    against the caller's own fixture is what makes that impossible: a manager
+    that synthesises, defaults or empties either field fails here.
+    """
     hook.grant("agent-1", "fake_tool", "write_item", "ask_user")
     params = {"key": "demo", "value": "1"}
 
     result = await manager.execute(
-        "agent-1", "fake_tool", "write_item", params, trace=TRACE
+        "agent-1", "fake_tool", "write_item", params, trace=TRACE, park_context=park_ctx
     )
 
     assert result.error_kind == "approval_required"
@@ -450,21 +516,43 @@ async def test_c1_4_ask_user_without_approval_parks(
     assert row.task_id == TRACE.task_id
     assert row.conversation_id == TRACE.conversation_id
 
+    # C4 §6 behaviour 1 (v1.1.0) — the fake retains the composed ParkRequest.
+    parked = approvals.parked[row.id]
+    assert parked.continuation == park_ctx.continuation
+    assert parked.summary == park_ctx.summary
+    assert parked.continuation == {"plan_id": "plan-1", "cursor": "step_1"}
+    assert parked.summary == "fake_tool.write_item: key=demo"
+    # ...and the manager computed the rest itself (one composer, one hasher).
+    assert parked.args_hash == args_hash(params)
+    assert (parked.agent_id, parked.tool, parked.operation) == (
+        "agent-1",
+        "fake_tool",
+        "write_item",
+    )
+
 
 async def test_c1_5_approved_id_executes_once_then_is_spent(
     manager,
     hook: FakePermissionHook,
     approvals: FakeApprovalsService,
     audit: RecordingAuditHook,
+    park_ctx: ParkContext,
 ) -> None:
     """C1 contract test 5 — approve test 4's approval, re-execute the IDENTICAL
     params with ``approval=approval_id`` → executes, ``ok=True``; the attempt row
     carries ``approval_id``; the approval is ``consumed``. A third execution with
-    the same id → ``approval_invalid`` (single-use, C4 test 1 seen from C1)."""
+    the same id → ``approval_invalid`` (single-use, C4 test 1 seen from C1).
+
+    The two continuation calls pass NO ``park_context`` (v1.1.0, §2.1): a call
+    carrying an ``approval`` never parks — a consume failure early-exits
+    ``approval_invalid`` — so the precondition is a first-attempt rule only, and
+    a manager that demanded it on continuations would break every resume."""
     hook.grant("agent-1", "fake_tool", "write_item", "ask_user")
     params = {"key": "demo", "value": "1"}
 
-    await manager.execute("agent-1", "fake_tool", "write_item", params, trace=TRACE)
+    await manager.execute(
+        "agent-1", "fake_tool", "write_item", params, trace=TRACE, park_context=park_ctx
+    )
     approval_id = next(iter(approvals.approvals))
     approvals.decide(approval_id, "approve", None, approvals.clock.now())
 
@@ -481,13 +569,15 @@ async def test_c1_5_approved_id_executes_once_then_is_spent(
     assert spent.error_kind == "approval_invalid"
 
 
-async def test_c1_6_timeout(manager, hook: FakePermissionHook) -> None:
+async def test_c1_6_timeout(
+    manager, hook: FakePermissionHook, park_ctx: ParkContext
+) -> None:
     """C1 contract test 6 — ``sleep_forever`` → ``timeout`` in < 1 s wall clock."""
     hook.grant("agent-1", "fake_tool", "sleep_forever", "allow")
     started = time.monotonic()
 
     result = await manager.execute(
-        "agent-1", "fake_tool", "sleep_forever", {}, trace=TRACE
+        "agent-1", "fake_tool", "sleep_forever", {}, trace=TRACE, park_context=park_ctx
     )
 
     assert result.error_kind == "timeout"
@@ -495,10 +585,15 @@ async def test_c1_6_timeout(manager, hook: FakePermissionHook) -> None:
 
 
 async def test_c1_7_every_path_pairs_one_attempt_with_one_finalise(
-    manager, hook: FakePermissionHook, audit: RecordingAuditHook
+    manager,
+    hook: FakePermissionHook,
+    audit: RecordingAuditHook,
+    park_ctx: ParkContext,
 ) -> None:
-    """C1 contract test 7 — every case above produced exactly one attempt AND
-    exactly one finalise (two-phase pairing)."""
+    """C1 contract test 7 (v1.1.0 wording) — every ``execute`` CALL above
+    produced exactly one attempt AND exactly one finalise (two-phase pairing).
+    Per CALL, not per test: test 1 makes two, and test 8's precondition failure
+    is excluded because it never enters the pipeline."""
     hook.grant("agent-1", "fake_tool", "echo", "allow")
     calls = [
         ("does.not.exist", {}),
@@ -508,7 +603,14 @@ async def test_c1_7_every_path_pairs_one_attempt_with_one_finalise(
     ]
 
     for operation, params in calls:
-        await manager.execute("agent-1", "fake_tool", operation, params, trace=TRACE)
+        await manager.execute(
+            "agent-1",
+            "fake_tool",
+            operation,
+            params,
+            trace=TRACE,
+            park_context=park_ctx,
+        )
 
     assert len(audit.attempts) == len(calls)
     assert len(audit.finalised) == len(calls)
@@ -519,6 +621,7 @@ async def test_c1_7_attempt_row_is_written_before_the_handler_runs(
     adapter: FakeToolAdapter,
     hook: FakePermissionHook,
     approvals: FakeApprovalsService,
+    park_ctx: ParkContext,
 ) -> None:
     """C1 contract test 7, ordering probe — the attempt row is written BEFORE the
     handler runs (§2.1 step 4: a process kill mid-execution can never leave a
@@ -548,6 +651,217 @@ async def test_c1_7_attempt_row_is_written_before_the_handler_runs(
     hook.grant("agent-1", "fake_tool", "echo", "allow")
     manager = manager_cls([adapter], hook, approvals, OrderingAuditHook())
 
-    await manager.execute("agent-1", "fake_tool", "echo", {"text": "hi"}, trace=TRACE)
+    await manager.execute(
+        "agent-1",
+        "fake_tool",
+        "echo",
+        {"text": "hi"},
+        trace=TRACE,
+        park_context=park_ctx,
+    )
 
     assert events == ["attempt", "execute"]
+
+
+# ========================================================================== #
+# Pipeline-level: C1 contract test 8 (v1.1.0, F3) — the park_context precondition
+# ========================================================================== #
+async def test_c1_8_first_attempt_without_park_context_raises(
+    manager, hook: FakePermissionHook, approvals: FakeApprovalsService,
+    audit: RecordingAuditHook,
+) -> None:
+    """C1 contract test 8 (v1.1.0, F3) — a FIRST attempt (``approval=None``) with
+    ``park_context`` omitted raises ``TypeError`` **before any pipeline step**:
+    afterwards the approvals fake holds zero approvals and the audit hook
+    recorded zero attempts.
+
+    It is a caller contract violation of the same class as constructing the
+    manager without an audit hook — not a pipeline outcome — so it must not mint
+    an attempt row, and it is excluded from test 7's pairing accounting. This is
+    the precondition that makes a non-resumable park inexpressible: every V2 tool
+    call originates from a validated plan step, so the orchestrator always holds
+    both values (§2.1).
+    """
+    hook.grant("agent-1", "fake_tool", "write_item", "ask_user")
+
+    with pytest.raises(TypeError):
+        await manager.execute(
+            "agent-1", "fake_tool", "write_item", {"key": "demo", "value": "1"},
+            trace=TRACE,
+        )
+
+    assert approvals.approvals == {}
+    assert approvals.parked == {}
+    assert audit.attempts == []
+    assert audit.finalised == {}
+
+
+async def test_c1_8_explicit_none_park_context_is_the_same_violation(
+    manager, hook: FakePermissionHook, audit: RecordingAuditHook
+) -> None:
+    """§2.1 — "``park_context=None`` (or omitted)": passing the default
+    explicitly is the same caller violation, so a call site cannot satisfy the
+    precondition by naming the parameter and handing over nothing."""
+    hook.grant("agent-1", "fake_tool", "echo", "allow")
+
+    with pytest.raises(TypeError):
+        await manager.execute(
+            "agent-1", "fake_tool", "echo", {"text": "hi"},
+            trace=TRACE, park_context=None,
+        )
+
+    assert audit.attempts == []
+
+
+# ========================================================================== #
+# Pipeline-level: §2.1 step 3 — an approval id under an ALLOW grant is IGNORED,
+# never consumed (QA finding F6: normative, previously untested)
+# ========================================================================== #
+async def test_c1_allow_grant_ignores_an_approval_id_without_burning_it(
+    manager,
+    hook: FakePermissionHook,
+    approvals: FakeApprovalsService,
+    park_ctx: ParkContext,
+) -> None:
+    """C1 §2.1 step 3 — under an ``ALLOW`` grant the pipeline executes and the
+    supplied ``approval`` id is **ignored, not consumed**.
+
+    Why this matters enough to pin: a manager that consumed opportunistically
+    (or "for tidiness") would silently burn a single-use, still-valid approval
+    the owner granted for a DIFFERENT call — the approval's one execution is
+    spent on a call that never needed it, and the real continuation then fails
+    ``approval_invalid`` with nothing to show the owner. The bug is invisible on
+    the happy path: the call succeeds either way. So the test asserts the
+    approval is still there, still ``approved``, and still consumable
+    afterwards.
+    """
+    params = {"key": "demo", "value": "1"}
+    hook.grant("agent-1", "fake_tool", "write_item", "ask_user")
+    await manager.execute(
+        "agent-1", "fake_tool", "write_item", params, trace=TRACE, park_context=park_ctx
+    )
+    approval_id = next(iter(approvals.approvals))
+    approvals.decide(approval_id, "approve", None, approvals.clock.now())
+
+    # The owner widens the grant (or the matrix reloads) before the resume.
+    hook.grant("agent-1", "fake_tool", "write_item", "allow")
+    result = await manager.execute(
+        "agent-1", "fake_tool", "write_item", params, trace=TRACE,
+        approval=approval_id,
+    )
+
+    assert result.ok is True
+    assert approvals.approvals[approval_id].status == ApprovalStatus.APPROVED
+    assert approvals.approvals[approval_id].consumed_at is None
+
+    # Still spendable — the ALLOW path did not eat the grant.
+    spend = await approvals.consume(
+        approval_id,
+        binding=ApprovalBinding(
+            agent_id="agent-1",
+            tool="fake_tool",
+            operation="write_item",
+            args_hash=args_hash(params),
+        ),
+    )
+    assert (spend.ok, spend.reason) == (True, "consumed")
+
+
+# ========================================================================== #
+# Fake-level: the frozen SHAPES this suite is written against (v1.1.0)
+# ========================================================================== #
+def test_c1_tool_manager_protocol_execute_is_the_v1_1_0_signature() -> None:
+    """C1 §2.1 — ``execute``'s parameters, in order, with ``trace``/``approval``/
+    ``park_context`` keyword-only and the two optionals defaulting to ``None``.
+
+    The transcription is the only place this shape is machine-readable before
+    ``manager.py`` exists, so it is pinned: dropping ``park_context`` or making
+    it positional would silently un-break the F3 fix.
+    """
+    execute = signature(ToolManagerProtocol.execute)
+
+    assert list(execute.parameters) == [
+        "self",
+        "agent_id",
+        "tool",
+        "operation",
+        "params",
+        "trace",
+        "approval",
+        "park_context",
+    ]
+    for name in ("trace", "approval", "park_context"):
+        assert execute.parameters[name].kind.name == "KEYWORD_ONLY"
+    assert execute.parameters["trace"].default is execute.empty
+    assert execute.parameters["approval"].default is None
+    assert execute.parameters["park_context"].default is None
+    assert execute.parameters["park_context"].annotation == "ParkContext | None"
+
+
+def test_c1_tool_manager_protocol_init_is_the_four_seam_shape() -> None:
+    """C1 §2.1 — the manager is constructed with exactly the four seams
+    (adapters, permission hook, approvals, audit hook), in that order.
+
+    Recorded nit F7: a Protocol's ``__init__`` binds nothing structurally — a
+    type checker will not reject an implementation that constructs differently.
+    So the transcription's value is documentary, and this test is what keeps the
+    document honest: the shape cannot drift inside ``base.py`` unnoticed. The
+    load-bearing property behind it — no default audit hook, so "forgot to
+    audit" is not an expressible program — is asserted here as the absence of
+    defaults.
+    """
+    init = signature(ToolManagerProtocol.__init__)
+
+    assert list(init.parameters) == [
+        "self",
+        "adapters",
+        "permission_hook",
+        "approvals",
+        "audit_hook",
+    ]
+    assert all(
+        parameter.default is init.empty for parameter in init.parameters.values()
+    )
+
+
+def test_c1_adapter_kind_is_optional_on_both_record_types() -> None:
+    """C1 §2 (v1.1.0, F4) — ``ToolResultMeta.adapter_kind`` and
+    ``ToolCallAttempt.adapter_kind`` carry the SAME ``AdapterKind | None``
+    convention: None iff the tool itself was unknown.
+
+    Asserted on the annotations because these are plain frozen dataclasses —
+    nothing at runtime would reject ``adapter_kind=NATIVE`` on a no-adapter exit,
+    which is exactly the lie the probe was forced to write. The annotation is
+    therefore the artefact under test.
+    """
+    assert ToolResultMeta.__annotations__["adapter_kind"] == "AdapterKind | None"
+    assert ToolCallAttempt.__annotations__["adapter_kind"] == "AdapterKind | None"
+    assert ToolResultMeta.__annotations__["server_id"] == "str | None"
+    # Constructible with None — the unknown-TOOL exit's meta (C1 §6.3).
+    meta = ToolResultMeta(adapter_kind=None, server_id=None, duration_ms=0)
+    assert meta.adapter_kind is None
+
+
+def test_c1_tool_error_kind_membership_matches_section_4() -> None:
+    """C1 §4 — the closed error set, member for member.
+
+    Recorded nit F9: ``ToolErrorKind`` is a QA-invented public symbol (the
+    contract types ``error_kind`` as ``str | None`` and gives the values in a
+    table). It stays, because a closed set that only exists in prose cannot be
+    checked — but it must never become a SECOND source of truth, so its
+    membership is pinned to §4's table verbatim and its values are asserted to
+    be the exact strings the table uses.
+    """
+    assert {kind.value for kind in ToolErrorKind} == {
+        "unknown_operation",
+        "invalid_params",
+        "permission_denied",
+        "approval_required",
+        "approval_invalid",
+        "timeout",
+        "upstream_error",
+        "transport_error",
+    }
+    assert len(ToolErrorKind) == 8
+    # StrEnum members ARE str, so either form satisfies the frozen field type.
+    assert ToolErrorKind.TIMEOUT == "timeout"

@@ -1,8 +1,12 @@
 """C1 — Tool Adapter interface (frozen contract transcription).
 
-Source of truth: ``docs/contracts/C1-tool-adapter.md`` v1.0.0 (FROZEN, Phase 0
-2026-09-10) §2 "Interface definition", §2.2 "Injected hooks (the seams streams
-fake)" and §4 "Error semantics". Python ≥ 3.12, Pydantic v2 (C1 §2).
+Source of truth: ``docs/contracts/C1-tool-adapter.md`` **v1.1.0** (FROZEN,
+Phase 0 2026-09-10) §2 "Interface definition", §2.2 "Injected hooks (the seams
+streams fake)" and §4 "Error semantics". Python ≥ 3.12, Pydantic v2 (C1 §2).
+
+v1.1.0 changed two things in this module (backend fakes-review F3/F4):
+``ParkContext`` (§2.2) plus ``execute``'s keyword-only ``park_context``, and
+``ToolResultMeta.adapter_kind`` becoming ``AdapterKind | None``.
 
 Zero business logic lives here: protocols, dataclasses, enums and exceptions
 only. The Tool Manager pipeline of §2.1 — the single execution chokepoint — is
@@ -43,8 +47,17 @@ class ToolResultMeta:
     `tool_calls` audit row so 'audit shows adapter type per call' (V2-A exit) is a
     database fact, not an inference."""
 
-    adapter_kind: AdapterKind
-    server_id: str | None  # MCP server identity from config/tools.yaml; None for NATIVE
+    adapter_kind: AdapterKind | None
+    # None iff the tool itself was unknown (§2.1 step 1's exit — no adapter was
+    # ever resolved). The SAME rule ToolCallAttempt.adapter_kind already carried,
+    # so the two record types agree; an unknown OPERATION on a known tool records
+    # the resolved adapter's kind (v1.1.0, backend review F4). `| None` over an
+    # UNKNOWN enum member: None already models "no adapter resolved", while a
+    # member would force every exhaustive match over real kinds to carry an
+    # impossible-past-step-1 case and would land a fabricated kind on the
+    # tool_calls audit row as fact.
+    server_id: str | None  # MCP server identity from config/tools.yaml; None for
+    # NATIVE and on the no-adapter exit above
     duration_ms: int
 
 
@@ -123,6 +136,29 @@ class TraceContext:
     request_id: str
     task_id: str
     conversation_id: str
+
+
+@dataclass(frozen=True)
+class ParkContext:
+    """C1 §2.2 (v1.1.0, backend review F3) — the caller-supplied park material:
+    the two ``ParkRequest`` fields (C4 §4) the Tool Manager cannot derive from
+    its own frozen inputs.
+
+    Copied VERBATIM into the ``ParkRequest`` at park time; the manager computes
+    every other field (identity triple, ``args_hash`` from the freshly validated
+    params, ``params_redacted``, trace ids) — one composer, one hasher (§2.1
+    step 3). REQUIRED on every first attempt; ignored on continuation calls.
+
+    Both values MUST be non-empty. An empty ``continuation`` is a never-resumable
+    approval — the exact failure class this type exists to make inexpressible
+    (C4 §1 restart safety), and the one the backend probe demonstrated by parking
+    ``continuation={}``. The bound itself is enforced by ``ParkRequest``'s
+    ``Field(min_length=1)`` (C4 §4 v1.1.0), so it is checked once, at the seam
+    that persists it, rather than trusted here.
+    """
+
+    continuation: dict  # opaque persisted plan-cursor state (ADR-031); len >= 1
+    summary: str  # built by SUNIL code, never LLM output (C4 §4); 1..500 chars
 
 
 @dataclass(frozen=True)
@@ -208,6 +244,14 @@ class ToolManagerProtocol(Protocol):
     binding it did not compute. There is no default hook: constructing a manager
     without an audit hook is a ``TypeError``, so "forgot to audit" is not an
     expressible program.
+
+    ``park_context`` (v1.1.0, backend review F3) is the park material above.
+    Typed ``| None = None`` because it is meaningless on continuation calls, but
+    **required — non-None — on every first attempt** (``approval is None``):
+    missing there, the manager raises ``TypeError`` before step 1 and writes NO
+    attempt row (a caller contract violation, not a pipeline outcome). The
+    default is what lets the continuation executor omit it, not permission to
+    park without it.
     """
 
     def __init__(
@@ -227,4 +271,5 @@ class ToolManagerProtocol(Protocol):
         *,
         trace: TraceContext,
         approval: str | None = None,
+        park_context: ParkContext | None = None,
     ) -> ToolResult: ...
