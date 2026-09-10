@@ -19,7 +19,7 @@ from sunil.core.tool_framework.base import (
 )
 
 
-class FakePermissionHook(PermissionHook):
+class FakePermissionHook:
     """C1 §6.1 — empty grant registry, default-deny structure.
 
     ``FakePermissionHook()`` starts with an empty
@@ -59,7 +59,7 @@ class FakePermissionHook(PermissionHook):
         )
 
 
-class RecordingAuditHook(AuditHook):
+class RecordingAuditHook:
     """C1 §6.2 — records the two-phase audit and refuses a double finalise."""
 
     def __init__(self) -> None:
@@ -89,3 +89,9 @@ class RecordingAuditHook(AuditHook):
             "error_kind": error_kind,
             "duration_ms": duration_ms,
         }
+
+
+#: Static conformance witnesses (F2) — see tests/contracts/test_fake_conformance.py
+#: for why neither fake inherits its Protocol.
+_check_permission: PermissionHook = FakePermissionHook()
+_check_audit: AuditHook = RecordingAuditHook()

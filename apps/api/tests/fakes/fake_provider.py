@@ -59,7 +59,7 @@ def partition(text: str) -> list[str]:
     return PARTITION.findall(text)
 
 
-class FakeProvider(LLMProvider):
+class FakeProvider:
     """C2 §5 fake. ``self.calls`` records every request (contract test 5's
     zero-call probe); ``FAIL:invalid_output`` uses an instance-level counter."""
 
@@ -135,3 +135,8 @@ class FakeProvider(LLMProvider):
         ]
         assert user_messages, "fake provider called without a user message"
         return user_messages[-1].content
+
+
+#: Static conformance witness (F2) — FakeProvider satisfies C2 §2's LLMProvider
+#: structurally (note `stream` is a plain def returning an async iterator).
+_check: LLMProvider = FakeProvider()

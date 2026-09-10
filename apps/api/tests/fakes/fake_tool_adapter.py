@@ -41,9 +41,18 @@ class NoParams(BaseModel, extra="forbid"):
     pass
 
 
-class FakeToolAdapter(ToolAdapter):
+class FakeToolAdapter:
     """C1 §6.3 — ``name="fake_tool"``, ``kind=AdapterKind.NATIVE``, in-memory
-    ``dict`` store, ``start()``/``stop()`` set/clear ``self.started``."""
+    ``dict`` store, ``start()``/``stop()`` set/clear ``self.started``.
+
+    Structural conformance only (backend review **F2**): the Protocol is
+    deliberately NOT a base class. An explicitly-inherited ``typing.Protocol``
+    hands the subclass its ``...`` method bodies as real callables that return
+    ``None``, so a forgotten or misspelled contract method answers ``None``
+    instead of raising — a vacuous pass waiting to happen. The ``_check``
+    assignment at the foot of this module is the static conformance proof;
+    ``tests/contracts/test_fake_conformance.py`` is the runtime one.
+"""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self.name = "fake_tool"
@@ -142,3 +151,9 @@ class FakeToolAdapter(ToolAdapter):
             server_id=None,
             duration_ms=int((self.clock() - started) * 1000),
         )
+
+
+#: Static conformance witness (F2) — a type checker reads this as "FakeToolAdapter
+#: must satisfy C1 §2's ToolAdapter"; at runtime it also proves the fake still
+#: constructs at import time.
+_check: ToolAdapter = FakeToolAdapter()

@@ -59,7 +59,7 @@ def _park_order(approval_id: str) -> int:
     return int(approval_id.rsplit("-", 1)[1])
 
 
-class FakeApprovalsService(ApprovalsService):
+class FakeApprovalsService:
     """C4 §6 fake. In-memory, deterministic, no HTTP, no database."""
 
     def __init__(
@@ -235,3 +235,9 @@ class FakeApprovalsService(ApprovalsService):
                 current_status=row.status,
             )
         )
+
+
+#: Static conformance witness (F2) — FakeApprovalsService satisfies C4 §4's
+#: ApprovalsService structurally; inheriting it would have made a forgotten
+#: `consume` return None (the backend review's proof).
+_check: ApprovalsService = FakeApprovalsService()

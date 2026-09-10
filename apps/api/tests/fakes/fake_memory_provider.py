@@ -20,6 +20,7 @@ from datetime import timedelta
 from sunil.core.memory.provider import (
     PRIVACY_STRICTNESS,
     MemoryItem,
+    MemoryProvider,
     MemoryScope,
     MemoryUnavailableError,
     MemoryWriteRejected,
@@ -183,3 +184,8 @@ class FakeMemoryProvider:
             ):
                 candidates.append(stored)
         return candidates
+
+
+#: Static conformance witness (F2) — FakeMemoryProvider satisfies C3 §2's
+#: MemoryProvider structurally, including the v1.1.0 `scope` parameter.
+_check: MemoryProvider = FakeMemoryProvider()
