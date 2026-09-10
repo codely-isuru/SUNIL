@@ -52,16 +52,6 @@ from tests.fakes.clock import FakeClock, from_iso, to_iso
 TTL_HOURS = 72
 
 
-def _park_order(approval_id: str) -> int:
-    """Numeric park order from an ``apr-N`` id.
-
-    Numeric, never lexicographic: C3 §5 records why (``mem-10`` sorts before
-    ``mem-2`` as text). ``created_at`` already totally orders rows minted by the
-    default clock; this key only decides ties under a frozen injected clock.
-    """
-    return int(approval_id.rsplit("-", 1)[1])
-
-
 class FakeApprovalsService:
     """C4 §6 fake. In-memory, deterministic, no HTTP, no database."""
 
@@ -218,6 +208,21 @@ class FakeApprovalsService:
         """C4 §6.5 — filter by status, order ``created_at`` desc then id desc;
         cursor = the last row's id; ``next_cursor=None`` when the page is short.
 
+        Both of §6.5's loose readings are resolved LITERALLY (QA finding F8),
+        because the fake is what Stream D will build the dashboard queue
+        against:
+
+        * **id desc is lexicographic**, the plain meaning of ordering a string
+          column (so ``apr-9`` outranks ``apr-10``), and what
+          ``ORDER BY created_at DESC, id DESC`` will do in the real query. C3
+          §5's numeric rule is not borrowed: C3 states it explicitly, C4 does
+          not.
+        * **``next_cursor`` is None only for a SHORT page.** An exactly-full
+          final page still returns a cursor; the client discovers the end by
+          asking once more and receiving an empty page. A look-ahead
+          (``len(rows) > limit``) would be friendlier but would oblige the real
+          service to run an extra query it is not specified to run.
+
         An unknown cursor raises ``ValueError`` (the HTTP layer's 422) rather
         than silently serving page one.
         """
@@ -226,7 +231,7 @@ class FakeApprovalsService:
             for row in self.approvals.values()
             if status is None or row.status == status
         ]
-        rows.sort(key=lambda r: (r.created_at, _park_order(r.id)), reverse=True)
+        rows.sort(key=lambda r: (r.created_at, r.id), reverse=True)
 
         if cursor is not None:
             ids = [row.id for row in rows]
@@ -235,7 +240,7 @@ class FakeApprovalsService:
             rows = rows[ids.index(cursor) + 1 :]
 
         page = rows[:limit]
-        next_cursor = page[-1].id if len(page) == limit and len(rows) > limit else None
+        next_cursor = page[-1].id if len(page) == limit else None
         return ApprovalListResponse(approvals=page, next_cursor=next_cursor)
 
     # -- internals --------------------------------------------------------- #

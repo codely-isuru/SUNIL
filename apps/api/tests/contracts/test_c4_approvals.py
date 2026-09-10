@@ -430,3 +430,76 @@ async def test_c4_park_retains_the_full_request_for_provenance(
     # The webhook/row path still carries no continuation (redaction by shape).
     assert "continuation" not in approvals.webhook_sent[0]
     assert not hasattr(approvals.approvals[parked.approval_id], "continuation")
+
+
+# --------------------------------------------------------------------------- #
+# C4 §6.5 — the two readings the fakes-build round left loose (QA finding F8)
+# --------------------------------------------------------------------------- #
+async def test_c4_listing_id_tiebreak_is_lexicographic_per_the_contracts_words(
+    approvals: FakeApprovalsService, clock: FakeClock
+) -> None:
+    """C4 §6.5 — "order ``created_at`` desc then **id desc**".
+
+    F8 disposition: the contract's LITERAL reading wins — ``id desc`` on a
+    string column is lexicographic, so ``apr-9`` sorts above ``apr-10``. The
+    fakes-build round had implemented a numeric tiebreak by analogy with C3 §5,
+    but C3 says "the integer suffix of ``mem-N``, numerically" in so many words
+    and C4 says nothing of the kind; borrowing the rule would have made the fake
+    disagree with the ``ORDER BY created_at DESC, id DESC`` the real service will
+    write, and Stream D's dashboard queue would page differently against each.
+    The divergence is now pinned rather than left to whoever implements first.
+
+    The tie is constructed deliberately: ``park`` advances the injected clock 1 s
+    per row, so ``created_at`` alone totally orders anything this fake mints and
+    the tiebreak would otherwise never be exercised at all.
+    """
+    for _ in range(10):
+        await approvals.park(park_request())
+    for row in approvals.approvals.values():
+        row.created_at = "2026-01-01T00:00:00Z"  # force the tie
+
+    page = approvals.list_approvals(limit=50)
+
+    assert [row.id for row in page.approvals] == [
+        "apr-9",
+        "apr-8",
+        "apr-7",
+        "apr-6",
+        "apr-5",
+        "apr-4",
+        "apr-3",
+        "apr-2",
+        "apr-10",  # lexicographic: "apr-10" < "apr-2"
+        "apr-1",
+    ]
+
+
+async def test_c4_listing_full_final_page_still_returns_a_cursor(
+    approvals: FakeApprovalsService,
+) -> None:
+    """C4 §6.5 — "cursor = the last row's id; ``next_cursor=None`` when the page
+    is **short**".
+
+    F8 disposition: the literal reading again — ``None`` is specified for the
+    SHORT page and for nothing else, so a page that is exactly full returns a
+    cursor even when no rows remain, and the client learns it is done by asking
+    once more and getting an empty page. The fakes-build round had implemented a
+    look-ahead (``len(rows) > limit``), which is friendlier but is a different
+    contract: a real service that streams ``LIMIT n`` rows cannot know whether
+    more exist without that extra query, so pinning the look-ahead would have
+    forced Stream D to implement one — or to disagree with the fake.
+    """
+    for _ in range(4):
+        await approvals.park(park_request())
+
+    first = approvals.list_approvals(limit=2)
+    assert [row.id for row in first.approvals] == ["apr-4", "apr-3"]
+    assert first.next_cursor == "apr-3"
+
+    final = approvals.list_approvals(limit=2, cursor=first.next_cursor)
+    assert [row.id for row in final.approvals] == ["apr-2", "apr-1"]
+    assert final.next_cursor == "apr-1"  # full page, even though nothing remains
+
+    beyond = approvals.list_approvals(limit=2, cursor=final.next_cursor)
+    assert beyond.approvals == []
+    assert beyond.next_cursor is None  # the short page is the terminator
