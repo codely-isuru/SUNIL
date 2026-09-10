@@ -142,3 +142,59 @@ applies; outside this round's permitted stub edits, which were the S-1/S-3 value
 C4 §6's clock note (QA should-fix: `consume` reads time from inside — injected clock in the fake,
 database clock in the real service) is endorsed as-is; it needed no contract text because §6
 already specifies the injectable clock.
+
+## Backend fakes-review round (2026-09-10, branch `task/P0-c3-scope`, continued)
+
+Adjudication of three findings from the backend engineer's independent review of the fakes build
+(PASS-with-conditions; he built a probe ToolManager against the interfaces to surface them — full
+review in the DM's record).
+
+| Finding | Where | Disposition |
+|---|---|---|
+| F3 — the Tool Manager cannot populate `ParkRequest.continuation`/`summary` from its own frozen inputs; the probe parked `continuation={}` + a synthesised summary (a never-resumable approval) and the suite passed because C1 test 4 asserted only `args_hash` + trace ids | C1 §2.1 vs C4 §4 | **Fixed — C1 v1.1.0 + C4 v1.1.0.** `execute` gains keyword-only `park_context: ParkContext \| None = None` (`ParkContext` typed in C1 §2.2: non-empty `continuation` + `summary`, 1..500 chars), REQUIRED on every first attempt (`approval is None`; missing → `TypeError` before step 1, no attempt row — caller contract violation, same class as constructing without an audit hook), ignored on continuation calls. The manager stays the single `ParkRequest` composer: the two caller fields are copied verbatim; identity triple / `args_hash` / `params_redacted` / trace ids are manager-computed (one composer, one hasher). C4 §4: provenance paragraph + `Field(min_length=1[, max_length=500])` on both fields; §6 fake retains `self.parked[approval_id]`; new C4 test 8 pins model-level rejection of empty park material. C1 test 4 now REQUIRED to assert `continuation`/`summary` by EQUALITY against the caller's non-empty fixture (a never-resumable park can no longer pass); new C1 test 8 pins the precondition; tests 1/5/7 reworded. **Rejected alternative:** orchestrator-composed `ParkRequest` + narrowed park hook — forks the chokepoint QA B3 un-forked (a second `args_hash` hasher outside the manager; validated params escaping the pipeline pre-authorisation) and opens a crash window between `execute` returning `approval_required` and an external park, violating C4 §1's park-transaction-before-return restart safety |
+| F4 — `ToolResultMeta.adapter_kind: AdapterKind` non-optional, but the step-1 unknown-tool exit has no adapter (probe wrote `adapter_kind=NATIVE`, a lie); disagrees with `ToolCallAttempt.adapter_kind: AdapterKind \| None` | C1 §2 | **Fixed — C1 v1.1.0 (same bump).** `adapter_kind: AdapterKind \| None`, None iff the tool itself was unknown — the exact rule `ToolCallAttempt` already carried, one convention across both types; an unknown OPERATION on a known tool records the resolved adapter's kind. `\| None` over an `UNKNOWN` member: None already models "no adapter resolved", while an enum member would force every exhaustive match over real adapter kinds to carry an impossible-past-step-1 case and would land a fabricated kind on `tool_calls` audit rows as fact. C1 test 1 probes both sides |
+| F11 — `CompletionRequest` has no `extra` policy; `CompletionRequest(..., tools=[...])` is silently ignored, so the no-tools property erodes silently at call sites | C2 §2 | **Fixed — C2 v1.0.1.** Normative closed-models rule: ALL §2 request/result models (`ChatMessage`, `CompletionRequest`, `Usage`, `CompletionResult`, `StreamEvent`) set `extra="forbid"` (property normative; shared `_ClosedModel` base the recommended mechanism). All models, not just `CompletionRequest`: `ChatMessage(..., tool_calls=[...])` is the same erosion channel, and result models are built field-by-field so forbid costs nothing and catches typo'd fields. New contract test 7 (`ValidationError` probes). Strengthens the Security verified-sound no-tools shape; nothing on that list weakened |
+
+Version classifications defended in each changelog: C1/C4 MINOR (the frozen park path was
+unimplementable as written — the probe proved implementations must fabricate fields; the change
+restores the documents' own frozen semantics, per the C3 v1.1.0/F-1 precedent), C2 PATCH (no field
+added/changed/removed; the already-declared closed shape becomes mechanically enforced).
+
+### QA migration delta from this round (consolidated; owner: qa_engineer, branch `task/P0-fakes`)
+
+1. `apps/api/sunil/core/tool_framework/base.py` — add `ParkContext` frozen dataclass
+   (`continuation: dict`, `summary: str` — C1 §2.2); `ToolResultMeta.adapter_kind` →
+   `AdapterKind | None`; `ToolManagerProtocol.execute` gains keyword-only
+   `park_context: ParkContext | None = None`.
+2. `apps/api/sunil/core/approvals/base.py` — `ParkRequest.summary: str =
+   Field(min_length=1, max_length=500)`; `ParkRequest.continuation: dict = Field(min_length=1)`.
+3. `apps/api/sunil/providers/base.py` — add `_ClosedModel(BaseModel)` with
+   `model_config = ConfigDict(extra="forbid")`; `ChatMessage`/`CompletionRequest`/`Usage`/
+   `CompletionResult`/`StreamEvent` inherit it (per-model `model_config` equally conformant —
+   the property is normative).
+4. `apps/api/tests/fakes/fake_approvals.py` — `FakeApprovalsService` gains
+   `self.parked: dict[str, ParkRequest]`; `park()` stores `self.parked[approval_id] = req`.
+5. `apps/api/tests/contracts/test_c1_tool_adapter.py` — fixture adds
+   `park_ctx = ParkContext(continuation={"plan_id": "plan-1", "cursor": "step_1"},
+   summary="fake_tool.write_item: key=demo")` and every first-attempt `execute` passes
+   `park_context=park_ctx`; `test_c1_1_unknown_operation` → two calls (unknown tool →
+   `meta.adapter_kind is None`; unknown op on `fake_tool` → `AdapterKind.NATIVE`);
+   `test_c1_4_ask_user_without_approval_parks` → add the REQUIRED equality assertions on
+   `approvals.parked[approval_id].continuation`/`.summary` vs `park_ctx`;
+   `test_c1_5_approved_id_executes_once_then_is_spent` → continuation call passes no
+   `park_context`; test 7 pairing accounting per `execute` call; new
+   `test_c1_8_first_attempt_without_park_context_raises` (TypeError, zero approvals, zero
+   attempts).
+6. `apps/api/tests/contracts/test_c2_provider.py` — new test 7
+   (`CompletionRequest(..., tools=[{"name": "x"}])` and `ChatMessage(role="assistant",
+   content="hi", tool_calls=[])` each raise `pydantic.ValidationError`); the existing model-level
+   no-tools test may remain but no longer stands alone.
+7. `apps/api/tests/contracts/test_c4_approvals.py` — new test 8 (`ParkRequest(...,
+   continuation={})` and `ParkRequest(..., summary="")` each raise `pydantic.ValidationError`);
+   verify existing park fixtures already supply non-empty `summary`/`continuation` (any empty
+   fixture now fails validation by design).
+
+Out of scope for QA: the concrete `ToolManager` pipeline in `core/tool_framework/manager.py`
+implementing the `park_context` precondition and the verbatim-copy composition is production code
+owned by the implementing stream (C1 §2.1 module-placement rule); the backend engineer's probe
+manager is his own artefact.
