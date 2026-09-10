@@ -421,14 +421,34 @@ async def test_c3_6_unavailable_provider_raises_on_every_call() -> None:
         )
 
 
-@pytest.mark.skip(
-    reason="C3 contract test 6, service half — 'recall degrades to empty via the "
-    "SERVICE' needs core/memory/service.py (Phase 2, Stream C: audit-outside-vendor "
-    "+ the §2 latency-budget degrade to memory_retrieved {degraded: true}). The "
-    "provider-side raise is asserted above; the degrade is debt."
-)
 def test_c3_6_service_degrades_recall_and_surfaces_write_failure() -> None:
-    """C3 contract test 6 — memory being down degrades a turn; it never fails one."""
+    """C3 contract test 6, service half — memory being down DEGRADES a turn; it
+    never fails one.
+
+    Guarded on ``core/memory/service.py`` (Stream C: audit-outside-vendor, scope
+    resolution, the §2 800 ms latency budget). The provider-side raise is
+    asserted above; the degrade cannot be asserted against the provider alone,
+    and C3 names no service API, so the assertions are specified here and this
+    fails the moment the module lands rather than skipping forever (F5).
+    """
+    from importlib import import_module  # noqa: PLC0415
+
+    try:
+        import_module("sunil.core.memory.service")
+    except ModuleNotFoundError:
+        pytest.skip(
+            "C3 contract test 6's service half needs sunil/core/memory/service.py "
+            "(Stream C). This test activates when it lands."
+        )
+    pytest.fail(
+        "core/memory/service.py now exists — write this test: wrap "
+        "FakeMemoryProvider(unavailable=True) in the service and assert (a) recall "
+        "returns an EMPTY result instead of raising and the turn's "
+        "memory_retrieved carries {degraded: true}, (b) a write failure SURFACES "
+        "(a lost write must be visible, §4), and (c) the audit event is written "
+        "OUTSIDE the vendor call, so a provider that never returns still leaves "
+        "the audit row the receipt's audit_event_id echoes."
+    )
 
 
 # --------------------------------------------------------------------------- #

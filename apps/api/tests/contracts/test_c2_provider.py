@@ -15,11 +15,13 @@ from __future__ import annotations
 import json
 import re
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from sunil.providers.base import (
+    GATEWAY_MODEL_ALIASES,
     ChatMessage,
     CompletionRequest,
     CompletionResult,
@@ -33,6 +35,23 @@ from tests.fakes.fake_provider import FIXED_PLAN, FIXED_USAGE, FakeProvider, par
 pytestmark = pytest.mark.contract
 
 PLAN_SCHEMA = {"type": "object", "required": ["intent", "steps"]}
+
+
+def missing(module: str, what: str, owner: str):
+    """Import ``module`` or skip with a loud, self-activating reason.
+
+    The pattern (C1's ``tool_manager_class()``) replaces the bare
+    ``@pytest.mark.skip`` decorators of the fakes-build round, which sat on empty
+    bodies and would have kept skipping FOREVER — silently, long after the
+    module they waited for had landed (QA finding F5). An import guard flips to
+    executing the moment the module exists.
+    """
+    from importlib import import_module  # noqa: PLC0415
+
+    try:
+        return import_module(module)
+    except ModuleNotFoundError:
+        pytest.skip(f"{what} needs {module} ({owner}). This test activates when it lands.")
 
 
 def request(
@@ -137,13 +156,35 @@ async def test_c2_2_plan_without_schema_is_a_programming_error(
         await provider.complete(request("PLAN: close the issue"))
 
 
-@pytest.mark.skip(
-    reason="C2 contract test 2, second clause — 'parsed validates against the plan "
-    "schema' needs core/orchestrator/plan_models.py (Phase 2, core orchestrator). "
-    "The fixed-plan shape is asserted above; the schema validation is debt."
-)
-def test_c2_2_parsed_validates_against_the_real_plan_schema() -> None:
-    """C2 contract test 2 — ``parsed`` validates against the plan schema."""
+async def test_c2_2_parsed_validates_against_the_real_plan_schema(
+    provider: FakeProvider,
+) -> None:
+    """C2 contract test 2, second clause — ``parsed`` validates against the REAL
+    plan schema (not just the fixed-plan shape asserted above).
+
+    Guarded on ``core/orchestrator/plan_models.py`` (Phase 2, core orchestrator).
+    The body is written against the one thing the contract does fix: whatever
+    that module exports as ``Plan`` must accept C2 §5's fixed plan — if the fake
+    the whole suite plans with cannot validate, either the fake or the schema is
+    wrong, and this is where that shows up.
+    """
+    plan_models = missing(
+        "sunil.core.orchestrator.plan_models",
+        "C2 contract test 2's schema-validation clause",
+        "Phase 2, core orchestrator",
+    )
+    plan_model = getattr(plan_models, "Plan", None)
+    assert plan_model is not None, (
+        "plan_models.py exists but exports no `Plan` — C2 test 2 needs the plan "
+        "model to validate a planned turn against"
+    )
+
+    result = await provider.complete(request("PLAN: go", json_schema=PLAN_SCHEMA))
+    validated = plan_model.model_validate(result.parsed)
+
+    assert validated.steps[0].tool == "fake_tool"
+    assert validated.steps[0].operation == "write_item"
+    assert validated.steps[0].params == {"key": "demo", "value": "1"}
 
 
 # --------------------------------------------------------------------------- #
@@ -200,13 +241,26 @@ async def test_c2_3_failure_markers_raise_every_call(
         assert err.value.retryable is retryable
 
 
-@pytest.mark.skip(
-    reason="C2 contract test 3, retry clause — 'the SUNIL retry policy re-asks "
-    "exactly once, then success' needs core/routing/retry.py (Phase 2). The fake's "
-    "raise-then-succeed behaviour it drives is asserted above; the policy is debt."
-)
 def test_c2_3_sunil_retry_policy_re_asks_exactly_once() -> None:
-    """C2 contract test 3 — the SUNIL-side re-asker performs at most ONE re-ask."""
+    """C2 contract test 3, retry clause — the SUNIL-side re-asker performs at
+    most ONE re-ask.
+
+    Guarded on ``core/routing/retry.py``. The assertions are named below rather
+    than written: C2 §4 fixes the POLICY (one re-ask on ``invalid_output``, then
+    fail; the flag marks eligibility, the policy caps the count) but names no
+    callable, and QA inventing an entry point here would hard-code an API the
+    implementer has not chosen. This fails loudly the moment the module lands —
+    it can never sit green having asserted nothing.
+    """
+    missing("sunil.core.routing.retry", "C2 contract test 3's retry clause", "Phase 2, core")
+    pytest.fail(
+        "core/routing/retry.py now exists — write this test: drive a FakeProvider "
+        "whose last user message is 'FAIL:invalid_output' (raises once, then "
+        "succeeds) through the policy with json_schema set, then assert "
+        "len(provider.calls) == 2 (exactly ONE re-ask), that the second call "
+        "returns FIXED_PLAN, and that a provider raising invalid_output on EVERY "
+        "call produces exactly 2 calls and then a ProviderError — never a third."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -295,15 +349,26 @@ async def test_c2_5_fake_records_every_call_for_the_zero_call_probe(
     assert len(provider.calls) == 2  # a failed attempt is still a call
 
 
-@pytest.mark.skip(
-    reason="C2 contract test 5 — 'LOCAL_ONLY request with no local provider → "
-    "routing error raised BEFORE any provider call' needs core/routing/router.py "
-    "(Phase 2, SUNIL-owned router). FakeProvider.calls is ready for the zero-call "
-    "assertion; the routing rule itself is debt."
-)
 def test_c2_5_local_only_routes_nowhere_without_a_local_provider() -> None:
     """C2 contract test 5 — a ``LOCAL_ONLY`` request with no local provider is a
-    routing error, never a silent downgrade (C2 §2)."""
+    routing error, never a silent downgrade (C2 §2).
+
+    Guarded on ``core/routing/router.py`` (Phase 2, SUNIL-owned router). Same
+    reasoning as the retry clause: the rule is frozen, the router's constructor
+    and method names are not, and the zero-call instrumentation this needs is
+    already asserted in
+    ``test_c2_5_fake_records_every_call_for_the_zero_call_probe``.
+    """
+    missing("sunil.core.routing.router", "C2 contract test 5's routing rule", "Phase 2, core")
+    pytest.fail(
+        "core/routing/router.py now exists — write this test: build the router "
+        "with a single non-local FakeProvider, submit a request with "
+        "privacy_class=LOCAL_ONLY, assert it RAISES before dispatch and that "
+        "provider.calls == [] (a silent downgrade to a remote model is the "
+        "failure mode; §26.10). Then assert an INTERNAL request through the same "
+        "router does reach the provider, so the zero-call proves the rule and "
+        "not a broken fixture."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -471,3 +536,46 @@ async def test_c2_fake_results_never_alias_the_modules_fixed_constants(
     assert echo.usage is not FIXED_USAGE
     echo.usage.cost_usd = 42.0
     assert FIXED_USAGE == pristine_usage
+
+
+# --------------------------------------------------------------------------- #
+# C2 §2 — the frozen gateway alias namespace (QA nit F9: it was untested)
+# --------------------------------------------------------------------------- #
+def contract_text() -> str:
+    """``docs/contracts/C2-model-provider.md``, located by walking up."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "docs" / "contracts" / "C2-model-provider.md"
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    raise AssertionError("C2-model-provider.md not found above this test file")
+
+
+def test_c2_gateway_model_aliases_match_the_contracts_frozen_namespace() -> None:
+    """C2 §2 — ``config/models.yaml`` ids MUST equal the LiteLLM gateway's
+    ``model_name`` alias set verbatim: at Phase 0 exactly ``claude-sonnet``,
+    ``claude-opus``, ``claude-haiku``, ``gpt-flagship``, ``gpt-mini``.
+
+    Nit F9 disposition: the constant stays in ``providers/base.py`` (the module
+    every provider adapter already imports, and where the startup parity check
+    will read it), but it is no longer untested — a second source of truth that
+    nothing checks is worse than no constant at all. The assertion is against
+    the CONTRACT TEXT, not a copy of the list: if the frozen namespace changes,
+    this fails rather than agreeing with a stale constant.
+    """
+    text = contract_text()
+    quoted = {
+        alias
+        for alias in ("claude-sonnet", "claude-opus", "claude-haiku", "gpt-flagship", "gpt-mini")
+        if f"`{alias}`" in text
+    }
+
+    assert quoted == set(GATEWAY_MODEL_ALIASES), (
+        "GATEWAY_MODEL_ALIASES disagrees with C2 §2's frozen alias namespace"
+    )
+    assert len(GATEWAY_MODEL_ALIASES) == 5
+    assert isinstance(GATEWAY_MODEL_ALIASES, tuple)  # not a mutable module global
+    # An upstream provider id must never appear in the namespace (C2 §2: those
+    # live only inside the gateway config and in CompletionResult.provider_model).
+    assert not [alias for alias in GATEWAY_MODEL_ALIASES if "/" in alias]
+    # ...and the request fixture this whole suite uses names one of them.
+    assert request("hi").model in GATEWAY_MODEL_ALIASES
