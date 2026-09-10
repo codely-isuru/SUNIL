@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 
 import pytest
 
@@ -353,3 +354,49 @@ def test_c2_completion_request_defaults() -> None:
 
     assert built.temperature == 0.2
     assert built.json_schema is None
+
+
+# --------------------------------------------------------------------------- #
+# C2 §5 — the fake must not hand out shared module state (backend review F1)
+# --------------------------------------------------------------------------- #
+async def test_c2_fake_results_never_alias_the_modules_fixed_constants(
+    provider: FakeProvider,
+) -> None:
+    """Backend review **F1** — the fake returned ``FIXED_PLAN`` and
+    ``FIXED_USAGE`` BY IDENTITY, so any consumer that mutated a result rewrote
+    the fixture for the whole process: the next test in the same session gets a
+    plan someone else edited. The C2 §5 fake is specified as deterministic, and
+    "deterministic" cannot survive a caller.
+
+    Every assertion below compares against a pristine snapshot taken before the
+    mutation, never against the module constants themselves — comparing to the
+    constants is exactly the assertion that passes while both sides rot.
+    """
+    pristine_plan = deepcopy(FIXED_PLAN)
+    pristine_usage = FIXED_USAGE.model_copy(deep=True)
+
+    first = await provider.complete(request("PLAN: go", json_schema=PLAN_SCHEMA))
+    assert first.parsed is not FIXED_PLAN
+    assert first.usage is not FIXED_USAGE
+
+    # A consumer does what consumers do.
+    first.parsed["intent"] = "hijacked"
+    first.parsed["steps"][0]["params"]["key"] = "mutated"
+    first.usage.input_tokens = 999
+
+    # The module fixtures are untouched...
+    assert FIXED_PLAN == pristine_plan
+    assert FIXED_USAGE == pristine_usage
+
+    # ...and so is the next call, including nested params (a shallow copy of the
+    # plan would share `steps[0]["params"]` and fail here).
+    second = await provider.complete(request("PLAN: go", json_schema=PLAN_SCHEMA))
+    assert second.parsed == pristine_plan
+    assert second.parsed is not first.parsed
+    assert second.usage == pristine_usage
+
+    # The echo lane hands out the same usage object in the frozen spec.
+    echo = await provider.complete(request("hello"))
+    assert echo.usage is not FIXED_USAGE
+    echo.usage.cost_usd = 42.0
+    assert FIXED_USAGE == pristine_usage

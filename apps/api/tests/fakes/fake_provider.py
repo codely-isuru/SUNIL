@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import AsyncIterator
+from copy import deepcopy
 
 from sunil.providers.base import (
     ChatMessage,
@@ -44,7 +45,8 @@ FIXED_PLAN: dict = {
     ],
 }
 
-#: C2 §5 — usage on every successful call.
+#: C2 §5 — usage on every successful call. Handed out as a COPY, never by
+#: identity: see ``_usage`` (backend review F1).
 FIXED_USAGE = Usage(input_tokens=100, output_tokens=25, cost_usd=0.000125)
 
 #: C2 §5 — the fake's exact partition rule, shared with C5 §4's streaming fake:
@@ -57,6 +59,27 @@ def partition(text: str) -> list[str]:
     """C2 §5's whitespace-preserving projection. ``"".join(partition(t)) == t``
     for ANY text — that byte-for-byte property is the contract, not an artefact."""
     return PARTITION.findall(text)
+
+
+def _usage() -> Usage:
+    """A fresh ``Usage`` per call (backend review **F1**).
+
+    Pydantic keeps a model instance handed to a model field by identity, so
+    returning ``FIXED_USAGE`` itself let one caller's ``result.usage.cost_usd =
+    …`` rewrite the fixture for every later call in the process — including
+    other tests in the same session. ``deep=True`` because a shallow copy of a
+    future nested field would re-open the same hole."""
+    return FIXED_USAGE.model_copy(deep=True)
+
+
+def _plan() -> dict:
+    """A fresh, fully independent copy of C2 §5's fixed plan (**F1**).
+
+    ``deepcopy``, not ``dict(FIXED_PLAN)``: pydantic copies the OUTER dict when
+    validating a ``dict`` field but keeps the nested values by identity, so a
+    shallow copy still shares ``steps[0]["params"]`` — one caller editing a
+    param value would rewrite the module's plan for the whole process."""
+    return deepcopy(FIXED_PLAN)
 
 
 class FakeProvider:
@@ -106,14 +129,14 @@ class FakeProvider:
             self.invalid_output_calls += 1
             if self.invalid_output_calls == 1:
                 raise ProviderError(
-                    kind="invalid_output", retryable=True, usage=FIXED_USAGE
+                    kind="invalid_output", retryable=True, usage=_usage()
                 )
             return self._plan_result()
 
         return CompletionResult(
             text=f"FAKE: {message}",
             parsed=None,
-            usage=FIXED_USAGE,
+            usage=_usage(),
             provider_model="fake-1",
             finish_reason="stop",
         )
@@ -122,8 +145,8 @@ class FakeProvider:
     def _plan_result() -> CompletionResult:
         return CompletionResult(
             text=json.dumps(FIXED_PLAN, separators=(",", ":")),
-            parsed=FIXED_PLAN,
-            usage=FIXED_USAGE,
+            parsed=_plan(),
+            usage=_usage(),
             provider_model="fake-1",
             finish_reason="stop",
         )
