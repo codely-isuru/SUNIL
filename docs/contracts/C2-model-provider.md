@@ -1,6 +1,6 @@
 # C2 — Model Provider / Gateway Seam
 
-**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.0.1 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream B (LiteLLM gateway), core orchestrator (both LLM stages), Stream C (Mem0
 embeddings ride the same seam), M2 rebuild (streaming leg).
 **Informed by:** M1 reference `main:apps/api/sunil/core/routing/*`, `main:apps/api/sunil/providers/*`,
@@ -34,7 +34,7 @@ from collections.abc import AsyncIterator
 from enum import StrEnum
 from typing import Literal, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class PrivacyClass(StrEnum):
@@ -44,12 +44,22 @@ class PrivacyClass(StrEnum):
     LOCAL_ONLY = "local_only"   # never leaves machines the owner controls (§26.10)
 
 
-class ChatMessage(BaseModel):
+class _ClosedModel(BaseModel):
+    """Every C2 request/result model is CLOSED (v1.0.1, backend review F11): an
+    undeclared field raises ValidationError at the call site instead of being
+    silently dropped (pydantic's default extra="ignore"). The property is the
+    contract; this shared base is the recommended mechanism — a later model added
+    in this module cannot forget it by accident."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChatMessage(_ClosedModel):
     role: Literal["system", "user", "assistant", "tool"]
     content: str
 
 
-class CompletionRequest(BaseModel):
+class CompletionRequest(_ClosedModel):
     model: str                      # router-resolved model id (config/models.yaml), e.g. "claude-sonnet" — see the namespace rule below
     messages: list[ChatMessage]
     max_tokens: int
@@ -61,14 +71,14 @@ class CompletionRequest(BaseModel):
     privacy_class: PrivacyClass
 
 
-class Usage(BaseModel):
+class Usage(_ClosedModel):
     input_tokens: int
     output_tokens: int
     cost_usd: float                 # from config/models.yaml pricing, computed SUNIL-side (M1 rule);
                                     # gateway-reported cost is recorded but never authoritative
 
 
-class CompletionResult(BaseModel):
+class CompletionResult(_ClosedModel):
     text: str
     parsed: dict | None             # non-None iff json_schema was set (parse failure RAISES
                                     # ProviderError(kind="invalid_output"), never a silent None — §4)
@@ -77,7 +87,7 @@ class CompletionResult(BaseModel):
     finish_reason: Literal["stop", "max_tokens", "refusal", "error"]
 
 
-class StreamEvent(BaseModel):
+class StreamEvent(_ClosedModel):
     type: Literal["token", "done"]
     token: str | None = None            # type="token"
     result: CompletionResult | None = None  # type="done" — authoritative, tokens are a projection
@@ -89,6 +99,19 @@ class LLMProvider(Protocol):
     async def complete(self, request: CompletionRequest) -> CompletionResult: ...
     def stream(self, request: CompletionRequest) -> AsyncIterator[StreamEvent]: ...
 ```
+
+**Closed models (normative — v1.0.1, backend review F11):** every request/result model above
+(`ChatMessage`, `CompletionRequest`, `Usage`, `CompletionResult`, `StreamEvent`) sets pydantic
+`model_config = ConfigDict(extra="forbid")`. The property is normative; the shared `_ClosedModel`
+base is the recommended mechanism. Why ALL models rather than `CompletionRequest` alone: the frozen
+no-tools request shape (Security review verified-sound list) guarantees tool use cannot ride the
+completion seam, and under pydantic's default `extra="ignore"` both
+`CompletionRequest(..., tools=[...])` and `ChatMessage(role="assistant", content=..., tool_calls=[...])`
+construct successfully and silently drop the erosion attempt — the message list is the same
+smuggling channel as the request body. `extra="forbid"` turns each into a loud `ValidationError`
+at the call site. Result models cost nothing to close: adapters build them field-by-field from the
+wire response (they never `model_validate` raw provider JSON into these types), so `forbid` only
+converts a typo'd field name from silently-lost data into an immediate error.
 
 **Model-id namespace (normative — fix round 2026-09-10, QA B7, DM ruling: the gateway alias
 namespace is authoritative):** `config/models.yaml` model ids MUST equal the LiteLLM gateway's
@@ -236,8 +259,20 @@ later against `GatewayProvider` pointed at a loopback double:
 5. router: `LOCAL_ONLY` request with no local provider → routing error raised BEFORE any provider
    call (the fake records zero calls).
 6. `Settings(sunil_llm_gateway_base_url="https://evil.example")` refuses to construct (ADR-033).
+7. closed-model probe (v1.0.1, F11): `CompletionRequest(**valid_kwargs, tools=[{"name": "x"}])`
+   raises `pydantic.ValidationError`, and `ChatMessage(role="assistant", content="hi",
+   tool_calls=[])` raises `pydantic.ValidationError` — the no-tools shape fails loudly at the call
+   site, never by silent field drop.
 
 ## Changelog
+
+- **v1.0.1 — 2026-09-10 (backend fakes-review round, F11).** Closed-models rule: every §2
+  request/result model sets `extra="forbid"` (`_ClosedModel` base recommended; the property, not
+  the mechanism, is normative); contract test 7 probes `CompletionRequest(..., tools=...)` and
+  `ChatMessage(..., tool_calls=...)` for `ValidationError`. PATCH: no field added, changed or
+  removed — the field set the freeze already declared closed becomes mechanically enforced, and no
+  conforming caller (one passing only declared fields) can observe the change. Strengthens the
+  no-tools shape on Security's verified-sound list; nothing on that list weakened.
 
 - **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
   merged). Model-id namespace pinned to the gateway alias set (`claude-sonnet`, `claude-opus`,

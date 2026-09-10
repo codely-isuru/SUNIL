@@ -1,6 +1,6 @@
 # C1 — Tool Adapter Interface
 
-**Version:** 1.0.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.1.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream A (MCP tools), Stream E (n8n MCP server tools), Stream D (approvals — via the
 injected approvals seam, C4 §4), core orchestrator (Tool Manager caller).
 **Informed by:** M1 reference `main:apps/api/sunil/core/tool_framework/base.py` (greenfield rebuild
@@ -47,8 +47,13 @@ class ToolResultMeta:
     `tool_calls` audit row so 'audit shows adapter type per call' (V2-A exit) is a
     database fact, not an inference."""
 
-    adapter_kind: AdapterKind
+    adapter_kind: AdapterKind | None   # None iff the tool itself was unknown (step 1 exit — no
+                                       # adapter was ever resolved). Same rule as
+                                       # ToolCallAttempt.adapter_kind; an unknown OPERATION on a
+                                       # known tool records the resolved adapter's kind.
+                                       # (v1.1.0, backend review F4)
     server_id: str | None      # MCP server identity from config/tools.yaml; None for NATIVE
+                               # and on the no-adapter exit above
     duration_ms: int
 
 
@@ -103,7 +108,8 @@ class ToolManager:
                  approvals: "ApprovalsService", audit_hook: AuditHook) -> None: ...
 
     async def execute(self, agent_id: str, tool: str, operation: str, params: dict,
-                      *, trace: TraceContext, approval: str | None = None) -> ToolResult: ...
+                      *, trace: TraceContext, approval: str | None = None,
+                      park_context: ParkContext | None = None) -> ToolResult: ...
 ```
 
 Parameter types (fix round 2026-09-10, QA B2): `params` is the raw candidate dict from the
@@ -113,6 +119,36 @@ validated plan step (validated against `params_model` at step 2 below); `trace` 
 the OpenAPI schema) minted at park time — `None` on every first attempt, set only by the
 continuation executor (ADR-031). It is an opaque id, never a C4 object: the manager recomputes the
 binding itself (step 3), so a caller cannot vouch for a binding it did not compute.
+
+`park_context` (v1.1.0, backend review F3) is the caller-supplied park material the manager cannot
+derive from its own frozen inputs: the orchestrator's plan-cursor `continuation` and the
+human-readable `summary` (§2.2 `ParkContext`). It is **required — non-None — on every first
+attempt** (`approval is None`): every V2 tool call originates from a validated plan step (§3,
+ROADMAP §25), so the orchestrator always holds both values, and a call that could park
+non-resumably must not be expressible. A first attempt without it raises `TypeError` before step 1
+runs — no attempt row is written, because this is a caller contract violation of the same class as
+constructing the manager without an audit hook, not a pipeline outcome. On continuation calls
+(`approval` supplied) `park_context` is ignored: a consume failure early-exits `approval_invalid`
+and never re-parks.
+
+**Rejected alternative (F3):** the orchestrator composes the `ParkRequest` itself and the
+manager's park hook narrows to a notification. That forks the chokepoint the same way QA B3's
+consume fix un-forked it — `args_hash` must be computed from the freshly validated canonical
+params by the same code that recomputes the binding at consume time (step 3), so external
+composition means a second hasher and validated params escaping the pipeline before authorisation;
+and the park `INSERT` must commit before the turn returns `parked` (C4 §1 restart safety), so an
+orchestrator-side park performed after `execute` returns opens a crash window in which
+`approval_required` was surfaced but nothing was parked — a loss no sweeper can detect.
+
+**Module placement (v1.0.1 — blesses the QA fakes-build judgment call, `docs/tasks/P0-fakes.md`):**
+`base.py` holds interface types only. The callable shape above is transcribed there as
+`ToolManagerProtocol` (identical `__init__`/`execute` signatures); the concrete `ToolManager` —
+the pipeline below — lives in `core/tool_framework/manager.py`, exactly where ARCHITECTURE_V2 §2's
+layout already put it (`base.py, manager.py (the chokepoint)`), and is production code owned by
+the implementing stream, never by QA. Rationale: a concrete class in the transcription module
+would be an importable, non-functional chokepoint a test could pass against vacuously, and QA must
+not author the pipeline it independently tests. The pipeline steps below bind the concrete class;
+the Protocol exists for typing and dependency injection at the orchestrator seam.
 
 `execute` runs exactly these steps, in order, for every call regardless of adapter kind:
 
@@ -129,7 +165,11 @@ binding itself (step 3), so a caller cannot vouch for a binding it did not compu
      stale-approved sweep).
    - `ASK_USER`, `approval is None` → **park** via `approvals.park(ParkRequest(...))` (C4 §4) and
      early-exit `error_kind="approval_required"` with `data=None`; the approval id travels in
-     `ParkedApproval` and is surfaced by the orchestrator (C5 `outcome=parked`).
+     `ParkedApproval` and is surfaced by the orchestrator (C5 `outcome=parked`). The manager
+     composes the `ParkRequest`: `continuation` and `summary` are copied **verbatim** from
+     `park_context` (§2.2); the identity triple, `args_hash` (from step 2's freshly validated
+     params), `params_redacted` and the trace ids are computed by the manager and by nothing
+     else — one composer, one hasher (v1.1.0, backend review F3).
    - `ASK_USER`, `approval` supplied → the manager recomputes
      `ApprovalBinding(agent_id, tool, operation, args_hash)` from the **freshly validated** params
      of THIS call and calls `approvals.consume(approval, binding=...)` (C4 §4). `ok=False` → early
@@ -178,6 +218,17 @@ class TraceContext:
     request_id: str
     task_id: str
     conversation_id: str
+
+
+@dataclass(frozen=True)
+class ParkContext:
+    """Caller-supplied park material (v1.1.0, backend review F3): the two ParkRequest
+    fields the manager cannot derive from its own frozen inputs. Copied VERBATIM into
+    the ParkRequest at park time; the manager computes every other field (§2.1 step 3).
+    Both values MUST be non-empty — an empty continuation is a never-resumable approval,
+    the exact failure class this type exists to make inexpressible (C4 §1 restart safety)."""
+    continuation: dict   # opaque persisted plan-cursor state (ADR-031); len >= 1
+    summary: str         # built by SUNIL code, never LLM output (C4 §4); 1..500 chars
 
 
 @dataclass(frozen=True)
@@ -346,7 +397,9 @@ constructor `FakeToolAdapter(clock=time.monotonic)`; `start()`/`stop()` set/clea
 | `raise_unexpected` | `True` | 5.0 | `NoParams` | handler raises `RuntimeError("fake crash")` — tests assert the MANAGER converts it to `error_kind="upstream_error"`, message `"unhandled adapter exception"` (never the raw exception text) |
 | `sleep_forever` | `True` | 0.05 | `NoParams` | `await asyncio.sleep(3600)` — exercises the timeout path: manager returns `error_kind="timeout"` |
 
-Every result's `meta` = `ToolResultMeta(adapter_kind=NATIVE, server_id=None, duration_ms=<measured>)`.
+Every result the ADAPTER returns carries `meta = ToolResultMeta(adapter_kind=NATIVE,
+server_id=None, duration_ms=<measured>)`; the manager's step-1 unknown-TOOL exit is not an adapter
+result and carries `adapter_kind=None` (§2, F4).
 
 ### 6.4 Contract tests
 
@@ -354,32 +407,77 @@ Published as `apps/api/tests/contracts/test_c1_tool_adapter.py`; any adapter imp
 pass them, run first against the fakes. Fixture for every test:
 `ToolManager([FakeToolAdapter()], FakePermissionHook(), FakeApprovalsService(),
 RecordingAuditHook())`; `trace = TraceContext(request_id="req-1", task_id="task-1",
-conversation_id="conv-1")`.
+conversation_id="conv-1")`; `park_ctx = ParkContext(continuation={"plan_id": "plan-1",
+"cursor": "step_1"}, summary="fake_tool.write_item: key=demo")`. Every first-attempt `execute`
+call in tests 1–6 passes `park_context=park_ctx` — the §2.1 precondition holds for ALL first
+attempts, not only the ones that end up parking.
 
-1. unknown operation → `unknown_operation`; one attempt row with `permission_decision=None`,
-   finalised `outcome="error"`.
+1. unknown tool AND unknown operation (two calls, both → `unknown_operation`): an unknown TOOL
+   (`"no_such_tool"`) yields `result.meta.adapter_kind is None` (no adapter was resolved — F4);
+   an unknown OPERATION on the known `fake_tool` yields
+   `result.meta.adapter_kind == AdapterKind.NATIVE`. Each call: one attempt row with
+   `permission_decision=None` and the matching `adapter_kind`, finalised `outcome="error"`.
 2. extra param key → `invalid_params` (proves `extra="forbid"`); attempt row has `args_hash=None`.
 3. empty grant registry → `write_item` returns `permission_denied` (structural default-deny).
 4. `hook.grant("agent-1", "fake_tool", "write_item", "ask_user")`, execute with no `approval` →
    `approval_required` AND `FakeApprovalsService` now holds exactly one `pending` approval whose
    `args_hash == sha256(canonical_json(validated params))` (rule below) and whose
-   `request_id/task_id/conversation_id` equal the `TraceContext` values.
+   `request_id/task_id/conversation_id` equal the `TraceContext` values. **REQUIRED (v1.1.0, F3):
+   the retained `ParkRequest` (C4 §6 behaviour 1, `fake_approvals.parked[approval_id]`) has
+   `continuation == park_ctx.continuation` and `summary == park_ctx.summary` — asserted by
+   EQUALITY against the caller's non-empty fixture values, so a manager that synthesises,
+   defaults or empties either field fails this test. A park that cannot resume must not pass.**
 5. same grant; take test 4's `approval_id`, `fake_approvals.decide(approval_id, "approve", None,
-   now)`, re-execute the IDENTICAL params with `approval=approval_id` → executes, `ok=True`; the
+   now)`, re-execute the IDENTICAL params with `approval=approval_id` and WITHOUT `park_context`
+   (continuation calls never park — §2.1) → executes, `ok=True`; the
    attempt row carries `approval_id`; the approval's status is `consumed`. Re-executing a third
    time with the same id → `approval_invalid` (single-use, C4 test 1's property seen from C1).
 6. `sleep_forever` → `timeout` in < 1 s wall clock.
-7. every case above produced exactly one attempt AND exactly one finalise (two-phase pairing).
+7. every `execute` call above (test 1 makes two) produced exactly one attempt AND exactly one
+   finalise (two-phase pairing).
    Ordering probe (attempt precedes execution): build one extra manager whose adapter is a
    `FakeToolAdapter` with its `echo` handler wrapped test-locally to append `"execute"` to a shared
    `events: list[str]`, and whose audit hook is a `RecordingAuditHook` subclass whose `attempt`
    appends `"attempt"` to the same list — after one `echo` call assert
    `events == ["attempt", "execute"]`.
+8. precondition probe (v1.1.0, F3): a first attempt (`approval=None`) with `park_context=None`
+   (or omitted) raises `TypeError` before any pipeline step — afterwards the approvals fake holds
+   zero approvals and the audit hook recorded zero attempts (caller contract violation, not a
+   pipeline outcome — §2.1; excluded from test 7's pairing accounting for the same reason).
 
 `args_hash` canonicalisation (normative for C1 and C4): `sha256` hex digest of the UTF-8 JSON
 serialisation of the **validated** params model with `sort_keys=True`, separators `(",", ":")`.
 
 ## Changelog
+
+- **v1.1.0 — 2026-09-10 (backend fakes-review round).** Two findings from the backend engineer's
+  probe build (PASS-with-conditions review):
+  - **F3:** `execute` gains keyword-only `park_context: ParkContext | None = None` (`ParkContext`
+    typed in §2.2 — non-empty `continuation` + `summary`), required on every first attempt
+    (`TypeError` before step 1 when missing), ignored on continuation calls. Step 3's park bullet
+    now names the composition split: the manager copies the two caller fields verbatim and computes
+    everything else — one composer, one hasher. Rejected alternative (orchestrator-composed
+    `ParkRequest` + narrowed park hook) argued in §2.1. Tests: fixture `park_ctx`; test 4 gains the
+    REQUIRED equality assertions on `continuation`/`summary` (a never-resumable park can no longer
+    pass); test 5 pins the no-`park_context` continuation call; new test 8 pins the precondition.
+  - **F4:** `ToolResultMeta.adapter_kind` → `AdapterKind | None`, None iff the tool itself was
+    unknown — the exact rule `ToolCallAttempt.adapter_kind` already carried, so the two types agree.
+    `| None` over an `UNKNOWN` member because None already models "no adapter resolved", while an
+    enum member would force every exhaustive match over real adapter kinds to carry an
+    impossible-past-step-1 case and would land a fabricated kind on `tool_calls` audit rows as
+    fact. Test 1 now probes both sides (unknown tool → None; unknown operation on a known tool →
+    the resolved kind); test 7 reworded to per-call accounting.
+  - **MINOR-not-MAJOR defended** (same classification as C3 v1.1.0/F-1): v1.0.x's park path was
+    unimplementable as frozen — the probe had to fabricate `continuation={}`, a synthesised
+    summary and `adapter_kind=NATIVE` on the unknown-tool exit to satisfy the letter of the text.
+    This change restores the document's own frozen semantics (C4 §1's restart-safety rule always
+    required a real continuation); no conforming implementation or consumer existed to break.
+
+- **v1.0.1 — 2026-09-10 (C3-scope round).** §2.1 module placement recorded: the callable shape is
+  transcribed as `ToolManagerProtocol` in `base.py`; the concrete `ToolManager` pipeline lives in
+  `core/tool_framework/manager.py` (matching ARCHITECTURE_V2 §2's layout). Blesses the QA
+  fakes-build judgment call — patch: naming/placement clarification, no signature, field, error
+  kind or pipeline step changed.
 
 - **v1.0.0 — 2026-09-10 fix round** (pre-merge; version unchanged because the freeze was never
   merged). `execute` signature typed: `TraceContext` + `approval: str | None` (QA B2). Consume
