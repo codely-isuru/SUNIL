@@ -113,3 +113,32 @@ config-authoritative.
 - Test evidence: C4/C5 YAML parsed clean with PyYAML (documented in Progress); no code claimed.
 - Notes: Phase 0 exit additionally requires the platform task (fakes, contract suites, Compose
   boot) which builds FROM these specs; that task is not this one.
+
+## C3-scope round (2026-09-10, branch `task/P0-c3-scope` — post-merge, post-fakes-build)
+
+Adjudication of the QA fakes-build findings (`docs/tasks/P0-fakes.md`) plus the security-delta
+residuals S-1..S-5 assigned to the contract owner.
+
+| Item | Where | Disposition |
+|---|---|---|
+| F-1 blocker — `write` carries no scope | C3 §2/§4a/§5 | **Fixed, v1.1.0** — `write(item, rules, *, scope: MemoryScope, audit_event_id: str)`; parameter-not-field argued in §2 (addressing of the call; §3 resolution rule; no vendor-persisted scope copies); §4a/§5 grounded on the parameter; contract test 7 pins the new signature. MINOR-not-MAJOR classification defended in the changelog (restores the document's own frozen semantics; v1.0.0's write path was self-contradictory and unimplemented) |
+| QA call — `decide` returns `Approval \| StateConflict \| None`, unknown id → 404 | C4 §6.2 | **Blessed, normative, v1.0.1** — `None` = unknown id → §5's 404 (already in the YAML); conflict and absence are return values, status-code mapping lives only in the HTTP layer |
+| QA call — `ToolManagerProtocol` in `base.py`, concrete pipeline in `manager.py` | C1 §2.1 | **Blessed, recorded, v1.0.1** — matches ARCHITECTURE_V2 §2's layout (`base.py, manager.py (the chokepoint)`); a concrete class in the transcription module would be a vacuous-pass risk and QA must not author what it tests |
+| S-1 driver-token drift | ARCH §5 / .env.example / compose stub | **Ruled `+psycopg`** (ADR-002's recorded driver; one dependency serves async engine + Alembic sync path); all three sites now agree |
+| S-2 missing grace var | .env.example | **Added** `SUNIL_APPROVAL_CONSUME_GRACE_HOURS=1` with C4 §1 rationale comment |
+| S-3 turn deadline 40 vs 120 | ARCH §5 / .env.example / compose stub | **Ruled 40** (M1 ~6 s live turn, 30 s p95 target + headroom; fail-closed deadlines must be hittable in dev); all three sites now agree |
+| S-4 dev defaults undocumented | ARCH §5 + .env.example comments | **Documented, no behaviour change** — dev-up generates `SUNIL_SERVICE_TOKEN` (lane ON in generated dev env; absent = lane OFF fail-closed); `SUNIL_MEMORY_PROVIDER` runs `fake` until Stream C, `mem0` is the committed end-state value |
+| S-5 Get-Random hint | .env.example | **Fixed** — points to dev-up's CSPRNG generators; manual hint now `RandomNumberGenerator`/`openssl rand`; Get-Random explicitly banned as seeded PRNG |
+
+QA follow-ups this round creates (owner: qa_engineer, branch `task/P0-fakes`): rebuild
+`FakeMemoryProvider.write` on the v1.1.0 signature (delete `current_scope`/`write_in`/
+`DEFAULT_SCOPE`-as-state), migrate the C3 suite's `write_in(scope, …)` calls to
+`write(…, scope=…, audit_event_id=…)`, replace `test_c3_write_signature_is_the_frozen_one` with
+contract test 7's v1.1.0 pin, and align `decide`'s docstring to C4 §6.2's now-normative return
+shape (code already matches). Residual for the platform owner when the compose api stub activates:
+the stub's environment block does not yet pass `SUNIL_APPROVAL_CONSUME_GRACE_HOURS` (app default 1
+applies; outside this round's permitted stub edits, which were the S-1/S-3 values only).
+
+C4 §6's clock note (QA should-fix: `consume` reads time from inside — injected clock in the fake,
+database clock in the real service) is endorsed as-is; it needed no contract text because §6
+already specifies the injectable clock.
