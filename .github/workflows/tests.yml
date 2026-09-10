@@ -1,0 +1,62 @@
+---
+# SUNIL V2 — contract test suite (Phase 0 exit criteria 3 and 4).
+#
+# Separate from ci.yml on purpose: ci.yml is the platform/DevOps gate (yamllint,
+# port parity, secret scan) and is owned by that lane; this file is not to modify
+# it. ci.yml's own `test` job auto-activates now that apps/api/pyproject.toml
+# exists and runs `pytest -q -m "not live"`. This workflow adds the two things
+# that job does not do: a second identical run (determinism evidence) and an
+# explicit report of every skipped contract test, so deferred coverage stays
+# visible in the log instead of hiding behind a green tick.
+#
+# ARCHITECTURE_V2 section 3 names the suite as the merge gate: "nothing merges
+# without its contract tests passing against the fakes".
+#
+# No network, no services, no database: the Phase 0 suite is fakes only.
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: contract suite (apps/api, python 3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.13'
+
+      - name: Install apps/api with dev extras
+        run: |
+          # `python`, never `python3` (docs/ENVIRONMENT.md section 1: the team's
+          # Windows machine has a broken python3 Store stub, and these commands
+          # are meant to be typed identically in both places).
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Contract suite
+        run: python -m pytest -v --strict-markers
+
+      - name: Contract suite again (determinism — no network, injected clocks)
+        run: python -m pytest --strict-markers
+
+      - name: Deferred coverage (skip reasons)
+        if: always()
+        run: python -m pytest -rs --strict-markers

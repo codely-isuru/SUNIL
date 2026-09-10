@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunil"
+version = "0.1.0"
+description = "SUNIL V2 API — Phase 0 frozen contract interfaces (C1–C4) and their fakes."
+# Contract floor is C1 §2 / ARCHITECTURE_V2 §1: "Python >= 3.12, Pydantic v2".
+# The Phase 0 toolchain and CI both run 3.13 (see .github/workflows/tests.yml);
+# the floor is left at the contract's value so no stream is blocked by QA.
+requires-python = ">=3.12"
+# Runtime dependencies are ONLY what the frozen contracts force:
+# C1 §2 ToolOperation.params_model / C2 §2 / C3 §2 / C4 §4 models are Pydantic v2
+# BaseModels. Nothing speculative (no FastAPI, no httpx, no SQLAlchemy) —
+# those arrive with the Phase 2 implementations that need them.
+dependencies = [
+  "pydantic>=2.9,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pyyaml>=6.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["sunil*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# auto mode deliberately: in strict mode an async test that loses its marker is
+# silently not executed, which is exactly the "fake pass" a contract suite must
+# never produce.
+asyncio_mode = "auto"
+# No -q here. ci.yml's test job already passes `-q`, and a second -q raises the
+# quiet level far enough to suppress the "N passed" summary line — a CI job with
+# no visible result is worse than a verbose one.
+addopts = "--strict-markers"
+markers = [
+  "contract: a numbered test from a frozen Phase 0 contract document",
+]
