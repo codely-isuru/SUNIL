@@ -13,6 +13,7 @@ assert the shape. Nothing here touches HTTP.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from sunil.core.approvals.base import (
     ApprovalBinding,
@@ -29,14 +30,24 @@ ARGS_HASH = "a" * 64
 OTHER_HASH = "b" * 64
 
 
+#: C4 §4 (v1.1.0) — the park material the orchestrator supplies through C1 §2.2's
+#: ParkContext and the manager copies verbatim. Non-empty by contract.
+SUMMARY = "fake_tool.write_item requires approval"
+CONTINUATION: dict = {"plan": [], "cursor": 0}
+
+
 def park_request(
     *,
     agent_id: str = "project_manager",
     tool: str = "fake_tool",
     operation: str = "write_item",
     args_hash: str = ARGS_HASH,
+    summary: str = SUMMARY,
+    continuation: dict | None = None,
 ) -> ParkRequest:
-    """A ParkRequest with every C4 §4 field populated."""
+    """A ParkRequest with every C4 §4 field populated. ``summary``/
+    ``continuation`` are parameters so contract test 8 can probe the v1.1.0
+    fail-closed constraints without hand-building the other eight fields."""
     return ParkRequest(
         agent_id=agent_id,
         tool=tool,
@@ -46,8 +57,8 @@ def park_request(
         request_id="req-1",
         conversation_id="conv-1",
         task_id="task-1",
-        summary="fake_tool.write_item requires approval",
-        continuation={"plan": [], "cursor": 0},
+        summary=summary,
+        continuation=CONTINUATION if continuation is None else continuation,
     )
 
 
@@ -362,3 +373,60 @@ async def test_c4_park_ids_and_clock_advance_in_park_order(
     assert approvals.approvals["apr-2"].created_at == "2026-01-01T00:00:01Z"
     assert a.expires_at == "2026-01-04T00:00:00Z"
     assert b.expires_at == "2026-01-04T00:00:01Z"
+
+
+# --------------------------------------------------------------------------- #
+# C4 contract test 8 (v1.1.0, backend review F3)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"continuation": {}},  # Field(min_length=1)
+        {"summary": ""},  # Field(min_length=1)
+        {"summary": "x" * 501},  # Field(max_length=500), the Approval cap
+    ],
+    ids=["empty-continuation", "empty-summary", "over-long-summary"],
+)
+def test_c4_8_empty_park_material_is_rejected_by_the_model(kwargs: dict) -> None:
+    """C4 contract test 8 (v1.1.0, F3) — ``ParkRequest`` itself refuses to mint a
+    never-resumable approval: an empty ``continuation`` or ``summary`` raises
+    ``ValidationError`` at construction, independently of the Tool Manager's
+    ``park_context`` precondition (C1 §2.1 / C1 test 8). The backend probe parked
+    ``continuation={}`` and the suite passed — this is the seam-level half of
+    closing that hole."""
+    with pytest.raises(ValidationError):
+        park_request(**kwargs)
+
+
+def test_c4_8_non_empty_park_material_still_constructs() -> None:
+    """The other side of the bound — the constraints must not reject the legal
+    minimum (one continuation key, a one-character summary)."""
+    minimal = park_request(summary="x", continuation={"cursor": 0})
+
+    assert minimal.summary == "x"
+    assert minimal.continuation == {"cursor": 0}
+    assert park_request().summary == SUMMARY
+
+
+# --------------------------------------------------------------------------- #
+# C4 §6 behaviour 1 (v1.1.0) — the fake retains the ParkRequest
+# --------------------------------------------------------------------------- #
+async def test_c4_park_retains_the_full_request_for_provenance(
+    approvals: FakeApprovalsService,
+) -> None:
+    """C4 §6 behaviour 1 (v1.1.0, F3) — ``park`` retains the full ``ParkRequest``
+    as ``self.parked[approval_id]``, which is what C1 test 4 asserts the
+    manager's ``continuation``/``summary`` provenance against. ``continuation``
+    is deliberately NOT on the ``Approval`` row (it never leaves this service
+    over HTTP, C4 §4), so without this retention the never-resumable-park
+    regression has nothing to assert against."""
+    req = park_request()
+
+    parked = await approvals.park(req)
+
+    assert approvals.parked[parked.approval_id] == req
+    assert approvals.parked[parked.approval_id].continuation == CONTINUATION
+    assert approvals.parked[parked.approval_id].summary == SUMMARY
+    # The webhook/row path still carries no continuation (redaction by shape).
+    assert "continuation" not in approvals.webhook_sent[0]
+    assert not hasattr(approvals.approvals[parked.approval_id], "continuation")

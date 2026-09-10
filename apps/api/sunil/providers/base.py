@@ -1,6 +1,6 @@
 """C2 — Model Provider / Gateway seam (frozen contract transcription).
 
-Source of truth: ``docs/contracts/C2-model-provider.md`` v1.0.0 (FROZEN, Phase 0
+Source of truth: ``docs/contracts/C2-model-provider.md`` **v1.0.1** (FROZEN, Phase 0
 2026-09-10) §2 "Interface definition" and §4 "Error semantics". The router that
 sits in front of this seam is ``core/routing/router.py`` and stays SUNIL-owned
 (C2 §2); the gateway adapter is ``providers/gateway.py`` (C2 §3).
@@ -21,7 +21,7 @@ from collections.abc import AsyncIterator
 from enum import StrEnum
 from typing import Literal, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class PrivacyClass(StrEnum):
@@ -33,12 +33,28 @@ class PrivacyClass(StrEnum):
     LOCAL_ONLY = "local_only"  # never leaves machines the owner controls (§26.10)
 
 
-class ChatMessage(BaseModel):
+class _ClosedModel(BaseModel):
+    """Every C2 request/result model is CLOSED (v1.0.1, backend review F11): an
+    undeclared field raises ``ValidationError`` at the call site instead of being
+    silently dropped (pydantic's default ``extra="ignore"``).
+
+    The property is the contract — C2 §2 makes ``extra="forbid"`` normative for
+    all five §2 models — and this shared base is the recommended mechanism, so a
+    model added to this module later cannot forget it by accident. It is what
+    keeps the frozen no-tools shape from eroding quietly: ``CompletionRequest(
+    ..., tools=[...])`` and ``ChatMessage(..., tool_calls=[...])`` are now loud
+    errors rather than silently discarded arguments.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChatMessage(_ClosedModel):
     role: Literal["system", "user", "assistant", "tool"]
     content: str
 
 
-class CompletionRequest(BaseModel):
+class CompletionRequest(_ClosedModel):
     model: str  # router-resolved model id (config/models.yaml), e.g. "claude-sonnet" — see the namespace rule below
     messages: list[ChatMessage]
     max_tokens: int
@@ -50,14 +66,14 @@ class CompletionRequest(BaseModel):
     privacy_class: PrivacyClass
 
 
-class Usage(BaseModel):
+class Usage(_ClosedModel):
     input_tokens: int
     output_tokens: int
     cost_usd: float  # from config/models.yaml pricing, computed SUNIL-side (M1 rule);
     # gateway-reported cost is recorded but never authoritative
 
 
-class CompletionResult(BaseModel):
+class CompletionResult(_ClosedModel):
     text: str
     parsed: dict | None  # non-None iff json_schema was set (parse failure RAISES
     # ProviderError(kind="invalid_output"), never a silent None — §4)
@@ -66,7 +82,7 @@ class CompletionResult(BaseModel):
     finish_reason: Literal["stop", "max_tokens", "refusal", "error"]
 
 
-class StreamEvent(BaseModel):
+class StreamEvent(_ClosedModel):
     type: Literal["token", "done"]
     token: str | None = None  # type="token"
     result: CompletionResult | None = None  # type="done" — authoritative, tokens are a projection

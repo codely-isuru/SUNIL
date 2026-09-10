@@ -1,6 +1,6 @@
 """``FakeApprovalsService`` — C4 §6's fake specification, verbatim.
 
-Source of truth: ``docs/contracts/C4-approvals.md`` §6 (v1.0.0, FROZEN
+Source of truth: ``docs/contracts/C4-approvals.md`` §6 (**v1.1.0**, FROZEN
 2026-09-10). This module is THE approvals fake for every stream: C1 §6's table
 points at it ("C4 §6's spec verbatim, no C1-specific variant") and Stream D
 builds the dashboard against it (§6: "provides the HTTP layer's store").
@@ -16,9 +16,12 @@ in ``docs/tasks/P0-fakes.md``):
   ``async`` marker (C1 §6.4 test 5 calls ``fake_approvals.decide(approval_id,
   "approve", None, now)``), so they are synchronous. Only the two protocol
   methods are ``async``.
-* ``decide`` returns ``Approval | StateConflict`` — §6.2's wording is "return
-  ``state_conflict(current_status=…)``". The HTTP layer maps a returned
-  ``StateConflict`` to 409 (C4 §5) and a returned ``None`` (unknown id) to 404.
+* ``decide`` returns ``Approval | StateConflict | None``. This was a QA
+  judgment call in the fakes-build round; **C4 v1.0.1 §6.2 blessed it as
+  normative for the real service layer too**, so it is no longer an assumption:
+  unknown id → ``None`` → the HTTP layer's 404 (§5), ``StateConflict`` → 409,
+  and ``decide`` never raises for absence or conflict — status-code mapping
+  lives in the HTTP layer and nowhere else.
 * ``consume`` reads the injected clock, because C4 §4's frozen signature carries
   no ``now`` parameter — the real service reads the database clock in the same
   place.
@@ -68,13 +71,21 @@ class FakeApprovalsService:
         self.consume_grace_hours = consume_grace_hours
         self.clock = clock if clock is not None else FakeClock()
         self.approvals: dict[str, Approval] = {}
+        #: C4 §6 behaviour 1 (v1.1.0, F3) — the full ParkRequest per approval id.
+        #: `continuation` is deliberately absent from the `Approval` row (it
+        #: never leaves this service over HTTP, §4), so this is where C1 test 4
+        #: asserts the manager copied the caller's park material verbatim.
+        self.parked: dict[str, ParkRequest] = {}
         self.webhook_sent: list[dict] = []
 
     # -- C4 §4 protocol ---------------------------------------------------- #
     async def park(self, req: ParkRequest) -> ParkedApproval:
         """C4 §6.1 — new approval, ``status="pending"`` set explicitly, returns
         ``ParkedApproval``; appends the ``ApprovalRequestedEvent`` payload to
-        ``webhook_sent``."""
+        ``webhook_sent`` and retains the full ``ParkRequest`` as
+        ``self.parked[approval_id]`` (v1.1.0, F3). Empty ``summary``/
+        ``continuation`` are refused by the ``ParkRequest`` model itself (§4) and
+        this fake MUST NOT relax that."""
         now = self.clock.now()
         approval_id = f"apr-{len(self.approvals) + 1}"
         created_at = to_iso(now)
@@ -95,6 +106,7 @@ class FakeApprovalsService:
             task_id=req.task_id,
             summary=req.summary,
         )
+        self.parked[approval_id] = req
         self.webhook_sent.append(
             ApprovalRequestedEvent(
                 approval_id=approval_id,

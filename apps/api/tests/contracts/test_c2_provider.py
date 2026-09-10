@@ -17,6 +17,7 @@ import re
 from copy import deepcopy
 
 import pytest
+from pydantic import ValidationError
 
 from sunil.providers.base import (
     ChatMessage,
@@ -346,6 +347,76 @@ def test_c2_completion_request_has_no_tools_field() -> None:
         "request_id",
         "privacy_class",
     }
+
+
+@pytest.mark.parametrize(
+    "model,kwargs",
+    [
+        (CompletionRequest, {"tools": [{"name": "x"}]}),
+        (CompletionRequest, {"tool_choice": "auto"}),
+        (ChatMessage, {"tool_calls": []}),
+        (Usage, {"reasoning_tokens": 5}),
+        (CompletionResult, {"tool_calls": []}),
+        (StreamEvent, {"delta": "x"}),
+    ],
+    ids=[
+        "request-tools",
+        "request-tool_choice",
+        "message-tool_calls",
+        "usage-extra",
+        "result-tool_calls",
+        "stream-extra",
+    ],
+)
+def test_c2_7_every_section_2_model_is_closed(model, kwargs: dict) -> None:
+    """C2 contract test 7 (v1.0.1, backend review F11) — every §2 request/result
+    model sets ``extra="forbid"``, so an undeclared field raises
+    ``ValidationError`` AT THE CALL SITE instead of being silently dropped.
+
+    Under pydantic's default ``extra="ignore"``, ``CompletionRequest(...,
+    tools=[...])`` constructed happily and threw the tools away: the frozen
+    no-tools property still held, but it eroded SILENTLY — a call site could
+    believe it had sent tools forever. The message list is the same smuggling
+    channel (``ChatMessage(..., tool_calls=[...])``), which is why the rule
+    covers all five models and not just the request.
+    """
+    valid = {
+        CompletionRequest: dict(
+            model="claude-sonnet",
+            messages=[ChatMessage(role="user", content="hi")],
+            max_tokens=512,
+            agent_id="project_manager",
+            request_id="req-1",
+            privacy_class=PrivacyClass.INTERNAL,
+        ),
+        ChatMessage: dict(role="assistant", content="hi"),
+        Usage: dict(input_tokens=1, output_tokens=1, cost_usd=0.0),
+        CompletionResult: dict(
+            text="t",
+            parsed=None,
+            usage=Usage(input_tokens=1, output_tokens=1, cost_usd=0.0),
+            provider_model="fake-1",
+            finish_reason="stop",
+        ),
+        StreamEvent: dict(type="token", token="x"),
+    }[model]
+
+    assert model(**valid)  # the same kwargs without the extra field are legal
+    with pytest.raises(ValidationError):
+        model(**valid, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [ChatMessage, CompletionRequest, Usage, CompletionResult, StreamEvent],
+    ids=lambda m: m.__name__,
+)
+def test_c2_7_closed_is_declared_not_incidental(model) -> None:
+    """C2 §2 (v1.0.1) — the property is normative, so it is asserted on the
+    model config itself: a future §2 model that forgets ``_ClosedModel`` (or a
+    per-model ``model_config``) fails here rather than in whichever call site
+    first smuggles a field past it."""
+    assert model.model_config.get("extra") == "forbid"
 
 
 def test_c2_completion_request_defaults() -> None:

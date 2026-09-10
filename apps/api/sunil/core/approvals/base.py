@@ -1,6 +1,6 @@
 """C4 — Approvals: the in-process seam types (frozen contract transcription).
 
-Source of truth: ``docs/contracts/C4-approvals.md`` v1.0.0 (FROZEN, Phase 0
+Source of truth: ``docs/contracts/C4-approvals.md`` **v1.1.0** (FROZEN, Phase 0
 2026-09-10) §4 "In-process seam (injected into the Tool Manager — C1 §2.2)", plus
 ``docs/contracts/C4-approvals-openapi.yaml`` for the persisted ``Approval`` shape
 and the ``ApprovalStatus`` enum.
@@ -47,7 +47,17 @@ class ApprovalStatus(StrEnum):
 # C4 §4 — the in-process seam (transcribed verbatim)
 # --------------------------------------------------------------------------- #
 class ParkRequest(BaseModel):
-    """C4 §4 ``ParkRequest``."""
+    """C4 §4 ``ParkRequest``.
+
+    Provenance (v1.1.0, backend review F3): ``summary`` and ``continuation`` are
+    the two fields the Tool Manager cannot derive from its own inputs — the
+    orchestrator supplies them via C1 §2.2's ``ParkContext`` and the manager
+    copies them VERBATIM; every other field is manager-computed (C1 §2.1 step 3:
+    one composer, one hasher). Their ``Field`` bounds are load-bearing
+    fail-closed checks, not hygiene: an empty ``continuation`` mints an approval
+    that can never be resumed, and C4 §1's restart-safety rule always
+    presupposed a real one.
+    """
 
     agent_id: str
     tool: str
@@ -57,8 +67,11 @@ class ParkRequest(BaseModel):
     request_id: str
     conversation_id: str
     task_id: str
-    summary: str  # built by SUNIL code, never LLM output
-    continuation: dict  # opaque persisted plan-cursor state (ADR-031)
+    summary: str = Field(min_length=1, max_length=500)
+    # built by SUNIL code, never LLM output; caps match the Approval schema's
+    # summary field (v1.1.0, F3)
+    continuation: dict = Field(min_length=1)
+    # opaque persisted plan-cursor state (ADR-031); NEVER empty (v1.1.0, F3)
 
 
 class ParkedApproval(BaseModel):
