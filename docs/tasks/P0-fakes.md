@@ -79,6 +79,13 @@ removes `apps/api/` and the new workflow, leaving `ci.yml`'s test job back on it
   fake (10 passed, 9 skipped) + `.github/workflows/tests.yml` + this file.
 - [2026-09-10 | qa_engineer] Handing to the delivery manager for backend review
   of the interface transcription and architect adjudication of finding F-1.
+- [2026-09-11 | qa_engineer] ParkContext-guard round (C1 v1.1.1, branch
+  `task/P0-guard-code`): contract test 9 written red (all four probes constructed
+  cleanly against the unguarded type), then §2.2's normative
+  `ParkContext.__post_init__` transcribed into `base.py` — 171 collected,
+  **146 passed, 25 skipped**, identical across two runs; five mutants of the
+  guard (each of the three checks dropped, the 500-cap off-by-one, and
+  `.strip()` → truthiness) all killed by test 9.
 
 ## Issues
 
