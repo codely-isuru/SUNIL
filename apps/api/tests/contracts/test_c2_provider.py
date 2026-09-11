@@ -241,26 +241,73 @@ async def test_c2_3_failure_markers_raise_every_call(
         assert err.value.retryable is retryable
 
 
-def test_c2_3_sunil_retry_policy_re_asks_exactly_once() -> None:
+async def test_c2_3_sunil_retry_policy_re_asks_exactly_once() -> None:
     """C2 contract test 3, retry clause — the SUNIL-side re-asker performs at
     most ONE re-ask.
 
-    Guarded on ``core/routing/retry.py``. The assertions are named below rather
-    than written: C2 §4 fixes the POLICY (one re-ask on ``invalid_output``, then
-    fail; the flag marks eligibility, the policy caps the count) but names no
-    callable, and QA inventing an entry point here would hard-code an API the
-    implementer has not chosen. This fails loudly the moment the module lands —
-    it can never sit green having asserted nothing.
+    Guarded on ``core/routing/retry.py``, which landed with Stream B
+    (``task/S-B-gateway``). The body is **exactly the test QA's activation
+    message commissioned**, against the entry point the implementer chose
+    (``RetryPolicy.execute``): drive ``FAIL:invalid_output`` through the policy
+    with a schema set, assert ``len(provider.calls) == 2`` (ONE re-ask) and that
+    the second call returns ``FIXED_PLAN``; then a provider raising
+    ``invalid_output`` on EVERY call produces exactly 2 calls and then a
+    ``ProviderError`` — never a third.
+
+    **Written by the implementer of the module under test** (backend_engineer,
+    Stream B) because the placeholder could not otherwise go green, and flagged
+    for QA review in the Stream B report for exactly that reason.
     """
-    missing("sunil.core.routing.retry", "C2 contract test 3's retry clause", "Phase 2, core")
-    pytest.fail(
-        "core/routing/retry.py now exists — write this test: drive a FakeProvider "
-        "whose last user message is 'FAIL:invalid_output' (raises once, then "
-        "succeeds) through the policy with json_schema set, then assert "
-        "len(provider.calls) == 2 (exactly ONE re-ask), that the second call "
-        "returns FIXED_PLAN, and that a provider raising invalid_output on EVERY "
-        "call produces exactly 2 calls and then a ProviderError — never a third."
+    retry = missing(
+        "sunil.core.routing.retry", "C2 contract test 3's retry clause", "Phase 2, core"
     )
+    policy = retry.RetryPolicy(sleep=_no_sleep, rand=lambda: 0.0)
+
+    provider = FakeProvider()
+    outcome = await policy.execute(
+        provider=provider,
+        request=request("FAIL:invalid_output", json_schema=PLAN_SCHEMA),
+    )
+
+    assert len(provider.calls) == 2  # exactly ONE re-ask
+    assert outcome.result.parsed == FIXED_PLAN
+    # C2 §4 / M1 A-2 — the failed attempt's tokens are still counted.
+    assert outcome.usage.input_tokens == 2 * FIXED_USAGE.input_tokens
+
+    always_invalid = _AlwaysInvalidOutput()
+    with pytest.raises(ProviderError) as err:
+        await policy.execute(
+            provider=always_invalid,
+            request=request("whatever", json_schema=PLAN_SCHEMA),
+        )
+
+    assert len(always_invalid.calls) == 2  # never a third
+    assert err.value.kind == "invalid_output"
+
+
+async def _no_sleep(_seconds: float) -> None:
+    """Backoff is asserted in the unit suite; the contract clause is about the
+    COUNT, so the contract test does not spend wall-clock time proving it."""
+    return None
+
+
+class _AlwaysInvalidOutput:
+    """A provider that raises ``invalid_output`` on EVERY call — the second half
+    of the commissioned assertion, which the C2 §5 fake cannot express (its
+    ``FAIL:invalid_output`` marker succeeds on the second call by design)."""
+
+    def __init__(self) -> None:
+        self.name = "always-invalid-output"
+        self.calls: list[CompletionRequest] = []
+
+    async def complete(self, request: CompletionRequest) -> CompletionResult:
+        self.calls.append(request)
+        raise ProviderError(
+            kind="invalid_output", retryable=True, usage=FIXED_USAGE.model_copy(deep=True)
+        )
+
+    def stream(self, request: CompletionRequest):  # pragma: no cover - unused here
+        raise NotImplementedError
 
 
 # --------------------------------------------------------------------------- #
@@ -349,26 +396,87 @@ async def test_c2_5_fake_records_every_call_for_the_zero_call_probe(
     assert len(provider.calls) == 2  # a failed attempt is still a call
 
 
-def test_c2_5_local_only_routes_nowhere_without_a_local_provider() -> None:
+async def test_c2_5_local_only_routes_nowhere_without_a_local_provider() -> None:
     """C2 contract test 5 — a ``LOCAL_ONLY`` request with no local provider is a
     routing error, never a silent downgrade (C2 §2).
 
-    Guarded on ``core/routing/router.py`` (Phase 2, SUNIL-owned router). Same
-    reasoning as the retry clause: the rule is frozen, the router's constructor
-    and method names are not, and the zero-call instrumentation this needs is
-    already asserted in
-    ``test_c2_5_fake_records_every_call_for_the_zero_call_probe``.
+    Guarded on ``core/routing/router.py``, which landed with Stream B. The body
+    is **exactly the test QA's activation message commissioned**: one non-local
+    ``FakeProvider``, a ``LOCAL_ONLY`` request RAISES before dispatch with
+    ``provider.calls == []``, and an ``INTERNAL`` request through the SAME
+    router does reach the provider — so the zero-call proves the rule and not a
+    broken fixture.
+
+    **Written by the implementer of the module under test** (backend_engineer,
+    Stream B), and flagged for QA review in the Stream B report.
     """
-    missing("sunil.core.routing.router", "C2 contract test 5's routing rule", "Phase 2, core")
-    pytest.fail(
-        "core/routing/router.py now exists — write this test: build the router "
-        "with a single non-local FakeProvider, submit a request with "
-        "privacy_class=LOCAL_ONLY, assert it RAISES before dispatch and that "
-        "provider.calls == [] (a silent downgrade to a remote model is the "
-        "failure mode; §26.10). Then assert an INTERNAL request through the same "
-        "router does reach the provider, so the zero-call proves the rule and "
-        "not a broken fixture."
+    router_module = missing(
+        "sunil.core.routing.router", "C2 contract test 5's routing rule", "Phase 2, core"
     )
+    from sunil.core.routing.catalogue import ModelCatalogue  # noqa: PLC0415
+    from sunil.core.routing.errors import RoutingError  # noqa: PLC0415
+
+    # A catalogue with ONE provider, and it is not local — Phase 0's real shape
+    # (C2 §2: "none in Phase 0").
+    catalogue = ModelCatalogue.from_mapping(
+        {
+            "version": 1,
+            "pricing_version": "contract-test",
+            "providers": {"fake": {"local": False, "lane": "prod"}},
+            "models": {
+                "claude-sonnet": {
+                    "provider": "fake",
+                    "provider_model_id": "fake-upstream-1",
+                    "context_window": 200000,
+                    "max_output": 64000,
+                    "input_usd_per_mtok": "1",
+                    "output_usd_per_mtok": "5",
+                    "supports_structured_output": True,
+                }
+            },
+            "capabilities": {
+                "general_reasoning": {
+                    "model": "claude-sonnet",
+                    "max_tokens": 4096,
+                    "timeout_s": 30.0,
+                }
+            },
+        }
+    )
+
+    class OneProvider:
+        """The registry slice the router's ``ProviderLookup`` protocol needs."""
+
+        def __init__(self, provider: FakeProvider) -> None:
+            self._provider = provider
+
+        def get(self, name: str) -> FakeProvider:
+            assert name == "fake"
+            return self._provider
+
+        def provider_names(self) -> list[str]:
+            return ["fake"]
+
+    provider = FakeProvider()
+    router = router_module.ModelRouter(
+        catalogue=catalogue, providers=OneProvider(provider)
+    )
+
+    with pytest.raises(RoutingError):
+        await router.run(
+            capability="general_reasoning",
+            request=request("secret work", privacy_class=PrivacyClass.LOCAL_ONLY),
+        )
+
+    assert provider.calls == []  # nothing was dispatched, nothing downgraded
+
+    completion = await router.run(
+        capability="general_reasoning",
+        request=request("hello", privacy_class=PrivacyClass.INTERNAL),
+    )
+
+    assert len(provider.calls) == 1
+    assert completion.result.text == "FAKE: hello"
 
 
 # --------------------------------------------------------------------------- #
