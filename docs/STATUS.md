@@ -27,6 +27,15 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**GATE 2 APPROVED — owner, 2026-09-11. Designs approved (round 4). PHASE 1 STREAMS LAUNCHED.**
+Owner rulings recorded: Q1 = FREEZE spec (13)'s three read-only ops endpoints (dashboard consumes
+them; SA formalising as contract addendum); Q4 risk labels = deferred to Phase 2 backlog; Q8 =
+responsive web covers phone approvals in v1, no native app. Budget note: ~$250 of $300 consumed
+by Phase 0; DM raised the engagement envelope to $500 for Phase 1 (owner may veto; flagged in
+session). Wave 1 lanes: S0 ops-read contracts (SA) - spine (app/db/audit/chat/orchestrator) -
+A tools+manager - B gateway/providers - D approvals service - D web dashboard. Wave 2 after
+merges: C memory, E n8n, F OpenHands, integration.
+
 **GATE 2 IS FULLY ASSEMBLED (2026-09-11) — everything now waits on the owner.** The package:
 (1) plain-English briefing artifact (link in the session); (2) baseline docs on `V2` (contracts
 C1 v1.1.1 / C2 v1.0.1 / C3-C4 v1.1.0 / C5 v1.0.0, ARCHITECTURE_V2, ADRs, 171 tests / 146 pass);
