@@ -78,6 +78,23 @@ infra/docker-compose.yml       # ADR-032 Amendment 1: compose lives under infra/
                                # container exists
 ```
 
+**§2 Amendment 1 (2026-09-11 — C6 ops reads; owner Gate 2 ruling Q1 = freeze, ADR-036).**
+`api/routes/` gains three read-only modules serving the dashboard's operational views
+(`V2_DASHBOARD_SPEC.md` §7/§8/§10/§16), contracted in
+[`contracts/C6-ops-reads.md`](contracts/C6-ops-reads.md) (+ OpenAPI):
+
+| Route | Module | Operations | Contract |
+|---|---|---|---|
+| `GET /api/v1/tasks`, `GET /api/v1/tasks/{task_id}` | `api/routes/tasks.py` | task list (status/project_key/q/order filters, C4-law cursor paging) + detail with `status_events` | C6 §2.2 |
+| `GET /api/v1/activity` | `api/routes/activity.py` | one-request running/parked/recent(≤20) snapshot with latest audit stage folded in | C6 §2.3 |
+| `GET /api/v1/audit`, `GET /api/v1/audit/{request_id}` | `api/routes/audit.py` | turns grouped by `request_id` + per-turn `events`/`approval_events` partition | C6 §2.4 |
+
+All three are **read-only, owner-session only** (the C4 cookie + `X-SUNIL-Client` lane; the
+ADR-035 bearer is never valid here). Companion schema delta: `tasks.project_key` nullable column
+(C6 §3, Q2 ruling). The original layout block above is unchanged per the no-silent-edit
+convention; read its `routes/{…}` line as including `activity`, `tasks`, `audit`. QA fake:
+`tests/fakes/fake_ops_store.py` + contract suite `tests/contracts/test_c6_ops_reads.py` (C6 §6).
+
 ## 3. How the six streams plug into the contracts
 
 | Stream | Builds | Implements / consumes | Tests against |
