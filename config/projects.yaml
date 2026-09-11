@@ -1,0 +1,11 @@
+# Project registry — mounted, never baked (ADR-016).
+#
+# A plan may name a `project_key`; the plan validator rejects one that is not
+# here, and the C5 envelope's `failure.kind="unknown_project"` carries this list
+# as `known_projects` so the owner is told what IS configured rather than just
+# that they were wrong.
+projects:
+  sunil:
+    display_name: SUNIL
+    description: >-
+      This system. The default project for work on SUNIL itself.
