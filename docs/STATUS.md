@@ -27,6 +27,15 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**GATE 2 IS FULLY ASSEMBLED (2026-09-11) — everything now waits on the owner.** The package:
+(1) plain-English briefing artifact (link in the session); (2) baseline docs on `V2` (contracts
+C1 v1.1.1 / C2 v1.0.1 / C3-C4 v1.1.0 / C5 v1.0.0, ARCHITECTURE_V2, ADRs, 171 tests / 146 pass);
+(3) UI design package on `task/P0-ui-design` (spec, 11 decisions, 6 mockups) — owner requires UI
+approval before Stream D builds. Defaults RATIFIED by owner: consume-grace 1h, service-lane
+restriction. Design open questions: Q1 (blocker — Activity/Tasks/Audit have no HTTP contract;
+freeze spec §13's shapes or cut from v1), Q6 landing view, Q7 light theme, Q8 mobile, Q4 risk
+labels → owner; Q2/Q3/Q5/Q9 → SA/Security at stream kickoff. No agents running.
+
 **✅ PHASE 0 COMPLETE — 2026-09-10, awaiting Gate 2 (owner).** All exit criteria met on `V2`:
 C1–C5 frozen (C1/C3/C4 v1.1.0, C2 v1.0.1, C5 v1.0.0) with OpenAPI; fakes + contract suites
 published (170 tests: 145 pass, 25 self-activating skips; two mutation proofs); Compose platform
