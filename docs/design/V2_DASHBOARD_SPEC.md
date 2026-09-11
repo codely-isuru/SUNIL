@@ -16,9 +16,11 @@ below still resolves; "accent" means the antique gold `#C9A227`.
 projects, audit browser" + the existing chat. `ARCHITECTURE_V2.md` §2 (`apps/web/`), §6 (L-001).
 **Predecessors honoured:** `M1_CHAT_SPEC.md` (the chat view is that spec, re-hosted, plus one new
 state); `DASHBOARD_DIRECTION.md` (icon rail, chrome-agnostic chat components, trace view lineage).
-**Mockups:** `mockups/01…06.html` — static, self-contained, **single committed dark theme**
+**Mockups:** `mockups/00…06.html` — static, self-contained, **single committed dark theme**
 (Obsidian & Gold, Amendment A round 3 — no `prefers-color-scheme` query, every colour painted),
-realistic data.
+realistic data. **Round 4 (owner, 2026-09-11)** adds `00-dashboard.html` — a unified Dashboard as
+the landing view (§16), overriding Decision 2 and answering Q6. No token changes; Amendment A is
+untouched this round.
 
 ---
 
@@ -63,23 +65,26 @@ neither is icon-only. Rationale recorded as Decision 1 in `V2_DESIGN_DECISIONS.m
 
 | Order | Destination | Route | Icon (Lucide) | Badge |
 |---|---|---|---|---|
-| 1 | **Chat** | `/chat`, `/chat/{conversation_id}` | `message-square` | — |
-| 2 | **Approvals** | `/approvals`, `/approvals/{approval_id}` | `shield-check` | count of `status=pending` (see §1.5) |
-| 3 | **Activity** | `/activity` | `activity` | — (live dot when ≥1 task is running) |
-| 4 | **Tasks** | `/tasks`, `/tasks/{task_id}` | `list-checks` | — |
-| 5 | **Projects** | `/projects`, `/projects/{key}` | `folder-git-2` | — |
-| 6 | **Audit** | `/audit`, `/audit/{request_id}` | `file-search` | — |
+| 1 | **Dashboard** *(round 4)* | `/` | `layout-dashboard` | — (label "Home" at the 88px width; "Dashboard" expanded) |
+| 2 | **Chat** | `/chat`, `/chat/{conversation_id}` | `message-square` | — |
+| 3 | **Approvals** | `/approvals`, `/approvals/{approval_id}` | `shield-check` | count of `status=pending` (see §1.5) |
+| 4 | **Activity** | `/activity` | `activity` | — (live dot when ≥1 task is running) |
+| 5 | **Tasks** | `/tasks`, `/tasks/{task_id}` | `list-checks` | — |
+| 6 | **Projects** | `/projects`, `/projects/{key}` | `folder-git-2` | — |
+| 7 | **Audit** | `/audit`, `/audit/{request_id}` | `file-search` | — |
 | — | *(spacer — pushes the group below to the rail's bottom)* | | | |
-| 7 | **Settings** | `/settings` | `settings` | — |
-| 8 | **Sign out** | action, not a route | `log-out` | — |
+| 8 | **Settings** | `/settings` | `settings` | — |
+| 9 | **Sign out** | action, not a route | `log-out` | — |
 
 Sign-out is spatially separated from the six destinations by the spacer
 (`destructive-nav-separation`) and is a `<button>`, not a nav link. Settings is a stub in this
 spec — not designed, listed so the rail's final shape is not a surprise later.
 
-**Landing route.** `/` redirects to `/approvals` when `pending > 0`, otherwise to `/chat`. A
-governed system whose owner is the only approver should open on the thing that is blocked waiting
-for that owner; when nothing is blocked, it should open on the conversation. Decision 2.
+**Landing route — REPLACED round 4 (owner override; answers Q6).** `/` **is** the Dashboard (§16):
+one composite view showing every main component at summary tier, with in-place expansion and a link
+to each full view. The previous conditional redirect (`/approvals` when pending, else `/chat` —
+round-1 Decision 2) is retired; the pending-approvals hero at the top of the Dashboard preserves
+that decision's intent (the blocked thing is still the first thing seen). Decision 2 as amended.
 
 ### 1.3 Shell regions and focus order
 
@@ -118,7 +123,7 @@ user who activates a rail item has focus left behind in the rail with no idea th
 | ≥1280px | Rail (88 or 232px) + content `max-w-6xl` centred, `px-8`. Detail views may use a 2-column split (list 40% / detail 60%) — Approvals only. |
 | 1024–1279px | Same, split view collapses to list **or** detail (route-driven, `/approvals` vs `/approvals/{id}`). |
 | 768–1023px | Rail collapses to 64px icon+label (label wraps to 9px), content `px-6`. Tables drop their lowest-priority columns (§4.3). |
-| <768px | Rail becomes a **bottom bar with 5 items** — Chat, Approvals, Activity, Tasks, More (Projects/Audit/Settings in an overflow sheet). `bottom-nav-limit` honoured. Content `px-4`. Tables become stacked cards (§4.4). Safe-area insets respected top and bottom. |
+| <768px | Rail becomes a **bottom bar with 5 items** — Home (Dashboard), Chat, Approvals, Activity, More (Tasks/Projects/Audit/Settings in an overflow sheet). `bottom-nav-limit` honoured. Content `px-4`. Tables become stacked cards (§4.4). Safe-area insets respected top and bottom. On the Dashboard the two-column secondary grid stacks to one column (§16.2). |
 
 The dashboard's primary device is a desktop browser (`ARCHITECTURE_V2.md` §4 TB1 — the browser at
 `localhost:3001`), but the approval decision is the one action the owner will want to take from a
@@ -669,9 +674,9 @@ ops views.
 - Expandable trace rows use `<details>/<summary>` — native keyboard support, no ARIA to get wrong.
 - **Escape** closes any transient overlay (confirm step, overflow sheet, shortcut sheet) and
   returns focus to the control that opened it.
-- **Shortcut sheet** on `?`, listing: `g` then `a/c/t/p/u` to jump (approvals/chat/tasks/projects/
-  audit), `/` focuses the view's search, `r` refreshes, `A`/`R` arm approve/refuse on an approval
-  card (§6.6), `Esc` cancels.
+- **Shortcut sheet** on `?`, listing: `g` then `d/a/c/t/p/u` to jump (dashboard/approvals/chat/
+  tasks/projects/audit), `/` focuses the view's search, `r` refreshes, `A`/`R` arm approve/refuse
+  on an approval card (§6.6), `Esc` cancels.
 - No keyboard traps; no shortcut overrides a browser/AT shortcut; all shortcuts are disabled while
   focus is in a text input.
 
@@ -789,7 +794,7 @@ under the §6.3 plain-text rules — the same containment as the approval card, 
 | Q3 | The consume-grace window (`SUNIL_APPROVAL_CONSUME_GRACE_HOURS`, default 1h) is invisible to the API — the dashboard cannot read it. Expose it (e.g. on the approval row, or a `GET /api/v1/config/public`), or hardcode "1 hour" in the UI copy? | §6.5 grace note | Hardcode "1 hour" **and** render the post-approval countdown from `decided_at + 1h`, with a build-time constant that must be changed alongside the env var. Fragile — I recommend exposing it |
 | Q4 | Should C4 gain a risk/impact classification (e.g. `low/medium/high`, or "spends money / changes code / sends a message")? Today the queue can only sort by time, so a `$4,000 refund` and a `label added to an issue` look identical until opened | §5.4 | Ship without it; signal time pressure only |
 | Q5 | Confirm with Security: is `unicode-bidi: plaintext` + no-linkification + text-node-only rendering the accepted containment set for `summary`/`params_redacted`/`detail`, or is a stricter character policy (e.g. rejecting C0/bidi control chars at park time) wanted? | §6.3 | Ship the CSS/rendering set above and flag the character policy as a backend hardening item |
-| Q6 | Landing route: approvals-first when pending (Decision 2). Or would you rather always land in Chat? | §1.2 | Approvals-first |
+| Q6 | ~~Landing route: approvals-first when pending (Decision 2). Or would you rather always land in Chat?~~ **ANSWERED (round 4, owner 2026-09-11): neither — the landing view is a unified Dashboard** ("all these main components in a dashboard… once I click the box it expands or redirects to the page. I wanna see all the info in one place"). §16 specifies it; Decision 2 amended | — | — |
 | Q7 | ~~Light theme: do you want it at all, or is SUNIL dark-only as a brand position?~~ **ANSWERED at Gate 2 (round 2): dark-only is the brand position.** The light map is deleted; Amendment A is the committed Obsidian & Gold theme; Decision 10 records the ruling | — | — |
 | Q8 | Mobile: is a phone-usable approval decision a v1 requirement, or is desktop-only acceptable for the rebuild? | §1.4 | Approvals mobile-complete, other views best-effort |
 | Q9 | **Architect:** does a **parked** turn emit all twelve stages, or short-circuit after `permission_decision`? ET-8 guarantees stage 12 always fires, but stages 10–11 (`tool_result`, `agent_result`) have no obvious value on a turn whose tool never executed | §10.2 stage count, §10.3 partial banner | Render whatever arrives; flag any count ≠ 12 in `warning` and never pad or hide a missing stage |
@@ -811,3 +816,103 @@ under the §6.3 plain-text rules — the same containment as the approval card, 
 | §11.3 | C5 `ChatFailure.kind` | All seven kinds have shippable copy |
 | §12 | `DESIGN_SYSTEM.md` §7 | Accessibility floor unchanged, extended for tables/decisions |
 | Amendment A (round 2) | `DESIGN_SYSTEM.md` §0 rule; owner Gate-2 verdict | Amendment section replaced wholesale (it was PROPOSED, unapproved); nothing above the amendment line changed; every pair ships with a computed contrast ratio |
+| §16 (round 4) | Owner verdict 2026-09-11; C4 §2/§4; §13 shapes | Dashboard composes the five views' own queries at summary tier; approval rows keep the C4 §4 quotation pattern; no new endpoint, token or moving element introduced |
+
+---
+
+## 16. View — Dashboard (`/`, the landing) · mockup `00-dashboard.html` — ROUND 4
+
+**Owner's request (verbatim intent, 2026-09-11):** *"Can we have all these main components in a
+dashboard? So say for approvals, there's a section — once I click the box it expands or redirects
+to the page. I wanna see all the info in one place too."* This overrides round-1 Decision 2 (which
+rejected a composite Home) and answers Q6: **the landing view is a unified Dashboard.** Recorded as
+Decision 2 (amended) and Decision 17 in `V2_DESIGN_DECISIONS.md`.
+
+### 16.1 The rule that contains the maintenance cost
+
+The Dashboard is **not a sixth data model**. Each section is the *summary tier* of an existing
+view: the same components (`StatusPill`, `UntrustedText` compact form, `ExpiryMeter` compact,
+the relative+absolute timestamp pattern), the same queries, the same copy voice. A change to a
+view's row rendering changes its dashboard section for free. The Dashboard may never grow a field
+that its full view does not have.
+
+### 16.2 Layout — summary tier above the fold, detail tier by expansion
+
+Top to bottom (desktop; the two-column grid stacks under 1000px):
+
+1. **H1 + chat quick-entry** — a full-width affordance styled like the composer, honestly an
+   `<a>` to `/chat` (`aria-label` says so); the real composer lives on the Chat view and receives
+   focus on arrival (`?focus=composer`). No message is ever sent from the Dashboard.
+2. **Hero — Pending approvals** (`<details open>`, the view's one corner-ticked primary panel).
+   Summary row: the pending **count** as the view's single gold key figure (it carries the
+   §A.4 key-figure glow), next-expiry and oldest-wait at rest, `Open full view →` to `/approvals`.
+   Body: the **top 3 pending rows by urgency** (soonest `expires_at` pressure first, then age):
+   operation identifier (trusted, links to `/approvals/{id}`), the `summary` in the **compact
+   quotation pattern** (same `UntrustedText` grammar as §5.2 col 3 — mono, barred, single-line
+   ellipsis, plain text node only), and the expiry countdown (`danger` under 1h). **No decision
+   controls here** — Decision 4 stands; the dashboard shows, the card decides.
+3. **Secondary grid, 2×2 `<details>` boxes**, each summary row readable without expanding
+   (Amendment A §A.6 — the at-rest figures ARE the summary tier):
+   - **Agent activity** — at rest: `{n} running · {p} waiting on you · {f} finished today`, plus
+     the **live pulse dot** when `n ≥ 1` (see 16.4). Expanded: one row per running task (phase +
+     elapsed) and per parked task. Source: `GET /api/v1/activity` (§13.2).
+   - **Tasks** — at rest: `{n} in flight · {x} failed today · {y} done today`. Expanded: the 3–5
+     most recent/in-flight rows with `StatusPill`s, objectives in the untrusted compact form.
+     Source: `GET /api/v1/tasks?limit=5` (§13.1).
+   - **Projects** — at rest: `{n} tracked · last activity {time} ({project})`. Expanded: each
+     tracked project with last-activity time and its open-items count. Source:
+     `GET /api/v1/projects` + Q2's linkage for the counts.
+   - **Recent audit** — at rest: `last turn {time} · {failures} failed · {parked} parked today`.
+     Expanded: the last 3–4 turns, one line each — `request_id` link, conversation label, outcome
+     pill, absolute time. Source: `GET /api/v1/audit?limit=4` (§13.3).
+4. Everything in 1–3 fits above the fold at 1280×800 with the hero expanded; anything deeper is
+   reached by expanding a box or leaving for the full view.
+
+**Element → endpoint mapping (and the Q1 consequence).** Approvals: C4's
+`GET /api/v1/approvals?status=pending` — the same §1.5 poll, no extra request. Activity, tasks and
+audit: the §13.2/§13.1/§13.3 **proposed** shapes. **The Dashboard makes Q1 more pressing**: the
+missing endpoints previously blocked three of six views; they now also degrade the landing view
+itself. If Q1 resolves as "cut for v1", the Dashboard ships with the hero, projects and chat entry
+only, and the three dark sections render an honest *"coming with the {tasks} API"* placeholder —
+never an empty box pretending to be a quiet system.
+
+### 16.3 Expand or navigate — both, honestly, zero JS
+
+Each section is a native `<details>`; its `<summary>` is the "box" the owner clicks to expand
+in place. The explicit `Open full view →` is a real `<a>` inside the summary row — activating a
+link inside a `<summary>` follows the link without toggling, so both behaviours coexist without
+script. Defaults per render: **hero open, all other boxes closed** (no persistence — the server
+default is the design). Expansion state is presentation, not data: expanding never fetches; the
+summary-tier payloads already include the detail-tier rows (they are ≤5 rows each by design).
+
+### 16.4 Motion and gold budget (Amendment A round 3 — inherited, not extended)
+
+The Dashboard adds **no new moving elements**. Its one animated element is the existing live pulse
+(the activity section's dot, the `WorkIndicator` family on the single 2600ms system clock —
+Decision 16), rendered **only while ≥1 task is running** and frozen to a static ring when the §1.5
+poll goes stale (a glow may only claim liveness that is real) and under `prefers-reduced-motion`.
+Its one gold key figure is the pending-approvals count, carrying the §A.4 key-figure glow. Panel
+sheen applies to the section boxes; untrusted blocks stay flat as everywhere.
+
+### 16.5 States
+
+| State | Content |
+|---|---|
+| Loading (first paint) | Each section box skeletons at its own summary height (hero: summary + 3 row skeletons, since it ships open); `aria-busy` per region; no layout shift |
+| **All-quiet** (0 pending, 0 running) | The hero does **not** render a gold zero — a zero is not a key figure. It collapses to a single calm line: **"Nothing needs your approval."** + *"SUNIL parks a task here whenever a plan reaches an action it can't take on its own."* + `View decided approvals →`; the activity dot is a static muted ring with "SUNIL is idle."; the chat quick-entry becomes the visually leading affordance. A quiet dashboard should feel like good news, not like a broken page |
+| Error (a section's fetch fails) | That section's box renders its `ErrorPanel` inline with `Try again`; the other sections keep working — one failed endpoint never blanks the landing view |
+| Stale (§1.5) | The standard banner + freshness chip; hero rows dim to 85%; the live pulse freezes. Nothing to disable — the Dashboard hosts no decision controls |
+| Populated | As 16.2 |
+
+### 16.6 Accessibility
+
+- `<details>/<summary>` gives expansion its keyboard semantics **for free**: `<summary>` is
+  natively focusable, Enter/Space toggles, and the browser reports the expanded/collapsed state to
+  assistive technology — no ARIA to hand-roll or get wrong (same reasoning as the §10.2 trace rows).
+- Each summary row is one focus stop plus its `Open full view →` link (a second, real `<a>`);
+  the hero's approval rows are one link each, carrying the full row context in `aria-label`
+  exactly as §5.2 specifies for the queue.
+- Focus on landing goes to the `<h1>` per §1.3; the section heading levels are `h1` (view) →
+  `h2` (each section) with no skips.
+- The live pulse dot carries `role="img"` + `aria-label="Live — agents are running now"`; liveness
+  is also stated in the at-rest text (`2 running`), so the signal is never colour/motion-only.

@@ -15,6 +15,11 @@ so it got a cool effects. remove yellow keep black and gold colors."* Decisions 
 **amended** (de-yellowed ramp + comfort ceiling; expanded atmospherics), and Decision 16 is added
 (the micro-animation grammar the "cool effects" ruling required). Everything else stands.
 
+**Round 4 (owner addition, 2026-09-11):** the owner reviewed round 3 and asked for one thing —
+a unified Dashboard as the landing view. Decision 2 is **amended** (owner override of the
+"no composite Home" ruling; answers Q6), and Decision 17 is added (the expand-vs-navigate dual
+affordance the request named). Tokens, effects and everything else stand unchanged.
+
 ---
 
 ## 1. A labelled icon rail, 88px, always showing text — not a hover-label rail
@@ -33,20 +38,32 @@ win is small because the rail is peripheral by definition.
 
 ---
 
-## 2. Approvals-first landing when anything is pending; Chat otherwise
+## 2. The landing is a unified Dashboard — AMENDED round 4: OWNER OVERRIDE of this decision's own rejection
 
-**Decision.** `/` → `/approvals` when `pending > 0`, else `/chat`.
+**Decision (as amended).** `/` **is** a composite Dashboard (spec §16, mockup `00-dashboard.html`):
+every main component at summary tier in one view — pending approvals as the corner-ticked hero
+(count + top rows + countdowns), agent activity, tasks, projects, recent audit, and a chat
+quick-entry. First item in the rail. The round-1 conditional redirect (`/approvals` when pending,
+else `/chat`) is retired.
 
-**Why.** In V2 the owner is the only approver and a parked task is a **stopped** task — nothing
-downstream of it moves until a human decides. Opening on the queue turns the owner's attention to
-the only thing blocked on them. When nothing is blocked, the queue is an empty page and the
-conversation is the product, so it lands there instead.
+**Why (round-4 driver, owner verbatim):** *"Can we have all these main components in a dashboard?
+… I wanna see all the info in one place too."* This is exactly the composite Home this decision
+originally rejected — the owner has overruled that rejection, and answered Q6 with it. The original
+reasoning's *intent* survives intact: the thing blocked on the owner is still the first thing seen,
+because pending approvals are the Dashboard's hero and only gold figure.
 
-**Rejected.** *(a) Always land on Chat* — friendly, but it buries the one thing that is waiting on a
-human behind a nav click and a badge, and badges get ignored. *(b) A composite "Home" dashboard*
-(the `DASHBOARD_DIRECTION.md` §3 sketch) — a summary of five views is a sixth view to maintain and,
-in a single-user system with at most a handful of live items, mostly renders whitespace. If the
-owner wants Home later it can be added without disturbing anything here.
+**How the feared maintenance cost is contained.** Round 1 rejected Home as "a sixth view to
+maintain [that] mostly renders whitespace". The spec closes both prongs: (a) the Dashboard is
+**composed from the five views' own components and queries at summary tier** — same `StatusPill`,
+same compact `UntrustedText`, same §13 endpoints with a `limit` — and is forbidden (spec §16.1)
+from growing any field its full view lacks, so there is no bespoke sixth data model to drift;
+(b) the whitespace concern is answered by Amendment A §A.6's at-rest-figures rule — even collapsed,
+every box states its numbers, and the all-quiet state is designed rather than blank.
+
+**Rejected.** *(a) Always land on Chat* — still rejected, same reason as round 1. *(b) Keeping the
+conditional redirect and adding Dashboard as a non-landing seventh view* — defies the request's
+plain meaning ("add that dashboard too… see all the info in one place" is a description of the
+place you arrive), and a dashboard nobody lands on is a dashboard nobody maintains.
 
 ---
 
@@ -345,4 +362,33 @@ component property. *(b) Entrance animations on rows/cards* (stagger-in on poll 
 dashboard re-renders from a 10-second poll; animating arrival would make routine data refresh look
 like events, twelve times a minute. *(c) An animated topbar poll-countdown ring* — a permanently
 moving element in the periphery is exactly the fatigue the round-3 verdict complains about.
+
+---
+
+## 17. Dashboard sections expand in place with native `<details>` AND carry an explicit "Open full view →" link (NEW in round 4)
+
+**Decision.** Every Dashboard section is a native `<details>` box: clicking the box (its
+`<summary>`) expands it in place to the section's fuller list; a real `<a>` labelled
+`Open full view →` sits in the same summary row and navigates to the section's page. Both
+affordances always present, no JavaScript. Per render, the approvals hero ships `open` and every
+other box ships closed; expansion state is never persisted and never fetches — the summary payload
+already contains the ≤5 detail rows.
+
+**Why.** The owner named both behaviours in one sentence — *"once I click the box it expands or
+redirects to the page"* — and they are genuinely different intents (glance deeper vs. go work
+there), so the design gives each its own control rather than guessing which the click meant.
+Native `<details>/<summary>` makes the expansion honest in a static mockup and cheap in the build:
+keyboard operability and the expanded/collapsed announcement come from the browser, the same
+pattern the audit browser's stage rows already use (one grammar for "this opens in place" across
+the product). A link inside a `<summary>` follows the link without toggling the box, so the dual
+affordance needs no event plumbing. Shipping the hero pre-expanded means the at-rest landing frame
+itself teaches the mechanism — the owner sees one box open and four closed and infers the rest.
+
+**Rejected.** *(a) Hover previews* (peek a section's rows on hover) — nothing readable may live
+behind hover (Amendment A §A.6, Decision 14); it does not exist on touch and is invisible to
+keyboard users. *(b) Modal drill-ins* (the box opens a dialog over the dashboard) — a modal is a
+dead end that hides the other sections, duplicates the full view's layout at a second size, and
+breaks deep-linking; the full views already exist and are one honest link away. *(c) Making the
+whole box a navigation card and dropping in-place expansion* — simpler, but it discards half of
+what the owner asked for by name.
 

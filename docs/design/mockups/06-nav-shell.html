@@ -121,6 +121,7 @@ footer{padding:8px 24px 40px;color:var(--muted);font-size:.6875rem;max-width:100
   <nav class="rail" aria-label="Primary">
     <div class="brand">S</div>
     <div class="nav">
+      <a href="00-dashboard.html"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="lbl">Home</span></a>
       <a href="06-nav-shell.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">Chat</span></a>
       <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">Approve</span><span class="cnt" aria-hidden="true">3</span><span class="sr">3 pending</span></a>
       <a href="03-agent-activity.html"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="lbl">Activity</span></a>
@@ -229,6 +230,7 @@ footer{padding:8px 24px 40px;color:var(--muted);font-size:.6875rem;max-width:100
         <div>
           <p class="micro muted">1 · Rail expanded (232px) — same items, labels beside the icons, persisted preference</p>
           <nav class="railx" aria-label="Primary (expanded illustration)">
+            <a href="00-dashboard.html"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
             <a href="06-nav-shell.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat</a>
             <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg>Approvals<span class="b">3</span></a>
             <a href="03-agent-activity.html"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Activity</a>
@@ -239,16 +241,16 @@ footer{padding:8px 24px 40px;color:var(--muted);font-size:.6875rem;max-width:100
             <a href="#"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M4 12h2M18 12h2M12 4v2M12 18v2"/></svg>Settings</a>
             <a href="#" style="color:var(--danger)"><svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Sign out</a>
           </nav>
-          <p class="small muted" style="margin-top:8px">Sign out is separated by a gap from the six destinations — a destructive action never sits flush against navigation.</p>
+          <p class="small muted" style="margin-top:8px">Sign out is separated by a gap from the seven destinations — a destructive action never sits flush against navigation. Dashboard is first: it is the landing view (round 4, owner override of Decision 2).</p>
         </div>
 
         <div>
-          <p class="micro muted">2 · Under 768px — bottom bar, five items max, Projects/Audit/Settings behind "More"</p>
+          <p class="micro muted">2 · Under 768px — bottom bar, five items max, Tasks/Projects/Audit/Settings behind "More" (round 4: Home takes the first slot)</p>
           <div class="bottombar">
+            <a href="00-dashboard.html"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Home</a>
             <a href="06-nav-shell.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat</a>
             <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/></svg>Approve<span class="cnt" style="position:absolute;top:4px;right:14px" aria-hidden="true">3</span></a>
             <a href="03-agent-activity.html"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Activity</a>
-            <a href="04-tasks-projects.html"><svg class="icon" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg>Tasks</a>
             <a href="#"><svg class="icon" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>More</a>
           </div>
           <p class="small muted" style="margin-top:8px">Deciding an approval from a phone is a v1 requirement (spec Q8); the other views are best-effort on mobile.</p>
@@ -279,9 +281,9 @@ footer{padding:8px 24px 40px;color:var(--muted);font-size:.6875rem;max-width:100
         <div>
           <p class="micro muted">5 · Keyboard model</p>
           <div class="panel small">
-            <p style="margin:0 0 8px"><b>Tab order:</b> skip link &rarr; rail items 1–6 &rarr; Settings &rarr; Sign out &rarr; topbar controls &rarr; view heading &rarr; toolbar &rarr; content &rarr; pagination.</p>
+            <p style="margin:0 0 8px"><b>Tab order:</b> skip link &rarr; rail items 1–7 &rarr; Settings &rarr; Sign out &rarr; topbar controls &rarr; view heading &rarr; toolbar &rarr; content &rarr; pagination.</p>
             <p style="margin:0 0 8px"><b>Route change:</b> focus moves to the new view's heading and the view name is announced politely — a keyboard user is never left behind in the rail.</p>
-            <p style="margin:0"><b>Shortcuts (<kbd>?</kbd> opens the sheet):</b> <kbd>g a</kbd> approvals · <kbd>g c</kbd> chat · <kbd>g t</kbd> tasks · <kbd>g u</kbd> audit · <kbd>/</kbd> search · <kbd>r</kbd> refresh · <kbd>A</kbd>/<kbd>R</kbd> arm approve/refuse on an approval card · <kbd>Esc</kbd> cancels. All disabled while focus is in a text field.</p>
+            <p style="margin:0"><b>Shortcuts (<kbd>?</kbd> opens the sheet):</b> <kbd>g d</kbd> dashboard · <kbd>g a</kbd> approvals · <kbd>g c</kbd> chat · <kbd>g t</kbd> tasks · <kbd>g u</kbd> audit · <kbd>/</kbd> search · <kbd>r</kbd> refresh · <kbd>A</kbd>/<kbd>R</kbd> arm approve/refuse on an approval card · <kbd>Esc</kbd> cancels. All disabled while focus is in a text field.</p>
           </div>
         </div>
 
@@ -289,7 +291,8 @@ footer{padding:8px 24px 40px;color:var(--muted);font-size:.6875rem;max-width:100
     </section>
 
     <footer>
-      Mockup 06 of 6 · the frame that unites chat and the five ops views, in the committed Obsidian &amp; Gold dark
+      Mockup 06 of 7 · the frame that unites chat and the five ops views (round 4: plus the Dashboard landing,
+      mockup 00, first in the rail), in the committed Obsidian &amp; Gold dark
       theme. Chat itself is the approved M1 spec, re-hosted: the M1 TopBar is replaced by this rail + topbar, and one
       new terminal state is added — the parked turn (C5 <code>outcome=parked</code>, ADR-031).
     </footer>

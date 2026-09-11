@@ -46,6 +46,7 @@ No app code. No other doc touched.
 | `docs/design/V2_DASHBOARD_SPEC.md` | The developer-ready spec: IA, nav, per-view layout + states + field maps, accessibility, required-but-missing endpoints, 9 open questions, traceability |
 | `docs/design/V2_DESIGN_DECISIONS.md` | 11 numbered decisions, each with rationale + rejected alternative |
 | `docs/design/DESIGN_SYSTEM.md` | **Amendment A appended** (light theme map with computed ratios, status/untrusted/table tokens, ops density scale, tabular figures). Nothing above the amendment line changed |
+| `docs/design/mockups/00-dashboard.html` | **Round 4** — the unified Dashboard landing view: approvals hero (open `<details>`), activity/tasks/projects/audit summary boxes, chat quick-entry, all-quiet/loading/stale states |
 | `docs/design/mockups/01-approvals-queue.html` | Queue + 4 state variants |
 | `docs/design/mockups/02-approval-card.html` | The decision surface + 8 flow states, with a deliberately hostile example `summary` |
 | `docs/design/mockups/03-agent-activity.html` | Now / waiting on you / recently finished + states |
@@ -149,6 +150,41 @@ line above).
   rejected: bespoke timings, entrance animations on poll refresh, countdown ring).
 - Handed to the Delivery Manager to commit and route the round-3 package to the owner.
 
+### Round 4 — owner-requested unified Dashboard (2026-09-11)
+
+- **Owner's verdict on the round-3 package (verbatim intent):** *"Can we have all these main
+  components in a dashboard? So say for approvals, there's a section — once I click the box it
+  expands or redirects to the page. I wanna see all the info in one place too. Add that dashboard
+  too."* Read as: an owner **override** of round-1 Decision 2 (which rejected a composite Home)
+  and the **answer to Q6** — the landing view is a unified Dashboard.
+- [2026-09-11 | uiux_designer] **New mockup `00-dashboard.html`** in the round-3 token system,
+  zero token changes (Amendment A untouched), zero JS. Layout: chat quick-entry (an honest link to
+  /chat), the pending-approvals hero as an `open` `<details>` with corner ticks — count as the
+  view's one gold key figure (glow per §A.4) + the top 3 pending rows with expiry countdowns and
+  the compact C4 §4 quotation pattern on every summary — then a 2×2 grid of collapsed `<details>`
+  boxes (agent activity, tasks, projects, recent audit), each with at-rest figures readable
+  without expanding and an `Open full view →` link. Motion budget inherited, not extended: the
+  single moving element is the existing live pulse (activity dot, 2600ms clock); no decision
+  controls anywhere on the view. Same Codely data world as mockups 01–06 (the stripe.refund park,
+  PR #128, the 48m n8n expiry, PDA/EasyClean/925/SUNIL projects, the 01JQ… audit turns).
+- [2026-09-11 | uiux_designer] **`06-nav-shell.html` updated:** Dashboard ("Home") is the first
+  rail item at all three widths — compact rail, expanded rail (232px), and the mobile bottom bar
+  (Home/Chat/Approve/Activity/More; Tasks moves into More). Keyboard sheet gains `g d`.
+- [2026-09-11 | uiux_designer] **`V2_DASHBOARD_SPEC.md`:** new §16 (Dashboard view — the
+  summary-tier/detail-tier rule, layout, element→endpoint mapping, expand-vs-navigate mechanics,
+  motion/gold budget inheritance, five states incl. all-quiet, accessibility noting that
+  `<details>/<summary>` keyboard semantics come free); §1.2 nav table + landing route replaced;
+  §1.4 bottom bar; §12.1 shortcuts; Q6 marked **ANSWERED (dashboard-first, owner 2026-09-11)**;
+  §15 traceability row. Flagged in §16.2: **the Dashboard makes Q1 more pressing** — the missing
+  tasks/activity/audit endpoints now degrade the landing view itself, and the spec defines an
+  honest placeholder if Q1 resolves as "cut".
+- [2026-09-11 | uiux_designer] **`V2_DESIGN_DECISIONS.md`:** D2 amended (owner override; the
+  originally-feared maintenance cost is contained because the Dashboard composes the same
+  components/queries as the full pages at summary tier — no bespoke sixth data model, spec §16.1);
+  **D17 added** (dual affordance: native `<details>` expansion + explicit link — rejected: hover
+  previews, modal drill-ins, navigation-only cards).
+- Handed to the Delivery Manager to commit and route the round-4 package to the owner.
+
 ## Open questions for the owner's design review
 
 Full table with defaults in `V2_DASHBOARD_SPEC.md` §14. Short form:
@@ -162,7 +198,9 @@ Full table with defaults in `V2_DASHBOARD_SPEC.md` §14. Short form:
    label change look identical in the queue until opened.
 5. **Q5 (Security).** Is text-node rendering + no linkification + `unicode-bidi: plaintext` the
    accepted containment set, or do you also want a character policy at park time?
-6. **Q6 (owner).** Land on Approvals when something is pending (my default), or always on Chat?
+6. **Q6 (owner).** ~~Land on Approvals when something is pending (my default), or always on Chat?~~
+   **ANSWERED (round 4, owner 2026-09-11): the landing is a unified Dashboard** — spec §16,
+   mockup `00-dashboard.html`, Decision 2 amended.
 7. **Q7 (owner).** ~~Light theme at all — or is SUNIL dark-only as a brand position?~~
    **ANSWERED (Gate-2 round 2): dark-only is the brand position.** Light map deleted; Amendment A
    is now the committed Obsidian & Gold theme.
