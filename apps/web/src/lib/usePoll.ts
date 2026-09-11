@@ -29,6 +29,8 @@ export interface PollState<T> {
   error: unknown;
   /** ms since the last successful poll, or null before the first success. */
   ageMs: number | null;
+  /** Epoch ms of the last successful poll — the "showing data from" stamp. */
+  lastSuccessAt: number | null;
   stale: boolean;
   refresh: () => void;
 }
@@ -45,9 +47,15 @@ export function usePoll<T>(
   const [now, setNow] = useState<number>(() => Date.now());
 
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
   const inFlight = useRef(false);
   const mounted = useRef(true);
+
+  // The fetcher is an inline closure at every call site, so it is kept in a
+  // ref and refreshed after render (never during it) — the poll interval must
+  // not be torn down and rebuilt ten times a second because of it.
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
 
   const run = useCallback(async () => {
     if (inFlight.current) return;
@@ -109,6 +117,7 @@ export function usePoll<T>(
     loading: data === null && error === null,
     error,
     ageMs,
+    lastSuccessAt,
     stale: ageMs !== null && ageMs > STALE_AFTER_MS,
     refresh: () => void run(),
   };
@@ -135,7 +144,10 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
 
   const reload = useCallback(() => {
     let cancelled = false;
@@ -159,7 +171,10 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
     };
   }, []);
 
-  useEffect(reload, [reload, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Fetching on mount IS an external-system sync, and `loading` has to flip
+  // when the request starts — the cascading-render warning does not apply.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(reload, [reload, ...deps]);
 
   return { data, error, loading, setData, reload };
 }

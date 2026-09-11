@@ -53,7 +53,7 @@ export default function DashboardPage() {
 
 function DashboardView() {
   const now = useTick();
-  const { pending, pendingCount, stale, loading, error, ageMs, refresh } = useShellData();
+  const { pending, pendingCount, stale, loading, error, lastSuccessAt, refresh } = useShellData();
 
   const activity = useAsync(() => getActivity());
   const tasks = useAsync(() => listTasks({ limit: 5 }));
@@ -72,7 +72,7 @@ function DashboardView() {
   const finishedToday = activity.data?.recent.length ?? 0;
 
   const lastGoodAt =
-    ageMs !== null ? clockTime(new Date(Date.now() - ageMs).toISOString()) : undefined;
+    lastSuccessAt !== null ? clockTime(new Date(lastSuccessAt).toISOString()) : undefined;
 
   return (
     <>

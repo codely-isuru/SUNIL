@@ -84,7 +84,7 @@ function ApprovalsQueue() {
   )[0];
   const decided = rows.filter((r) => r.decided_at).length;
   const lastGoodAt =
-    poll.ageMs !== null ? clockTime(new Date(Date.now() - poll.ageMs).toISOString()) : undefined;
+    poll.lastSuccessAt !== null ? clockTime(new Date(poll.lastSuccessAt).toISOString()) : undefined;
 
   return (
     <>

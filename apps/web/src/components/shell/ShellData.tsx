@@ -16,6 +16,7 @@ export interface ShellDataValue {
   pending: Approval[];
   pendingCount: number;
   ageMs: number | null;
+  lastSuccessAt: number | null;
   stale: boolean;
   loading: boolean;
   error: unknown;
@@ -32,6 +33,7 @@ export function ShellDataProvider({ children }: { children: ReactNode }) {
     pending,
     pendingCount: pending.length,
     ageMs: poll.ageMs,
+    lastSuccessAt: poll.lastSuccessAt,
     stale: poll.stale,
     loading: poll.loading,
     error: poll.error,

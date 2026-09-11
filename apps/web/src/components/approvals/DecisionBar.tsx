@@ -55,10 +55,15 @@ export function DecisionBar({ canDecide, blockedReason, onSubmit, onResolved }: 
   const [state, dispatch] = useReducer(decisionReducer, initialDecisionState);
   const [reason, setReason] = useState("");
   const confirmRef = useRef<HTMLButtonElement>(null);
+  // The callbacks are inline closures at the call site; they are read at
+  // request time from refs refreshed after render (never during it), so the
+  // commit effect below does not re-fire when the parent re-renders.
   const submitRef = useRef(onSubmit);
-  submitRef.current = onSubmit;
   const resolvedRef = useRef(onResolved);
-  resolvedRef.current = onResolved;
+  useEffect(() => {
+    submitRef.current = onSubmit;
+    resolvedRef.current = onResolved;
+  }, [onSubmit, onResolved]);
 
   const send = useCallback(
     async (kind: DecisionKind, note: string) => {
@@ -82,15 +87,18 @@ export function DecisionBar({ canDecide, blockedReason, onSubmit, onResolved }: 
   // is issued in exactly one place no matter which control (or key) armed it.
   const submittingKind = state.phase === "submitting" ? state.kind : null;
   const reasonRef = useRef(reason);
-  reasonRef.current = reason;
+  useEffect(() => {
+    reasonRef.current = reason;
+  }, [reason]);
   useEffect(() => {
     if (submittingKind) void send(submittingKind, reasonRef.current);
   }, [submittingKind, send]);
 
   // Focus follows the arming, so Enter/Space commits with no extra handler.
+  const armedPhaseKind = state.phase === "armed" ? state.kind : null;
   useEffect(() => {
-    if (state.phase === "armed") confirmRef.current?.focus();
-  }, [state.phase, state.phase === "armed" ? state.kind : null]);
+    if (armedPhaseKind) confirmRef.current?.focus();
+  }, [armedPhaseKind]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
