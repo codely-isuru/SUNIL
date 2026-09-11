@@ -10,12 +10,35 @@ description = "SUNIL V2 API — Phase 0 frozen contract interfaces (C1–C4) and
 # The Phase 0 toolchain and CI both run 3.13 (see .github/workflows/tests.yml);
 # the floor is left at the contract's value so no stream is blocked by QA.
 requires-python = ">=3.12"
-# Runtime dependencies are ONLY what the frozen contracts force:
-# C1 §2 ToolOperation.params_model / C2 §2 / C3 §2 / C4 §4 models are Pydantic v2
-# BaseModels. Nothing speculative (no FastAPI, no httpx, no SQLAlchemy) —
-# those arrive with the Phase 2 implementations that need them.
+# Runtime dependencies. Phase 0 carried only pydantic (the frozen contract
+# models); Phase 2's spine adds exactly what ARCHITECTURE_V2 §1/§5 name:
+#   fastapi/uvicorn      — the app and its dev server (§1)
+#   pydantic-settings    — settings.py, the single env seam (§2)
+#   sqlalchemy[asyncio]  — ORM + async engine (§1, ADR-002)
+#   psycopg[binary]      — the ONE driver serving both the async engine and
+#                          Alembic's sync path (§5's driver ruling: `+psycopg`)
+#   alembic              — migrations (§1)
+#   structlog            — one log format; sink 1 of the trace spine
+#   itsdangerous         — required by Starlette's SessionMiddleware (ADR-007)
+#   pyyaml               — config/*.yaml registry loaders (ADR-016)
+#   aiosqlite            — NOT a production backend: ADR-001's "one portable
+#                          schema" is what lets unit tests run with no daemon
+#                          (§1: "SQLite remains usable for unit tests via the
+#                          same models"). Postgres is the only deployed target.
+# httpx stays a DEV dependency: the spine makes no outbound call of its own, so
+# it is here only for fastapi's TestClient.
 dependencies = [
   "pydantic>=2.9,<3",
+  "pydantic-settings>=2.5,<3",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "sqlalchemy[asyncio]>=2.0.36,<3",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.14",
+  "structlog>=24.4",
+  "itsdangerous>=2.2",
+  "pyyaml>=6.0",
+  "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +46,7 @@ dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
   "pyyaml>=6.0",
+  "httpx>=0.27",
 ]
 
 [tool.setuptools.packages.find]
