@@ -1,15 +1,20 @@
 """C1 — Tool Adapter interface (frozen contract transcription).
 
-Source of truth: ``docs/contracts/C1-tool-adapter.md`` **v1.1.0** (FROZEN,
-Phase 0 2026-09-10) §2 "Interface definition", §2.2 "Injected hooks (the seams
-streams fake)" and §4 "Error semantics". Python ≥ 3.12, Pydantic v2 (C1 §2).
+Source of truth: ``docs/contracts/C1-tool-adapter.md`` **v1.1.1** (FROZEN,
+Phase 0 2026-09-10; ParkContext-guard patch 2026-09-11) §2 "Interface
+definition", §2.2 "Injected hooks (the seams streams fake)" and §4 "Error
+semantics". Python ≥ 3.12, Pydantic v2 (C1 §2).
 
 v1.1.0 changed two things in this module (backend fakes-review F3/F4):
 ``ParkContext`` (§2.2) plus ``execute``'s keyword-only ``park_context``, and
 ``ToolResultMeta.adapter_kind`` becoming ``AdapterKind | None``.
+v1.1.1 changed one: ``ParkContext.__post_init__`` (§2.2), the normative guard
+that makes an empty or oversize park context unconstructible.
 
 Zero business logic lives here: protocols, dataclasses, enums and exceptions
-only. The Tool Manager pipeline of §2.1 — the single execution chokepoint — is
+only — the one ``__post_init__`` below is contract-declared validation (C1
+§2.2 v1.1.1), the same class as C4 §4's ``ParkRequest`` ``Field`` constraints:
+interface, not behaviour. The Tool Manager pipeline of §2.1 — the single execution chokepoint — is
 ``core/tool_framework/manager.py`` (ARCHITECTURE_V2 §2) and is written by the
 implementing engineer, not QA. ``ToolManagerProtocol`` below carries §2.1's
 frozen call shape so the implementation can be checked against it.
@@ -152,13 +157,30 @@ class ParkContext:
     Both values MUST be non-empty. An empty ``continuation`` is a never-resumable
     approval — the exact failure class this type exists to make inexpressible
     (C4 §1 restart safety), and the one the backend probe demonstrated by parking
-    ``continuation={}``. The bound itself is enforced by ``ParkRequest``'s
-    ``Field(min_length=1)`` (C4 §4 v1.1.0), so it is checked once, at the seam
-    that persists it, rather than trusted here.
+    ``continuation={}``.
+
+    Self-guarding since v1.1.1: ``__post_init__`` below enforces the MUST, so
+    the invalid value is unconstructible rather than merely forbidden. The
+    bounds mirror C4 §4's ``ParkRequest`` ``Field(min_length=1[,
+    max_length=500])`` with one deliberate caller-side tightening — C4's
+    ``min_length=1`` admits a whitespace-only summary, and a blank approval
+    card is the same never-actionable failure class — so anything
+    constructible here is valid there. C4's model constraints remain the
+    second, service-side line of defence (they also cover a hand-rolled
+    ``ParkRequest`` that never came through a ``ParkContext``).
     """
 
     continuation: dict  # opaque persisted plan-cursor state (ADR-031); len >= 1
-    summary: str  # built by SUNIL code, never LLM output (C4 §4); 1..500 chars
+    summary: str  # built by SUNIL code, never LLM output (C4 §4); 1..500 chars,
+                  # never whitespace-only
+
+    def __post_init__(self) -> None:  # normative (v1.1.1) — the class is its own guard
+        if len(self.continuation) == 0:
+            raise ValueError("ParkContext.continuation must be non-empty")
+        if not self.summary.strip():
+            raise ValueError("ParkContext.summary must be non-empty")
+        if len(self.summary) > 500:
+            raise ValueError("ParkContext.summary must be at most 500 characters")
 
 
 @dataclass(frozen=True)

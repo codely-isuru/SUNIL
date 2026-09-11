@@ -1,7 +1,7 @@
 """C1 — Tool Adapter contract suite.
 
-Source of truth: ``docs/contracts/C1-tool-adapter.md`` **v1.1.0** (FROZEN
-2026-09-10).
+Source of truth: ``docs/contracts/C1-tool-adapter.md`` **v1.1.1** (FROZEN
+2026-09-10; ParkContext-guard patch 2026-09-11).
 
 Two halves, deliberately separated:
 
@@ -711,6 +711,59 @@ async def test_c1_8_explicit_none_park_context_is_the_same_violation(
         )
 
     assert audit.attempts == []
+
+
+# ========================================================================== #
+# Construction-level: C1 contract test 9 (v1.1.1) — ParkContext is its own guard
+# ========================================================================== #
+def test_c1_9_empty_park_context_is_unconstructible(park_ctx: ParkContext) -> None:
+    """C1 contract test 9 (v1.1.1, §2.2) — an invalid ``ParkContext`` is
+    **unconstructible**, not merely forbidden: ``ValueError`` on an empty
+    ``continuation``, an empty or whitespace-only ``summary``, or a ``summary``
+    over 500 characters.
+
+    Why this is a construction probe and not a pipeline one: v1.1.0 pinned only
+    the MISSING case (test 8, ``TypeError`` before step 1), so an
+    empty-but-present ``ParkContext`` satisfied §2.1's non-None precondition,
+    reached step 3 and took an unhandled ``pydantic.ValidationError`` out of
+    ``approvals.park(...)`` — a raise from ``execute`` with no kind in §4's closed
+    error set, an unfinalised attempt row behind it, and a never-resumable
+    approval if it had persisted (C4 §1 restart safety). v1.1.1 moves the
+    rejection to the constructor, in the orchestrator, where the plan cursor
+    actually lives. So: no manager, no fakes, no import guard — this runs green
+    the moment the guard lands and stays green through Phase 2.
+
+    Each probe pins the SPECIFIC guard that must fire (``match=``): a bare
+    ``pytest.raises(ValueError)`` would pass on any of the three, so a
+    transcription that checked ``continuation`` twice and ``summary`` never
+    would look correct.
+    """
+    valid_cont = {"plan_id": "plan-1", "cursor": "step_1"}
+    valid_summary = "fake_tool.write_item: key=demo"
+
+    with pytest.raises(ValueError, match="continuation must be non-empty"):
+        ParkContext(continuation={}, summary=valid_summary)
+
+    with pytest.raises(ValueError, match="summary must be non-empty"):
+        ParkContext(continuation=valid_cont, summary="")
+
+    # C4 §4's Field(min_length=1) admits "   "; the caller-side tightening does
+    # not — a blank approval card is the same never-actionable failure class.
+    with pytest.raises(ValueError, match="summary must be non-empty"):
+        ParkContext(continuation=valid_cont, summary="   ")
+
+    with pytest.raises(ValueError, match="summary must be at most 500 characters"):
+        ParkContext(continuation=valid_cont, summary="x" * 501)
+
+    # Both legal constructions. 500 is the boundary C4 §4's max_length=500
+    # mirrors: inclusive, so anything constructible here is valid there.
+    boundary = ParkContext(continuation=valid_cont, summary="x" * 500)
+    assert len(boundary.summary) == 500
+
+    # §6.4's own fixture still constructs — the PATCH classification's claim that
+    # no conforming caller can observe the change, asserted rather than assumed.
+    assert park_ctx.continuation == valid_cont
+    assert park_ctx.summary == valid_summary
 
 
 # ========================================================================== #
