@@ -43,6 +43,7 @@ that supersedes it, or — where the decision survives and only part of it moves
 | [033](ADR-033-gateway-egress-and-named-host-rule.md) | **Egress URLs:** ADR-017's canonical-or-loopback rule extended with a closed code-level set of named Compose hosts (`litellm`, `n8n`); population-scoped gateway↔direct kill switch invisible to router policy. Extends ADR-017 without amending it | Proposed (V2 Phase 0, 2026-09-10) |
 | [034](ADR-034-mcp-permission-mapping-and-trust.md) | **MCP mapping:** server = tool, MCP tool = operation; SUNIL config authoritative — server self-description (incl. `readOnlyHint`) never participates in permission decisions; startup drift check | Proposed (V2 Phase 0, 2026-09-10) |
 | [035](ADR-035-machine-caller-authentication.md) | **Machine callers** (n8n triggers): static bearer `SUNIL_SERVICE_TOKEN`, structurally scoped to `POST /api/v1/chat` by route registration; audit `channel`/`channel_label` | Proposed (V2 Phase 0, 2026-09-10) |
+| [036](ADR-036-ops-read-endpoints.md) | **Ops reads (C6):** tasks/activity/audit frozen as three read-only owner-session endpoints — spec §13 shapes verbatim, C4 §6.5's QA-pinned pagination law reused, no bearer lane; Q2 ruled: `tasks.project_key` column added, write-once at task creation | **Accepted** (owner Gate 2 ruling Q1 = freeze, 2026-09-11) |
 
 ADR-017 and ADR-018 answer questions raised by QA against the running build, not by a review. They
 are Architect rulings issued mid-flight because T5, T6 and T8 were still open and the cost of ruling
