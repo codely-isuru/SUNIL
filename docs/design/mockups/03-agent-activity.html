@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUNIL V2 — Agent activity (mockup 03)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: dark light;
+  --canvas:#030712; --surface:#0B1220; --raised:#111B2E;
+  --border:#1E2A3E; --border-accent:rgba(34,211,238,.18); --border-strong:rgba(34,211,238,.4);
+  --accent:#22D3EE; --accent-hover:#67E8F9; --accent-on:#031015;
+  --text:#E8FBFF; --text-2:#7DD3FC; --muted:#4FA8C7; --disabled:#2E4256;
+  --success:#34D399; --warning:#FBBF24; --danger:#F87171;
+  --untrusted-bg:#111B2E; --untrusted-bar:#4FA8C7; --row-hover:#111B2E;
+  --elev-1:0 0 12px rgba(34,211,238,.25); --elev-2:0 0 24px rgba(34,211,238,.35);
+  --focus:0 0 0 3px rgba(34,211,238,.35);
+  --r-sm:4px; --r-md:6px; --r-lg:12px;
+  --f-display:'Orbitron',ui-sans-serif,system-ui,sans-serif;
+  --f-ui:'Share Tech Mono',ui-monospace,monospace;
+  --f-body:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --canvas:#EEF3F8; --surface:#FFFFFF; --raised:#F1F5F9;
+    --border:#CBD5E1; --border-accent:rgba(14,116,144,.25); --border-strong:rgba(14,116,144,.5);
+    --accent:#0E7490; --accent-hover:#0891B2; --accent-on:#FFFFFF;
+    --text:#0B1220; --text-2:#155E75; --muted:#475569; --disabled:#94A3B8;
+    --success:#05654A; --warning:#92400E; --danger:#B91C1C;
+    --untrusted-bg:#F1F5F9; --untrusted-bar:#475569; --row-hover:#F1F5F9;
+    --elev-1:0 1px 2px rgba(15,23,42,.06),0 2px 8px rgba(15,23,42,.06);
+    --elev-2:0 2px 4px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.10);
+    --focus:0 0 0 3px rgba(14,116,144,.30);
+  }
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--canvas);color:var(--text);font-family:var(--f-body);font-size:.9375rem;line-height:1.6;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-hover);text-decoration:underline}
+:focus{outline:none} :focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
+.h1{font-family:var(--f-display);font-size:1.5rem;letter-spacing:.15em;text-transform:uppercase;font-weight:700;margin:0}
+.h2{font-family:var(--f-display);font-size:.75rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5} .micro{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.15em;text-transform:uppercase}
+.muted{color:var(--muted)}
+.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.skip{position:absolute;left:-9999px}.skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+.shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
+.rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
+.brand{font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.16em;color:var(--accent);padding:6px 0 16px}
+.nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
+.nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
+.nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent);box-shadow:var(--elev-1)}
+.nav .lbl{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--canvas);font-family:var(--f-ui);font-size:.625rem;display:flex;align-items:center;justify-content:center}
+@media (prefers-color-scheme: light){.nav .cnt{color:#fff}}
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
+.grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase}
+.chip.warn{color:var(--warning);border-color:var(--warning)} button.chip{cursor:pointer}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--success)}
+main{padding:24px 32px 72px;max-width:1152px}
+section{margin-top:30px}
+.sechead{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+/* ── running card (the M1 WorkIndicator family) ── */
+.work{background:var(--surface);border:1px solid var(--border-accent);border-radius:var(--r-md);padding:16px 18px;box-shadow:var(--elev-2);animation:pulse 1100ms cubic-bezier(.4,0,.2,1) infinite;display:grid;grid-template-columns:1fr auto;gap:6px 18px}
+@keyframes pulse{0%,100%{box-shadow:0 0 24px rgba(34,211,238,.35)}50%{box-shadow:0 0 44px rgba(34,211,238,.55)}}
+@media (prefers-color-scheme: light){.work{animation:none;box-shadow:var(--elev-2)}}
+.work + .work{margin-top:12px}
+.phase{color:var(--text-2);display:flex;align-items:center;gap:9px}
+.phasedots{display:inline-flex;gap:3px}
+.phasedots i{width:4px;height:4px;border-radius:999px;background:var(--accent);display:block}
+.elapsed{color:var(--muted);font-size:.8125rem;text-align:right}
+.objective{grid-column:1/-1;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:6px 10px;border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:.8125rem;overflow-wrap:anywhere}
+.meta{grid-column:1/-1;display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:.75rem}
+.steps{grid-column:1/-1;display:flex;gap:6px;align-items:center;margin-top:2px}
+.step{flex:1;height:3px;border-radius:2px;background:var(--border)}
+.step.done{background:var(--accent)} .step.now{background:var(--accent);box-shadow:var(--elev-1)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+.p-running{color:var(--accent)} .p-parked{color:var(--warning)} .p-done{color:var(--success)} .p-failed{color:var(--danger)}
+.row{display:grid;grid-template-columns:104px 1fr auto;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:11px 14px;font-size:.8125rem}
+.row + .row{margin-top:8px}
+.row.parked{border-left:3px solid var(--warning)}
+.row.failed{border-left:3px dashed var(--danger)}
+.row.done{border-left:3px solid var(--success)}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+thead th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.15em;text-transform:uppercase;font-weight:400;background:var(--raised)}
+tbody td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:.8125rem}
+tbody tr:last-child td{border-bottom:0} tbody tr:hover{background:var(--row-hover)}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;cursor:pointer}
+.btn:hover{background:var(--raised);box-shadow:var(--elev-1)}
+.btn-primary{background:var(--accent);color:var(--accent-on);border-color:var(--accent);font-weight:600}
+.ann{margin-top:44px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 24px}
+.annnote{color:var(--muted);font-size:.75rem;margin:4px 0 18px}
+.states{display:grid;gap:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:18px}
+.sk{height:13px;border-radius:var(--r-sm);background:var(--raised)}
+.empty{text-align:center;padding:34px 18px}
+.banner{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--warning);border-radius:var(--r-md);padding:11px 14px;color:var(--warning);background:var(--raised);font-size:.8125rem}
+.banner.err{border-color:var(--danger);color:var(--danger)}
+footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:1152px}
+@media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:18px 16px 60px}.row{grid-template-columns:1fr}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div class="shell">
+  <nav class="rail" aria-label="Primary">
+    <div class="brand">S</div>
+    <div class="nav">
+      <a href="06-nav-shell.html"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">Chat</span></a>
+      <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">Approve</span><span class="cnt" aria-hidden="true">3</span></a>
+      <a href="03-agent-activity.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="lbl">Activity</span></a>
+      <a href="04-tasks-projects.html"><svg class="icon" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg><span class="lbl">Tasks</span></a>
+      <a href="04-tasks-projects.html"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v11z"/></svg><span class="lbl">Projects</span></a>
+      <a href="05-audit-browser.html"><svg class="icon" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m16 19-2.2-2.2"/></svg><span class="lbl">Audit</span></a>
+    </div>
+  </nav>
+
+  <div>
+    <header class="topbar">
+      <span class="brand" style="padding:0">S.U.N.I.L</span>
+      <span class="small muted">&rsaquo; <b style="color:var(--text-2)">Activity</b></span>
+      <span class="grow"></span>
+      <span class="chip"><span class="dot"></span> SUNIL online</span>
+      <span class="chip warn">3 pending</span>
+      <button class="chip" aria-label="Last updated 3 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> 3s</button>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <h1 class="h1">Activity</h1>
+      <p class="muted small" style="margin:6px 0 0">What SUNIL is doing, what it has stopped on, and what it just finished. Refreshes every 10s.</p>
+
+      <!-- ── NOW ── -->
+      <section>
+        <div class="sechead"><h2 class="h2">Now — 2 running</h2><span class="muted micro">tasks.status = in_progress</span></div>
+
+        <article class="work" aria-label="Project Manager Agent, working">
+          <div class="phase">
+            <span class="pill p-running"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>Running</span>
+            <b>Checking EasyClean Workforce…</b>
+            <span class="phasedots" aria-hidden="true"><i></i><i></i><i></i></span>
+          </div>
+          <div class="elapsed">0:14 elapsed</div>
+          <p class="objective"><span class="micro muted" style="display:block">Objective — as planned from your message</span>Summarise open PRs and failing CI on easy_clean_workforce since Monday</p>
+          <div class="steps" aria-hidden="true"><span class="step done"></span><span class="step done"></span><span class="step now"></span><span class="step"></span></div>
+          <div class="meta">
+            <span>Phase 3 of 4 — <b style="color:var(--text-2)">Working</b> <span class="muted">(stage tool_requested)</span></span>
+            <span>Agent <b>Project Manager</b></span>
+            <span>Tool <b>github_mcp.list_pull_requests</b></span>
+            <span><a href="06-nav-shell.html">Conversation &rarr;</a></span>
+            <span><a href="05-audit-browser.html">Open trace &rarr;</a></span>
+          </div>
+        </article>
+
+        <article class="work" aria-label="Developer Agent, working">
+          <div class="phase">
+            <span class="pill p-running"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>Running</span>
+            <b>Putting your answer together…</b>
+            <span class="phasedots" aria-hidden="true"><i></i><i></i><i></i></span>
+          </div>
+          <div class="elapsed">1:07 elapsed</div>
+          <p class="objective"><span class="micro muted" style="display:block">Objective — as planned from your message</span>Fix the Round-11 certificate tagline regression in pda_learning and raise a PR</p>
+          <div class="steps" aria-hidden="true"><span class="step done"></span><span class="step done"></span><span class="step done"></span><span class="step now"></span></div>
+          <div class="meta">
+            <span>Phase 4 of 4 — <b style="color:var(--text-2)">Finishing</b> <span class="muted">(stage agent_result)</span></span>
+            <span>Agent <b>Developer (OpenHands)</b></span>
+            <span>Project <b>PDA Learning</b></span>
+            <span class="muted">Still working — larger checks can take a little longer.</span>
+            <span><a href="05-audit-browser.html">Open trace &rarr;</a></span>
+          </div>
+        </article>
+      </section>
+
+      <!-- ── WAITING ON YOU ── -->
+      <section>
+        <div class="sechead"><h2 class="h2">Waiting on you — 3 parked</h2><span class="muted micro">tasks.status = parked · a parked task is activity that has stopped</span></div>
+
+        <div class="row parked">
+          <span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span>
+          <span>Needs approval: <b>stripe_mcp.refunds.create</b> <span class="muted">— refund AUD 240.00, EasyClean Feb deep clean</span></span>
+          <a class="btn btn-primary" href="02-approval-card.html">Review &amp; decide</a>
+        </div>
+        <div class="row parked">
+          <span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span>
+          <span>Needs approval: <b>github_mcp.merge_main</b> <span class="muted">— PR #128 into main on codely-isuru/SUNIL</span></span>
+          <a class="btn" href="01-approvals-queue.html">Review &amp; decide</a>
+        </div>
+        <div class="row parked" style="border-left-color:var(--danger)">
+          <span class="pill p-parked" style="color:var(--danger)"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>48m left</span>
+          <span>Needs approval: <b>n8n_http.wordpress.post_publish</b> <span class="muted">— publish the Round-11 winch-recovery post on pdalearning.com.au</span></span>
+          <a class="btn" href="01-approvals-queue.html">Review &amp; decide</a>
+        </div>
+      </section>
+
+      <!-- ── RECENTLY FINISHED ── -->
+      <section>
+        <div class="sechead"><h2 class="h2">Recently finished</h2><span class="muted micro">last 20 terminal tasks</span></div>
+        <table>
+          <caption class="sr">Recently finished tasks, 5 rows</caption>
+          <thead><tr><th scope="col">Status</th><th scope="col">Objective</th><th scope="col">Agent</th><th scope="col">Took</th><th scope="col">Finished</th><th scope="col">Trace</th></tr></thead>
+          <tbody>
+            <tr><td><span class="pill p-done"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Done</span></td>
+              <td>Email the February invoice summary to EasyClean accounts</td><td>project_manager</td><td>11.4s</td><td>Yesterday 4:22 pm</td><td><a href="05-audit-browser.html">01JQ4A7K</a></td></tr>
+            <tr><td><span class="pill p-done"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Done</span></td>
+              <td>Morning brief — what needs attention across Codely today</td><td>project_manager</td><td>26.8s</td><td>Today 7:00 am <span class="muted">(n8n:morning-brief)</span></td><td><a href="05-audit-browser.html">01JQ82PP</a></td></tr>
+            <tr><td><span class="pill p-failed"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Failed</span></td>
+              <td>Check 925 Driving session bookings for duplicates</td><td>project_manager</td><td>30.1s</td><td>Today 8:12 am</td><td><a href="05-audit-browser.html">01JQ85MC</a></td></tr>
+            <tr><td><span class="pill p-failed" style="color:var(--warning)"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M18 6 6 18M6 6l12 12"/></svg>Refused</span></td>
+              <td>Refund the duplicate 925 Driving session booking</td><td>project_manager</td><td>—</td><td>9 Sep 1:31 pm</td><td><a href="05-audit-browser.html">01JQ1C40</a></td></tr>
+            <tr><td><span class="pill p-failed" style="color:var(--muted)"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>Expired</span></td>
+              <td>Merge the pda plugin version bump PR</td><td>developer</td><td>—</td><td>9 Sep 10:00 am</td><td><a href="05-audit-browser.html">01JPX2R9</a></td></tr>
+          </tbody>
+        </table>
+        <p class="small muted" style="margin-top:10px">Failure reasons come from <span class="micro">tasks.failure_kind</span> (C5 kinds): <b>tool_failed</b> on row 3, <b>approval_refused</b> on row 4, <b>approval_expired</b> on row 5 — each rendered with the copy in V2_DASHBOARD_SPEC.md §11.3, never as a raw enum.</p>
+      </section>
+
+      <!-- ── STATES ── -->
+      <section class="ann">
+        <h3 class="h2">Mockup annotation — loading / empty / error / stale</h3>
+        <p class="annnote">Spec §7.3. This view is the one where a stale poll is most dangerous: a frozen "running" card is a claim about right now.</p>
+        <div class="states">
+          <div>
+            <p class="micro muted">1 · Loading — 3 skeleton cards at running-card height</p>
+            <div class="panel" aria-busy="true" style="display:grid;gap:12px">
+              <div><div class="sk" style="width:220px"></div><div class="sk" style="width:60%;margin-top:10px"></div><div class="sk" style="width:40%;margin-top:8px"></div></div>
+              <div><div class="sk" style="width:190px"></div><div class="sk" style="width:72%;margin-top:10px"></div><div class="sk" style="width:36%;margin-top:8px"></div></div>
+            </div>
+          </div>
+          <div>
+            <p class="micro muted">2 · Empty — the normal state for most of the day. Idle is not a failure</p>
+            <div class="panel empty">
+              <p class="h2">SUNIL is idle.</p>
+              <p class="muted small" style="max-width:54ch;margin:0 auto 16px">Nothing is running. Scheduled workflows and your chat messages both show up here while they work.</p>
+              <a class="btn" href="06-nav-shell.html">Ask SUNIL something &rarr;</a>
+            </div>
+          </div>
+          <div>
+            <p class="micro muted">3 · Error</p>
+            <div class="panel">
+              <div class="banner err"><svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <div><b>Couldn't load activity.</b><br><span class="small">The API returned 500. Work already running on the server is unaffected — this page just can't see it.</span></div></div>
+              <div style="margin-top:14px"><button class="btn">Try again</button></div>
+            </div>
+          </div>
+          <div>
+            <p class="micro muted">4 · Stale — elapsed counters freeze and grey out rather than ticking on data that stopped arriving</p>
+            <div class="panel">
+              <div class="banner"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <div><b>Can't reach SUNIL — this is what was happening at 10:41 am.</b><br><span class="small">Timers are paused. These tasks may have finished since.</span></div></div>
+              <div style="margin-top:14px;opacity:.85;display:flex;gap:14px;align-items:center">
+                <span class="pill p-running" style="color:var(--muted)">Running</span>
+                <span class="small">Checking EasyClean Workforce…</span>
+                <span class="muted small">0:14 (paused)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Mockup 03 of 6 · the running cards are the M1 <b>WorkIndicator</b> visual family (DASHBOARD_DIRECTION.md §3) with the
+      same 12&rarr;4 phase map as chat. No endpoint returns this data yet — see V2_DASHBOARD_SPEC.md §13.2 (proposed
+      <code>GET /api/v1/activity</code>) and open question Q1.
+    </footer>
+  </div>
+</div>
+</body>
+</html>

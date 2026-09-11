@@ -323,3 +323,96 @@ already does this correctly (`ONLINE`/`STANDBY`/`OFFLINE` text next to the colou
 errors/timeouts use `aria-live="assertive"`. Stage-progress updates (see
 `M1_CHAT_SPEC.md` §5.3) are throttled to one live-region update per phase change, not per raw
 backend stage, so screen reader users aren't spammed with twelve rapid announcements.
+
+---
+
+# AMENDMENT A — V2 additions (PROPOSED, pending owner Gate 2)
+
+**Added:** 2026-09-11 by the UI/UX Designer, Minions Team 21, for `V2_DASHBOARD_SPEC.md`.
+**Nothing above this line was changed.** Everything below is an **addition**. If the owner rejects
+the light theme (spec Q7), delete §A.2 and the rest still stands.
+
+Sections §0–§7 above remain the binding contract for the dark theme and for every existing M1
+component. The V2 ops dashboard needs three things the M1 token set does not carry: a light theme,
+status semantics for a five-state approval lifecycle, and table/density tokens. Each addition below
+states why the existing set could not be reused.
+
+## A.1 New semantic tokens (theme-independent names)
+
+| Token | Dark value | Light value | Role | Why not an existing token |
+|---|---|---|---|---|
+| `--status-pending` | `#FBBF24` (= `warning`) | `#92400E` | Approval awaiting the owner | Alias of `warning`, named for meaning so a later palette change can move one without the other |
+| `--status-approved` | `#22D3EE` (= `accent`) | `#0E7490` | Decided, not yet executed | Deliberately **not** green: approved ≠ done. Green is reserved for `consumed` |
+| `--status-consumed` | `#34D399` (= `success`) | `#05654A` | Executed, single use spent | — |
+| `--status-refused` | `#F87171` (= `danger`) | `#B91C1C` | Owner said no | — |
+| `--status-expired` | `#4FA8C7` (= `text-muted`) | `#475569` | Timed out, never ran | Neutral on purpose: an expiry is not an error the owner caused |
+| `--color-untrusted-bg` | `#111B2E` (= `surface-raised`) | `#F1F5F9` | Background of the quoted block containing attacker-influenceable strings (C4 §4) | New *role*, existing value — the containment is carried by the left bar + label, not by a novel colour |
+| `--color-untrusted-bar` | `#4FA8C7` (= `text-muted`) | `#475569` | 3px left bar on that block | — |
+| `--color-row-hover` | `#111B2E` (= `surface-raised`) | `#F1F5F9` | Table row hover/zebra | — |
+| `--color-redacted` | `#2E4256` (= `text-disabled`) | `#94A3B8` | `●●●●●●●● redacted` glyph run | Reuses the disabled value at a non-interactive role |
+
+## A.2 Light theme map (new)
+
+The dark palette is the brand. The light palette is a **re-derivation, not an inversion**: the
+accent is darkened because `#22D3EE` on white computes to ~1.8:1 and fails as text or as a focus
+ring, and elevation becomes a neutral shadow because cyan glow is invisible on a light surface.
+Ratios below are by the WCAG relative-luminance method; the full table lives in
+`V2_DASHBOARD_SPEC.md` §12.4.
+
+| Token | Dark (§1, unchanged) | Light (new) | Light contrast check |
+|---|---|---|---|
+| `--color-canvas` | `#030712` | `#EEF3F8` | — |
+| `--color-surface` | `#0B1220` | `#FFFFFF` | — |
+| `--color-surface-raised` | `#111B2E` | `#F1F5F9` | — |
+| `--color-border` | `#1E2A3E` | `#CBD5E1` | 1.5:1 vs surface — structural only, non-text |
+| `--color-border-accent` | `rgba(34,211,238,.18)` | `rgba(14,116,144,.25)` | decorative |
+| `--color-border-strong` | `rgba(34,211,238,.4)` | `rgba(14,116,144,.5)` | decorative |
+| `--color-accent` | `#22D3EE` | `#0E7490` | 5.4:1 on surface, 4.8:1 on canvas |
+| `--color-accent-hover` | `#67E8F9` | `#0891B2` | hover only |
+| `--color-accent-active` | `#06B6D4` | `#155E75` | pressed |
+| `--color-accent-on` | `#031015` | `#FFFFFF` | 5.4:1 on the accent fill |
+| `--color-text-primary` | `#E8FBFF` | `#0B1220` | 18.4:1 |
+| `--color-text-secondary` | `#7DD3FC` | `#155E75` | 7.3:1 |
+| `--color-text-muted` | `#4FA8C7` | `#475569` | 6.8:1 on canvas |
+| `--color-text-disabled` | `#2E4256` | `#94A3B8` | non-text |
+| `--color-success` | `#34D399` | `#05654A` | 6.3:1 on canvas |
+| `--color-warning` | `#FBBF24` | `#92400E` | 6.4:1 on canvas |
+| `--color-danger` | `#F87171` | `#B91C1C` | 5.8:1 on canvas |
+| `--color-danger-strong` | `#EF4444` | `#B91C1C` | paired with `#FFFFFF` |
+
+**Elevation in light (§5's glow does not transfer).** Glow *is* elevation in the dark theme; on a
+white surface a cyan glow reads as a printing error. Light-theme equivalents:
+
+| Dark token | Light equivalent |
+|---|---|
+| `elevation-0` | `border: 1px solid var(--color-border)` |
+| `glow-hover` | `0 1px 2px rgba(15,23,42,.06), 0 2px 8px rgba(15,23,42,.06)` |
+| `glow-active` | `0 2px 4px rgba(15,23,42,.08), 0 8px 24px rgba(15,23,42,.10)` |
+| `glow-focus` | `0 0 0 3px rgba(14,116,144,.30)` (paired with the same 2px `accent` outline, 2px offset) |
+
+**Selection rule:** `color-scheme: light dark` on `:root`, dark as the authored default, light
+applied under `@media (prefers-color-scheme: light)`. No manual theme toggle in v1 (spec Q7).
+The `dark`-class gating mistake from other Codely projects is avoided by having no class gate at
+all — the OS preference is the only input.
+
+## A.3 Density scale for ops views (new)
+
+Chat keeps §3's spacing. Ops tables and cards are denser; these are conventions, not new units —
+still Tailwind's 4px scale.
+
+| Context | Value |
+|---|---|
+| Table row padding | `py-2.5 px-4` (44px effective touch target via padding, never by shrinking type) |
+| Table header | `py-2 px-4`, `Micro/badge` style |
+| Card padding | `p-4` mobile / `p-6` desktop (unchanged from §3) |
+| Section gap | `gap-6` |
+| Ops content max width | `max-w-6xl` (1152px) — chat stays `max-w-3xl` inside it |
+| Nav rail | 88px collapsed / 232px expanded / 64px at `md` / bottom bar `<768px` |
+| Topbar | 56px (unchanged from `M1_CHAT_SPEC.md` §1.1) |
+
+## A.4 Tabular figures (new)
+
+Any column of numbers, any countdown, any offset (`+2.4s`) and any id uses
+`font-variant-numeric: tabular-nums`. JetBrains Mono and Share Tech Mono are monospaced, so this is
+belt-and-braces — but the rule is written down because a ticking countdown that reflows its row is
+the most avoidable jank in the product.

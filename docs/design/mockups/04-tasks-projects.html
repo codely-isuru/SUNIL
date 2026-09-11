@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUNIL V2 — Tasks &amp; Projects (mockup 04)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: dark light;
+  --canvas:#030712; --surface:#0B1220; --raised:#111B2E;
+  --border:#1E2A3E; --border-accent:rgba(34,211,238,.18); --border-strong:rgba(34,211,238,.4);
+  --accent:#22D3EE; --accent-hover:#67E8F9; --accent-on:#031015;
+  --text:#E8FBFF; --text-2:#7DD3FC; --muted:#4FA8C7; --disabled:#2E4256;
+  --success:#34D399; --warning:#FBBF24; --danger:#F87171;
+  --untrusted-bg:#111B2E; --untrusted-bar:#4FA8C7; --row-hover:#111B2E;
+  --elev-1:0 0 12px rgba(34,211,238,.25); --elev-2:0 0 24px rgba(34,211,238,.35);
+  --focus:0 0 0 3px rgba(34,211,238,.35);
+  --r-sm:4px; --r-md:6px; --r-lg:12px;
+  --f-display:'Orbitron',ui-sans-serif,system-ui,sans-serif;
+  --f-ui:'Share Tech Mono',ui-monospace,monospace;
+  --f-body:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --canvas:#EEF3F8; --surface:#FFFFFF; --raised:#F1F5F9;
+    --border:#CBD5E1; --border-accent:rgba(14,116,144,.25); --border-strong:rgba(14,116,144,.5);
+    --accent:#0E7490; --accent-hover:#0891B2; --accent-on:#FFFFFF;
+    --text:#0B1220; --text-2:#155E75; --muted:#475569; --disabled:#94A3B8;
+    --success:#05654A; --warning:#92400E; --danger:#B91C1C;
+    --untrusted-bg:#F1F5F9; --untrusted-bar:#475569; --row-hover:#F1F5F9;
+    --elev-1:0 1px 2px rgba(15,23,42,.06),0 2px 8px rgba(15,23,42,.06);
+    --elev-2:0 2px 4px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.10);
+    --focus:0 0 0 3px rgba(14,116,144,.30);
+  }
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--canvas);color:var(--text);font-family:var(--f-body);font-size:.9375rem;line-height:1.6;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-hover);text-decoration:underline}
+:focus{outline:none} :focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
+.h1{font-family:var(--f-display);font-size:1.5rem;letter-spacing:.15em;text-transform:uppercase;font-weight:700;margin:0}
+.h2{font-family:var(--f-display);font-size:.75rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5} .micro{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.15em;text-transform:uppercase}
+.muted{color:var(--muted)}
+.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.skip{position:absolute;left:-9999px}.skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+.shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
+.rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
+.brand{font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.16em;color:var(--accent);padding:6px 0 16px}
+.nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
+.nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
+.nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent);box-shadow:var(--elev-1)}
+.nav .lbl{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--canvas);font-family:var(--f-ui);font-size:.625rem;display:flex;align-items:center;justify-content:center}
+@media (prefers-color-scheme: light){.nav .cnt{color:#fff}}
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
+.grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase}
+.chip.warn{color:var(--warning);border-color:var(--warning)} button.chip{cursor:pointer}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--success)}
+main{padding:24px 32px 72px;max-width:1152px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
+.seg a{padding:7px 13px;color:var(--muted);border-right:1px solid var(--border);font-size:.75rem}
+.seg a:last-child{border-right:0}
+.seg a:hover{background:var(--row-hover);text-decoration:none;color:var(--text-2)}
+.seg a[aria-current="true"]{background:var(--raised);color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 14px}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:7px 11px;color:var(--muted);min-width:230px}
+.search input{background:none;border:0;color:var(--text);font-family:var(--f-body);font-size:.8125rem;width:100%}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+thead th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.15em;text-transform:uppercase;font-weight:400;background:var(--raised)}
+tbody td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:.8125rem;vertical-align:top}
+tbody tr:last-child td{border-bottom:0} tbody tr:hover{background:var(--row-hover)}
+tbody td:first-child{border-left:2px solid transparent}
+tr.t-running td:first-child{border-left:2px solid var(--accent)}
+tr.t-parked td:first-child{border-left:2px solid var(--warning)}
+tr.t-done td:first-child{border-left:2px solid var(--success)}
+tr.t-failed td:first-child{border-left:2px dashed var(--danger)}
+.obj{display:block;max-width:52ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:3px 8px;border-radius:0 var(--r-sm) var(--r-sm) 0;color:var(--text)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+.p-running{color:var(--accent)} .p-parked{color:var(--warning)} .p-done{color:var(--success)} .p-failed{color:var(--danger)} .p-muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+.pcard{background:var(--surface);border:1px solid var(--border-accent);border-radius:var(--r-md);padding:16px}
+.pcard:hover{box-shadow:var(--elev-1)}
+.pcard h3{margin:0;font-size:1rem}
+.pcard .key{font-family:var(--f-ui);font-size:.6875rem;color:var(--muted);letter-spacing:.08em}
+.pstats{display:flex;gap:16px;margin-top:12px;font-size:.75rem;flex-wrap:wrap}
+.pstats b{display:block;font-size:1.125rem;color:var(--text-2);font-family:var(--f-display);letter-spacing:.04em}
+.info{display:flex;gap:10px;align-items:flex-start;background:var(--raised);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding:11px 14px;font-size:.8125rem;margin-bottom:16px}
+.timeline{list-style:none;margin:12px 0 0;padding:0}
+.timeline li{display:grid;grid-template-columns:130px 1fr;gap:14px;padding:6px 0;border-left:1px solid var(--border);margin-left:6px;padding-left:16px;position:relative;font-size:.8125rem}
+.timeline li::before{content:"";position:absolute;left:-4px;top:14px;width:7px;height:7px;border-radius:999px;background:var(--accent)}
+.ann{margin-top:44px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 24px}
+.annnote{color:var(--muted);font-size:.75rem;margin:4px 0 18px}
+.states{display:grid;gap:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:18px}
+.sk{height:13px;border-radius:var(--r-sm);background:var(--raised)}
+.skrow{display:grid;grid-template-columns:88px 1fr 110px 90px;gap:14px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.empty{text-align:center;padding:32px 18px}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;cursor:pointer}
+.btn:hover{background:var(--raised);box-shadow:var(--elev-1)}
+.banner{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--danger);border-radius:var(--r-md);padding:11px 14px;color:var(--danger);background:var(--raised);font-size:.8125rem}
+hr.sep{border:0;border-top:1px dashed var(--border);margin:46px 0 0}
+footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:1152px}
+@media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:18px 16px 60px}thead th:nth-child(3),tbody td:nth-child(3),thead th:nth-child(6),tbody td:nth-child(6){display:none}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div class="shell">
+  <nav class="rail" aria-label="Primary">
+    <div class="brand">S</div>
+    <div class="nav">
+      <a href="06-nav-shell.html"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">Chat</span></a>
+      <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">Approve</span><span class="cnt" aria-hidden="true">3</span></a>
+      <a href="03-agent-activity.html"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="lbl">Activity</span></a>
+      <a href="04-tasks-projects.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg><span class="lbl">Tasks</span></a>
+      <a href="#projects"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v11z"/></svg><span class="lbl">Projects</span></a>
+      <a href="05-audit-browser.html"><svg class="icon" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m16 19-2.2-2.2"/></svg><span class="lbl">Audit</span></a>
+    </div>
+  </nav>
+
+  <div>
+    <header class="topbar">
+      <span class="brand" style="padding:0">S.U.N.I.L</span>
+      <span class="small muted">&rsaquo; <b style="color:var(--text-2)">Tasks</b></span>
+      <span class="grow"></span>
+      <span class="chip"><span class="dot"></span> SUNIL online</span>
+      <span class="chip warn">3 pending</span>
+      <button class="chip"><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> 8s</button>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <!-- ══════════ TASKS ══════════ -->
+      <h1 class="h1">Tasks</h1>
+      <p class="muted small" style="margin:6px 0 0">Every task SUNIL has created. A task exists from the moment a plan is validated.</p>
+
+      <div class="bar">
+        <div class="seg">
+          <a href="?status=running">Running 2</a>
+          <a href="?status=parked">Parked 3</a>
+          <a href="?status=completed">Completed 41</a>
+          <a href="?status=failed">Failed 4</a>
+          <a href="?status=all" aria-current="true">All 50</a>
+        </div>
+        <span class="chip">Project: any</span>
+        <span class="chip">Last 7 days</span>
+        <label class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><span class="sr">Search objectives</span><input placeholder="Search objectives…" value=""></label>
+      </div>
+
+      <table>
+        <caption class="sr">Tasks, 7 of 50 rows, newest first</caption>
+        <thead><tr>
+          <th scope="col">Status</th><th scope="col">Objective <span class="muted">(as planned)</span></th>
+          <th scope="col">Agent</th><th scope="col">Project</th><th scope="col">Started</th>
+          <th scope="col">Took</th><th scope="col">Outcome</th><th scope="col">Trace</th>
+        </tr></thead>
+        <tbody>
+          <tr class="t-running"><td><span class="pill p-running"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>Running</span></td>
+            <td><span class="obj">Summarise open PRs and failing CI on easy_clean_workforce since Monday</span></td>
+            <td>project_manager</td><td>EasyClean Workforce</td><td>10:03 am</td><td>0:14…</td><td class="muted">—</td><td><a href="05-audit-browser.html">01JQ8ZF1</a></td></tr>
+
+          <tr class="t-running"><td><span class="pill p-running"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>Running</span></td>
+            <td><span class="obj">Fix the Round-11 certificate tagline regression in pda_learning and raise a PR</span></td>
+            <td>developer</td><td>PDA Learning</td><td>10:02 am</td><td>1:07…</td><td class="muted">—</td><td><a href="05-audit-browser.html">01JQ8ZD8</a></td></tr>
+
+          <tr class="t-parked"><td><span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span></td>
+            <td><span class="obj">Refund the February deep-clean charge for the EasyClean customer who was billed twice</span></td>
+            <td>project_manager</td><td>EasyClean Workforce</td><td>9:41 am</td><td class="muted">waiting 18m</td>
+            <td><a href="02-approval-card.html">needs approval</a></td><td><a href="05-audit-browser.html">01JQ8ZC2</a></td></tr>
+
+          <tr class="t-parked"><td><span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span></td>
+            <td><span class="obj">Merge PR #128 once CI is green on codely-isuru/SUNIL</span></td>
+            <td>developer</td><td>SUNIL</td><td>8:55 am</td><td class="muted">waiting 1h 4m</td>
+            <td><a href="01-approvals-queue.html">needs approval</a></td><td><a href="05-audit-browser.html">01JQ8V7T</a></td></tr>
+
+          <tr class="t-done"><td><span class="pill p-done"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Done</span></td>
+            <td><span class="obj">Morning brief — what needs attention across Codely today</span></td>
+            <td>project_manager</td><td class="muted">— (multi)</td><td>7:00 am</td><td>26.8s</td><td class="muted">ok</td><td><a href="05-audit-browser.html">01JQ82PP</a></td></tr>
+
+          <tr class="t-failed"><td><span class="pill p-failed"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Failed</span></td>
+            <td><span class="obj">Check 925 Driving session bookings for duplicates</span></td>
+            <td>project_manager</td><td>925 Driving</td><td>8:12 am</td><td>30.1s</td>
+            <td><span style="color:var(--danger)">Tool unreachable</span></td><td><a href="05-audit-browser.html">01JQ85MC</a></td></tr>
+
+          <tr class="t-failed"><td><span class="pill p-muted"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>Expired</span></td>
+            <td><span class="obj">Merge the pda plugin version bump PR</span></td>
+            <td>developer</td><td>PDA Learning</td><td>6 Sep 10:00 am</td><td class="muted">—</td>
+            <td>Approval expired</td><td><a href="05-audit-browser.html">01JPX2R9</a></td></tr>
+        </tbody>
+      </table>
+      <p class="small muted" style="margin-top:12px"><button class="btn">Load 50 more</button> &nbsp; <span class="micro">cursor pagination — no page numbers, because the API is cursor-based (spec §4.1)</span></p>
+
+      <!-- task detail preview -->
+      <section style="margin-top:34px">
+        <h2 class="h2">Task detail — task-01JQ8ZC4 (what a row opens into)</h2>
+        <div class="panel" style="margin-top:12px">
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span>
+            <b>Refund the February deep-clean charge for the EasyClean customer who was billed twice</b>
+          </div>
+          <div class="small muted" style="margin-top:8px">project_manager &middot; EasyClean Workforce &middot; request 01JQ8ZC2N4 &middot; <a href="06-nav-shell.html">conversation</a> &middot; <a href="05-audit-browser.html">trace</a> &middot; <a href="02-approval-card.html">approval apr-01JQ8ZC7 &rarr;</a></div>
+          <h3 class="micro muted" style="margin:18px 0 0">Status history (task_status_events)</h3>
+          <ul class="timeline">
+            <li><span class="muted">09:41:02</span><span>created &rarr; <b>pending</b></span></li>
+            <li><span class="muted">09:41:02</span><span>pending &rarr; <b>in_progress</b> <span class="muted">(agent_started)</span></span></li>
+            <li><span class="muted">09:41:06</span><span>in_progress &rarr; <b>parked</b> <span class="muted">(permission_decision = ask_user, approval apr-01JQ8ZC7)</span></span></li>
+            <li><span class="muted">—</span><span class="muted">waiting for your decision &middot; 18m so far &middot; approval expires in 71h 42m</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <hr class="sep">
+
+      <!-- ══════════ PROJECTS ══════════ -->
+      <h1 class="h1" id="projects" tabindex="-1" style="margin-top:30px">Projects</h1>
+      <p class="muted small" style="margin:6px 0 14px">The projects SUNIL knows about.</p>
+
+      <div class="info"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+        <div>Projects come from SUNIL's configuration (<span class="micro">config/projects.yaml</span>, FR-107). Add one by editing that file and restarting — this page is read-only on purpose. It is also the exact list SUNIL quotes back when it says "I don't recognise that project".</div></div>
+
+      <div class="grid">
+        <a class="pcard" href="?project=pda_learning">
+          <h3>PDA Learning</h3><div class="key">pda_learning</div>
+          <div class="pstats"><span><b>12</b>tasks / 7d</span><span><b>1</b>parked</span><span><b>0</b>failed</span></div>
+          <div class="small muted" style="margin-top:10px">Last touched 2 min ago</div>
+        </a>
+        <a class="pcard" href="?project=easy_clean_workforce">
+          <h3>EasyClean Workforce</h3><div class="key">easy_clean_workforce</div>
+          <div class="pstats"><span><b>19</b>tasks / 7d</span><span><b>1</b>parked</span><span><b>1</b>failed</span></div>
+          <div class="small muted" style="margin-top:10px">Last touched 14 s ago</div>
+        </a>
+        <a class="pcard" href="?project=pda_925">
+          <h3>925 Driving</h3><div class="key">pda_925</div>
+          <div class="pstats"><span><b>6</b>tasks / 7d</span><span><b>0</b>parked</span><span><b>2</b>failed</span></div>
+          <div class="small muted" style="margin-top:10px">Last touched 2h ago</div>
+        </a>
+        <a class="pcard" href="?project=sunil">
+          <h3>SUNIL</h3><div class="key">sunil</div>
+          <div class="pstats"><span><b>13</b>tasks / 7d</span><span><b>1</b>parked</span><span><b>1</b>failed</span></div>
+          <div class="small muted" style="margin-top:10px">Last touched 1h 4m ago</div>
+        </a>
+      </div>
+
+      <!-- ── STATES ── -->
+      <section class="ann">
+        <h3 class="h2">Mockup annotation — states for both views</h3>
+        <p class="annnote">Spec §8.2 and §9.</p>
+        <div class="states">
+          <div>
+            <p class="micro muted">1 · Tasks loading</p>
+            <div class="panel" aria-busy="true" style="padding:0">
+              <div class="skrow"><div class="sk" style="width:72px"></div><div class="sk"></div><div class="sk" style="width:90px"></div><div class="sk" style="width:60px"></div></div>
+              <div class="skrow"><div class="sk" style="width:72px"></div><div class="sk" style="width:85%"></div><div class="sk" style="width:90px"></div><div class="sk" style="width:60px"></div></div>
+              <div class="skrow" style="border-bottom:0"><div class="sk" style="width:72px"></div><div class="sk" style="width:70%"></div><div class="sk" style="width:90px"></div><div class="sk" style="width:60px"></div></div>
+            </div>
+          </div>
+          <div>
+            <p class="micro muted">2 · Tasks empty (nothing ever run)</p>
+            <div class="panel empty"><p class="h2">No tasks yet.</p>
+              <p class="muted small" style="max-width:50ch;margin:0 auto 16px">A task is created whenever SUNIL makes a plan. Start a conversation and one will appear here.</p>
+              <a class="btn" href="06-nav-shell.html">Go to chat &rarr;</a></div>
+          </div>
+          <div>
+            <p class="micro muted">3 · Tasks empty (filters exclude everything) — different copy, different action</p>
+            <div class="panel empty"><p class="h2">No failed tasks in the last 7 days.</p>
+              <p class="muted small" style="margin:0 auto 16px">That's a good week.</p>
+              <button class="btn">Clear filters</button></div>
+          </div>
+          <div>
+            <p class="micro muted">4 · Projects empty — the configuration case, not a data case</p>
+            <div class="panel empty"><p class="h2">No projects configured.</p>
+              <p class="muted small" style="max-width:52ch;margin:0 auto 16px">SUNIL can only work on projects it knows about. Add them to <span class="micro">config/projects.yaml</span> and restart the API.</p>
+              <button class="btn">Open the docs</button></div>
+          </div>
+          <div>
+            <p class="micro muted">5 · Error (either view)</p>
+            <div class="panel"><div class="banner"><svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <div><b>Couldn't load tasks.</b><br><span class="small">The request timed out after 10s. Your tasks are safe — this list just didn't arrive.</span></div></div>
+              <div style="margin-top:14px"><button class="btn">Try again</button></div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Mockup 04 of 6 · Tasks and Projects are two rail destinations shown in one file. Objectives are rendered with the
+      same quoted-and-contained treatment as an approval summary — an objective is plan text derived from a user or model
+      string, not SUNIL's own words. Tasks has no API yet (spec §13.1, Q1); the Project column depends on Q2.
+    </footer>
+  </div>
+</div>
+</body>
+</html>
