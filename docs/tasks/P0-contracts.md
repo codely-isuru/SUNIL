@@ -198,3 +198,36 @@ Out of scope for QA: the concrete `ToolManager` pipeline in `core/tool_framework
 implementing the `park_context` precondition and the verbatim-copy composition is production code
 owned by the implementing stream (C1 §2.1 module-placement rule); the backend engineer's probe
 manager is his own artefact.
+
+## ParkContext-guard round (2026-09-11, branch `task/P0-parkcontext-guard`)
+
+Adjudication of the single open QA finding from the consolidated fakes round
+(`docs/tasks/P0-fakes.md`, "New finding from this round — should"): an empty-but-present
+`park_context` had no specified behaviour. C1 §2.1 pinned only the MISSING case (`TypeError`
+before step 1, no attempt row) and C4 §4 only the model-level rejection of empty park material;
+`ParkContext` is a frozen dataclass, so §2.2's "Both values MUST be non-empty" bound nobody —
+`execute(..., park_context=ParkContext(continuation={}, summary=""))` on a first attempt reached
+step 3, wrote its attempt row, and took an unhandled `pydantic.ValidationError` out of
+`approvals.park(...)`: a raise from `execute` with no kind in §4's closed error set and an
+unfinalised attempt row left behind.
+
+| Finding | Where | Disposition |
+|---|---|---|
+| QA should — empty-but-present `park_context` unspecified; QA preference: make the invalid value unconstructible | C1 §2.1/§2.2 | **Fixed — C1 v1.1.1, QA's option 1 adopted.** Normative `ParkContext.__post_init__`: `ValueError` on empty `continuation`, empty or whitespace-only `summary`, or `summary` > 500 chars. Bounds mirror C4 §4's `Field(min_length=1[, max_length=500])` with one deliberate caller-side tightening (whitespace-only summaries — C4's `min_length=1` admits `" "`, and a blank approval card is the same never-actionable failure class), so anything constructible caller-side is valid service-side. Consequence recorded in §2.2: step 3 can no longer receive an empty `ParkContext` — the unhandled-ValidationError path is closed — and C4 §4's model constraints become the second, service-side line of defence (still covering a hand-rolled `ParkRequest` that never came through a `ParkContext`). §2.1 cross-ref keeps the two caller-violation modes distinct: missing → `TypeError` at the call site; invalid → `ValueError` at construction, in the orchestrator, where the plan cursor actually lives. New C1 contract test 9. **Rejected — QA option 2 / manager-side pre-validation** (widen §2.1's precondition to "non-None AND non-empty → `TypeError` before step 1"): the check lives in code the contract's type story cannot see, every future caller and every manager implementation must remember it, the poison value stays constructible and detonates only at whichever manager finally receives it, and it needs an error mode §4 does not have (widening the closed set for a caller bug, or a value-dependent `TypeError`). **PATCH-not-MINOR** (v1.1.1, same class as C2 v1.0.1): no field, signature, pipeline step or error kind changed; a MUST v1.1.0 already declared becomes mechanically enforced; no conforming caller can observe the change. |
+
+### QA delta from this round (owner: qa_engineer)
+
+1. `apps/api/sunil/core/tool_framework/base.py` — `ParkContext` gains C1 §2.2 v1.1.1's
+   `__post_init__` verbatim (three guards, each `ValueError`: `len(continuation) == 0`,
+   `not summary.strip()`, `len(summary) > 500`). No other symbol changes; `ToolManagerProtocol`,
+   `execute`'s signature and every other type untouched. This is contract-declared validation in
+   the transcription, the same class as C4's `ParkRequest` `Field` constraints already there —
+   interface, not business logic.
+2. `apps/api/tests/contracts/test_c1_tool_adapter.py` — new contract test 9
+   (`test_c1_9_empty_park_context_is_unconstructible` or similar): four `ValueError` probes
+   (empty continuation; empty summary; whitespace-only `"   "` summary; `"x" * 501` summary) plus
+   two legal constructions (the fixture `park_ctx`; `"x" * 500` boundary). No import guard —
+   pure construction, green immediately (net +1 passed, 0 new skips).
+3. Deliberately untouched: C1 test 8 (missing/`None` → `TypeError` remains a distinct probe); C4
+   contract test 8 (service-side model rejection remains); the `park_ctx` fixture (already valid,
+   so no existing test breaks — consistent with the PATCH classification).

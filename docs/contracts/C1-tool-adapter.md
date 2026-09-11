@@ -1,6 +1,6 @@
 # C1 — Tool Adapter Interface
 
-**Version:** 1.1.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.1.1 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream A (MCP tools), Stream E (n8n MCP server tools), Stream D (approvals — via the
 injected approvals seam, C4 §4), core orchestrator (Tool Manager caller).
 **Informed by:** M1 reference `main:apps/api/sunil/core/tool_framework/base.py` (greenfield rebuild
@@ -127,7 +127,11 @@ attempt** (`approval is None`): every V2 tool call originates from a validated p
 ROADMAP §25), so the orchestrator always holds both values, and a call that could park
 non-resumably must not be expressible. A first attempt without it raises `TypeError` before step 1
 runs — no attempt row is written, because this is a caller contract violation of the same class as
-constructing the manager without an audit hook, not a pipeline outcome. On continuation calls
+constructing the manager without an audit hook, not a pipeline outcome. An empty-but-present one
+cannot occur: `ParkContext` rejects empty or oversize values at construction (§2.2
+`__post_init__`, v1.1.1), so the two caller-violation modes stay distinct — missing → `TypeError`
+at the call site, invalid → `ValueError` where the value was built — and any `ParkContext` that
+reaches this signature is park-ready. On continuation calls
 (`approval` supplied) `park_context` is ignored: a consume failure early-exits `approval_invalid`
 and never re-parks.
 
@@ -226,9 +230,20 @@ class ParkContext:
     fields the manager cannot derive from its own frozen inputs. Copied VERBATIM into
     the ParkRequest at park time; the manager computes every other field (§2.1 step 3).
     Both values MUST be non-empty — an empty continuation is a never-resumable approval,
-    the exact failure class this type exists to make inexpressible (C4 §1 restart safety)."""
+    the exact failure class this type exists to make inexpressible (C4 §1 restart safety).
+    Self-guarding since v1.1.1: __post_init__ enforces the MUST, so the invalid value
+    is unconstructible rather than merely forbidden."""
     continuation: dict   # opaque persisted plan-cursor state (ADR-031); len >= 1
-    summary: str         # built by SUNIL code, never LLM output (C4 §4); 1..500 chars
+    summary: str         # built by SUNIL code, never LLM output (C4 §4); 1..500 chars,
+                         # never whitespace-only
+
+    def __post_init__(self) -> None:  # normative (v1.1.1) — the class is its own guard
+        if len(self.continuation) == 0:
+            raise ValueError("ParkContext.continuation must be non-empty")
+        if not self.summary.strip():
+            raise ValueError("ParkContext.summary must be non-empty")
+        if len(self.summary) > 500:
+            raise ValueError("ParkContext.summary must be at most 500 characters")
 
 
 @dataclass(frozen=True)
@@ -261,6 +276,21 @@ class AuditHook(Protocol):
                        error_kind: str | None, duration_ms: int) -> None: ...
     # Called exactly once per attempt, after the pipeline resolves (immediately, on early exits).
 ```
+
+**`ParkContext` is its own guard (v1.1.1 — QA fakes-build finding, `docs/tasks/P0-fakes.md`).**
+The `__post_init__` above is normative: `ValueError` on an empty `continuation`, an empty or
+whitespace-only `summary`, or a `summary` over 500 characters. The bounds mirror C4 §4's
+`ParkRequest` constraints (`Field(min_length=1[, max_length=500])`) with one deliberate
+caller-side tightening — C4's `min_length=1` admits a whitespace-only summary, but a blank
+approval card is the same never-actionable failure class — so anything constructible here is
+valid there: a `ParkContext` that constructs can never fail `ParkRequest` validation on the two
+verbatim-copied fields. Consequence for §2.1: step 3 can no longer receive an empty
+`ParkContext`, closing the previously unspecified path in which `approvals.park(...)` took an
+unhandled `pydantic.ValidationError` out of `execute` — a raise with no kind in §4's closed error
+set and an unfinalised attempt row behind it. The violation now surfaces at construction time, in
+the orchestrator, where the plan cursor actually lives; C4 §4's model constraints remain as the
+second, service-side line of defence (they also cover a hand-rolled `ParkRequest` that never came
+through a `ParkContext`).
 
 The approvals seam is **C4 §4's `ApprovalsService`** (`park` + `consume`) — one protocol, defined
 once, injected here (fix round 2026-09-10: the narrower `ParkHook` was deleted with QA B3's
@@ -444,11 +474,43 @@ attempts, not only the ones that end up parking.
    (or omitted) raises `TypeError` before any pipeline step — afterwards the approvals fake holds
    zero approvals and the audit hook recorded zero attempts (caller contract violation, not a
    pipeline outcome — §2.1; excluded from test 7's pairing accounting for the same reason).
+9. construction-guard probes (v1.1.1): with `valid_cont = {"plan_id": "plan-1", "cursor":
+   "step_1"}` and `valid_summary = "fake_tool.write_item: key=demo"`, each of
+   `ParkContext(continuation={}, summary=valid_summary)`,
+   `ParkContext(continuation=valid_cont, summary="")`,
+   `ParkContext(continuation=valid_cont, summary="   ")` (whitespace-only) and
+   `ParkContext(continuation=valid_cont, summary="x" * 501)` raises `ValueError`;
+   `ParkContext(continuation=valid_cont, summary="x" * 500)` constructs (boundary legal), as does
+   the fixture `park_ctx`. Pure construction probes — no manager, no fakes, no import guard (the
+   §6.4 manager fixture is unused): they run and pass before `manager.py` exists, so the QA
+   finding's pin lands as live coverage rather than another deferred-debt row.
 
 `args_hash` canonicalisation (normative for C1 and C4): `sha256` hex digest of the UTF-8 JSON
 serialisation of the **validated** params model with `sort_keys=True`, separators `(",", ":")`.
 
 ## Changelog
+
+- **v1.1.1 — 2026-09-11 (ParkContext-guard round; QA fakes-build finding,
+  `docs/tasks/P0-fakes.md`).** `ParkContext` becomes its own guard: normative `__post_init__`
+  raising `ValueError` on an empty `continuation`, an empty or whitespace-only `summary`, or a
+  `summary` over 500 characters — bounds mirroring C4 §4's `ParkRequest` `Field` constraints, so
+  §2.2's already-declared "Both values MUST be non-empty" now binds mechanically instead of
+  binding nobody. Closes the unspecified empty-but-present case: previously
+  `ParkContext(continuation={}, summary="")` passed §2.1's non-None precondition, reached step 3
+  and took an unhandled `pydantic.ValidationError` out of `approvals.park(...)` — a raise from
+  `execute` with no kind in §4's closed set and an unfinalised attempt row. Step 3 can no longer
+  receive an empty `ParkContext`; C4 §4's model constraints become the second, service-side line
+  of defence. New contract test 9 (four `ValueError` probes + two boundary constructions —
+  activates immediately, no manager needed). **Rejected alternative — manager-side
+  pre-validation** (QA's option 2: widen §2.1's precondition to "non-None AND non-empty", an
+  emptiness check at the top of `execute`): it puts the enforcement in code the contract's type
+  story cannot see, every future caller and every manager implementation must remember it, the
+  poison value stays constructible and detonates only at whichever manager finally receives it,
+  and it needs an error mode §4 does not have — either widening the closed set for a caller bug
+  or making `TypeError` value-dependent. PATCH, same class as C2 v1.0.1: no field, signature,
+  pipeline step or error kind changed; a declared MUST becomes mechanically enforced, and no
+  conforming caller (one already supplying the non-empty values v1.1.0 required) can observe the
+  change.
 
 - **v1.1.0 — 2026-09-10 (backend fakes-review round).** Two findings from the backend engineer's
   probe build (PASS-with-conditions review):
