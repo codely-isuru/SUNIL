@@ -4,11 +4,12 @@
 **Status:** For owner **Gate 2 design review**. Nothing here is built yet. Stream D implements this
 document; it is the reference, not the code.
 **Design language:** `DESIGN_SYSTEM.md` is binding. This spec **names** tokens, it does not
-redefine them. V2's visual language is **Amendment A** ("Obsidian & Gold", round 2 — replaced
-wholesale after the owner's Gate-2 verdict): dark-only black + gold, status semantics for the
-five-state approval lifecycle, density rules, and the Space Grotesk / Inter / JetBrains Mono type
-system. Token *names* are unchanged, so every reference below still resolves; "accent" means the
-gold `#F0B429`.
+redefine them. V2's visual language is **Amendment A** ("Obsidian & Gold", rounds 2–3 — replaced
+wholesale after the owner's Gate-2 verdict, then comfort-tuned and de-yellowed after the owner's
+round-3 verdict): dark-only black + antique gold, a contrast comfort ceiling alongside the AA
+floor, status semantics for the five-state approval lifecycle, density rules, and the Space
+Grotesk / Inter / JetBrains Mono type system. Token *names* are unchanged, so every reference
+below still resolves; "accent" means the antique gold `#C9A227`.
 **Contracts consumed:** `contracts/C4-approvals.md` + `C4-approvals-openapi.yaml` (approvals),
 `contracts/C5-chat.md` + `C5-chat-openapi.yaml` (chat envelope, `outcome=parked`, trace stages).
 **Scope source:** `V2_DEVELOPMENT_PLAN.md` Stream D — "approvals queue, agent activity, tasks,
@@ -16,7 +17,7 @@ projects, audit browser" + the existing chat. `ARCHITECTURE_V2.md` §2 (`apps/we
 **Predecessors honoured:** `M1_CHAT_SPEC.md` (the chat view is that spec, re-hosted, plus one new
 state); `DASHBOARD_DIRECTION.md` (icon rail, chrome-agnostic chat components, trace view lineage).
 **Mockups:** `mockups/01…06.html` — static, self-contained, **single committed dark theme**
-(Obsidian & Gold, Amendment A round 2 — no `prefers-color-scheme` query, every colour painted),
+(Obsidian & Gold, Amendment A round 3 — no `prefers-color-scheme` query, every colour painted),
 realistic data.
 
 ---
@@ -704,29 +705,32 @@ sits on a row edge:
 
 Printed in greyscale or seen by a fully colour-blind user, every row remains classifiable.
 
-### 12.4 Contrast (Amendment A round-2 pairs, computed by the WCAG relative-luminance method)
+### 12.4 Contrast (Amendment A round-3 pairs, computed by the WCAG relative-luminance method)
 
-Grounds: canvas `#000000` (L .0000), surface `#12100B` (.0052), raised `#1C1913` (.0099),
-high `#282318` (.0172). Every text token is checked against **its actual worst ground**.
+Grounds: canvas `#0B0906` (L .0028), surface `#16120C` (.0063), raised `#201A11` (.0109),
+high `#2B2315` (.0177). Every text token is checked against **its actual worst ground** — and,
+new in round 3, against the **comfort ceiling** (Amendment A §A.7): sustained-reading text must
+land 9–13:1 and never exceed 13.5:1, because on an hours-a-day dark console maximum contrast is
+glare, not accessibility.
 
 | Pair | Ratio | Requirement | Result |
 |---|---|---|---|
-| `text-primary` `#F5EFE3` on canvas / surface-high | 18.3 / 13.7:1 | 4.5:1 | Pass AAA |
-| `text-secondary` `#DECFA8` on canvas / surface | 13.6 / 12.3:1 | 4.5:1 | Pass AAA |
-| `text-muted` (sand) `#A89A7E` on canvas / surface / raised / high | 7.6 / 6.9 / 6.3 / 5.7:1 | 4.5:1 | Pass on all four grounds |
-| `accent` (gold) `#F0B429` on canvas / surface / high | 11.6 / 10.5 / 8.6:1 | 4.5:1 text / 3:1 ring | Pass, both uses |
-| `gold-deep` (ochre) `#C9971F` on canvas / surface | 7.9 / 7.2:1 | 4.5:1 | Pass |
-| ink `#161006` on gold fill `#F0B429` / hover `#FFCB57` | 10.4 / 12.5:1 | 4.5:1 | Pass AAA |
-| ink on `status-pending` fill `#FF9E45` (rail badge) | 9.2:1 | 4.5:1 | Pass |
-| `status-pending` `#FF9E45` on canvas / surface | 10.2 / 9.3:1 | 4.5:1 | Pass |
-| `status-approved` `#6EA8FE` on canvas / surface | 8.7 / 7.9:1 | 4.5:1 | Pass |
-| `success` `#43C878` on canvas / surface | 9.8 / 8.8:1 | 4.5:1 | Pass |
-| `danger` `#FF6B5E` on canvas / surface / raised | 7.5 / 6.8 / 6.3:1 | 4.5:1 | Pass |
+| `text-primary` `#CEC5B4` on canvas / surface / raised / high | 11.6 / 10.9 / 10.1 / 9.1:1 | 4.5:1 floor · 9–13:1 band | Pass — in the comfort band on all four grounds |
+| `text-secondary` `#C4B48D` on canvas / high | 9.7 / 7.6:1 | 4.5:1 | Pass |
+| `text-muted` (sand) `#9A8D71` on canvas / surface / raised / high | 6.1 / 5.7 / 5.3 / 4.7:1 | 4.5:1 | Pass on all four grounds |
+| `accent` (gold) `#C9A227` on canvas / surface / high | 8.2 / 7.7 / 6.4:1 | 4.5:1 text / 3:1 ring | Pass, both uses |
+| `gold-deep` `#B08A2A` on canvas / surface | 6.2 / 5.8:1 | 4.5:1 | Pass |
+| ink `#14100A` on gold fill `#C9A227` / hover `#DBBE7F` / pressed `#A6801F` | 7.8 / 10.5 / 5.2:1 | 4.5:1 | Pass at every stop of the metallic sheen |
+| ink on `status-pending` fill `#D98E4A` (rail badge) | 8.1:1 | 4.5:1 | Pass |
+| `status-pending` (copper) `#D98E4A` on canvas / high | 7.5 / 5.9:1 | 4.5:1 | Pass |
+| `status-approved` `#5E96E0` on canvas / high | 6.5 / 5.1:1 | 4.5:1 | Pass |
+| `success` `#3FAE6C` on canvas / high | 7.1 / 5.5:1 | 4.5:1 | Pass |
+| `danger` `#E8685C` on canvas / surface / raised / high | 6.2 / 5.8 / 5.4 / 4.9:1 | 4.5:1 | Pass |
 | ink on `danger-strong` fill `#E5484D` | 4.8:1 | 4.5:1 | Pass — white on it is 3.9:1 and **fails**, hence dark ink on all fills |
-| focus ring (gold) vs `surface-high` | 8.6:1 | 3:1 | Pass |
-| *(rejected)* dark ochre `#B45309` as text on canvas | 4.2:1 | 4.5:1 | **Fails** — why the ochre is `#C9971F` |
-| *(rejected)* `#FFD700` web-gold accent | 15.0:1 | — | Passes contrast, rejected as costume (Decision 12) |
-| *(rejected)* `#FFFFFF` as text-primary | 21:1 | — | Passes, rejected for halation glare on true black (Amendment A §A.2) |
+| focus ring (gold) vs `surface-high` | 6.4:1 | 3:1 | Pass |
+| *(retired)* round 2's `text-primary` `#F5EFE3` on canvas | 18.3:1 | ≤13.5:1 ceiling | **Above the ceiling** — the value the owner reported as eye strain |
+| *(rejected)* `#FFD700` web-gold accent | — | — | Rejected as costume in round 2 (Decision 12); doubly out under the round-3 "remove yellow" ruling |
+| *(rejected)* `#8A7D63` as text-muted | 3.8:1 on high | 4.5:1 | **Fails** — why muted stops at `#9A8D71` |
 
 ### 12.5 Motion, zoom, touch
 - `prefers-reduced-motion` is already a global kill-switch (`DESIGN_SYSTEM.md` §7, confirmed in

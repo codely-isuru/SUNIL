@@ -8,18 +8,20 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 2, dark-only, committed) ── */
+/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 3: comfort-tuned, de-yellowed; dark-only, committed) ── */
 :root{
   color-scheme: dark;
-  --canvas:#000000; --surface:#12100B; --raised:#1C1913; --high:#282318;
-  --border:#2B2416; --border-accent:rgba(240,180,41,.20); --border-strong:rgba(240,180,41,.45);
-  --accent:#F0B429; --accent-hover:#FFCB57; --accent-active:#D69C1E; --accent-on:#161006;
-  --gold-deep:#C9971F;
-  --text:#F5EFE3; --text-2:#DECFA8; --muted:#A89A7E; --disabled:#5D5442;
-  --success:#43C878; --warning:#FF9E45; --approved:#6EA8FE; --danger:#FF6B5E; --danger-strong:#E5484D;
-  --untrusted-bg:#1C1913; --untrusted-bar:#A89A7E; --row-hover:#1C1913; --redacted:#5D5442;
-  --glow-armed:0 0 0 1px rgba(240,180,41,.55),0 0 18px rgba(240,180,41,.28);
-  --focus:0 0 0 4px rgba(240,180,41,.25);
+  --canvas:#0B0906; --surface:#16120C; --raised:#201A11; --high:#2B2315;
+  --border:#282013; --border-accent:rgba(201,162,39,.16); --border-strong:rgba(201,162,39,.38);
+  --accent:#C9A227; --accent-hover:#DBBE7F; --accent-active:#A6801F; --accent-on:#14100A;
+  --gold-deep:#B08A2A;
+  --sheen-panel:linear-gradient(180deg,rgba(201,162,39,.03),rgba(201,162,39,0) 46%);
+  --sheen-metal:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,0) 45%,rgba(0,0,0,.12));
+  --text:#CEC5B4; --text-2:#C4B48D; --muted:#9A8D71; --disabled:#59503C;
+  --success:#3FAE6C; --warning:#D98E4A; --approved:#5E96E0; --danger:#E8685C; --danger-strong:#E5484D;
+  --untrusted-bg:#201A11; --untrusted-bar:#9A8D71; --row-hover:#201A11; --redacted:#59503C;
+  --glow-armed:0 0 0 1px rgba(201,162,39,.55),0 0 18px rgba(201,162,39,.30);
+  --focus:0 0 0 4px rgba(201,162,39,.22);
   --r-sm:3px; --r-md:6px; --r-lg:10px;
   --f-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
   --f-body:'Inter',ui-sans-serif,system-ui,sans-serif;
@@ -27,7 +29,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background-color:#000000;background-image:repeating-linear-gradient(0deg,rgba(240,180,41,.013) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
+body{background-color:#0B0906;background-image:repeating-linear-gradient(0deg,rgba(201,162,39,.012) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
 a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-hover);text-decoration:underline}
 :focus{outline:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
@@ -106,7 +108,7 @@ ul.links .k{color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:
 .btn-primary:hover{background:var(--accent-hover)}
 .btn-primary:active{background:var(--accent-active)}
 .btn-danger{background:transparent;color:var(--danger);border-color:var(--danger)}
-.btn-danger:hover{background:rgba(255,107,94,.08)}
+.btn-danger:hover{background:rgba(232,104,92,.08)}
 .btn-ghost{background:transparent;color:var(--accent);border-color:var(--border-strong)}
 .btn-ghost:hover{background:var(--high);border-color:var(--accent)}
 .btn-armed{box-shadow:var(--glow-armed)} /* the ONLY glow on this page: the armed decision (Amendment A §A.4) */
@@ -125,8 +127,15 @@ ul.links .k{color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:
 .mini{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:16px}
 kbd{font-family:var(--f-mono);font-size:.6875rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:var(--r-sm);padding:1px 6px;color:var(--text-2);background:var(--high)}
 footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:900px}
+/* ── ROUND 3 — atmosphere (Amendment A §A.4 expanded): panel sheen, metallic gold fill, armed shimmer ── */
+.card,.mini{background-image:var(--sheen-panel)}
+.btn-primary{background-image:var(--sheen-metal)}
+.btn-armed{position:relative;overflow:hidden}
+.btn-armed::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:45%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.20),transparent);animation:shimmer 2600ms cubic-bezier(.4,0,.2,1) infinite;pointer-events:none}
+@keyframes shimmer{0%{left:-60%}60%,100%{left:115%}}
 @media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:18px 16px 60px}dl.prov,ul.links li{grid-template-columns:1fr}table.params th{width:auto;display:block;padding-bottom:0;border-bottom:0}table.params td{display:block;padding-top:2px}.bar{flex-direction:column-reverse;align-items:stretch}.btn{width:100%}}
-@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  .btn-armed::after{content:none}}
 </style>
 </head>
 <body>
@@ -233,7 +242,7 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
         <div class="states">
 
           <div>
-            <p class="micro muted">A · Armed (after pressing Approve, or <kbd>A</kbd>) — the armed control is the one glowing element in the product (Amendment A §A.4)</p>
+            <p class="micro muted">A · Armed (after pressing Approve, or <kbd>A</kbd>) — the armed control is the one glowing element on this page, with a slow shimmer sweep marking it as live (Amendment A §A.4; disabled under prefers-reduced-motion)</p>
             <div class="mini" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
               <span class="small muted grow">Refund AUD 240.00 — this cannot be undone.</span>
               <button class="btn btn-ghost">Cancel</button>
@@ -315,7 +324,7 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
               <textarea id="rs" rows="2" style="width:100%;margin-top:6px;background:var(--high);color:var(--text);border:1px solid var(--border);border-radius:var(--r-md);padding:10px;font-family:var(--f-body);font-size:.8125rem">Already refunded manually in Stripe on 9 Sep — this would double-refund the customer.</textarea>
               <div style="display:flex;gap:14px;justify-content:flex-end;margin-top:12px">
                 <button class="btn btn-ghost">Cancel</button>
-                <button class="btn btn-danger btn-armed" style="box-shadow:0 0 0 1px rgba(255,107,94,.55),0 0 18px rgba(255,107,94,.22)">Confirm refuse</button>
+                <button class="btn btn-danger btn-armed" style="box-shadow:0 0 0 1px rgba(232,104,92,.55),0 0 18px rgba(232,104,92,.22)">Confirm refuse</button>
               </div>
             </div>
           </div>

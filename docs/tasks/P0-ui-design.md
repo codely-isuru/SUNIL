@@ -115,6 +115,40 @@ line above).
 - Handed to the Delivery Manager to commit (designer has no shell by design) and to route the
   round-2 package back to the owner for Gate 2.
 
+### Round 3 — owner-directed comfort + effects tuning (2026-09-11)
+
+- **Owner's verdict on the round-2 package (verbatim):** *"the contrast are bit high on these
+  designs its hard to keep on the eye for a long time. make it so it got a cool effects. remove
+  yellow keep black and gold colors."* Read as three rulings: lower the contrast for long
+  sessions, de-yellow the palette (black + gold only), raise the atmosphere tastefully.
+- [2026-09-11 | uiux_designer] **Amendment A re-tuned in place** (`DESIGN_SYSTEM.md`; nothing above
+  the amendment line touched). Grounds lift off pure black: `#0B0906 / #16120C / #201A11 / #2B2315`.
+  Gold de-yellowed to antique/metallic: accent `#C9A227` (8.2:1), hover `#DBBE7F` pale champagne,
+  pressed `#A6801F` bronze, deep `#B08A2A`, ink `#14100A`. Text re-tuned into a new **comfort
+  ceiling** (§A.7: AA 4.5:1 floor unchanged + sustained-reading text 9–13:1, max 13.5:1): body
+  `#CEC5B4` 11.6:1 canvas / 9.1:1 lightest ground (was 18.3:1), headings `#C4B48D` 9.7:1, muted
+  `#9A8D71` 6.1/4.7:1. Status de-yellowed and dimmed: pending → **copper** `#D98E4A` (7.5:1, hue
+  ≈28° vs gold's ≈46°; distinction rule named in §A.3), approved `#5E96E0`, consumed `#3FAE6C`,
+  refused `#E8685C`. Hairlines quieter (.16/.38). Full recomputed contrast table in §A.7 — worst
+  text pair 4.7:1, everything in or below the comfort band.
+- [2026-09-11 | uiux_designer] **Atmospherics budget §A.4 expanded** (owner's "cool effects"),
+  all CSS-only, reduced-motion-safe, never on reading surfaces: panel sheen (≤3% gold
+  top-gradient), metallic gradient on gold fills (ink AA at every stop), key-figure text-glow,
+  live pulse slowed 1100→2600ms, one shimmer sweep on the armed confirm button. Blur/animated
+  backgrounds stay forbidden.
+- [2026-09-11 | uiux_designer] **All six mockups regenerated in place** in the tuned system —
+  same filenames, self-contained, no JS, single explicit dark theme. Per-file: 01 panel sheen +
+  gold key-figure glow; 02 metallic Approve fill + armed shimmer (gold and re-tuned danger
+  variants) + sheen on card/minis; 03 slowed gold pulse on the two running cards + sheen + key
+  figure; 04/05 sheen + key-figure glow; 06 slowed pulse, re-tinted user bubble, sheen on
+  parked/rail panels — chat message bodies deliberately left flat.
+- [2026-09-11 | uiux_designer] **`V2_DESIGN_DECISIONS.md`:** D12 amended (de-yellowing + comfort
+  ceiling, owner verdict quoted as driver; rejected: darken-gold-only, sub-9:1 body text), D15
+  amended (budget raised to eight named items; rejected: point-sphere, glassmorphism, round-2
+  flatness), **D16 added** (motion grammar: one 2600ms clock, two moving elements — liveness only;
+  rejected: bespoke timings, entrance animations on poll refresh, countdown ring).
+- Handed to the Delivery Manager to commit and route the round-3 package to the owner.
+
 ## Open questions for the owner's design review
 
 Full table with defaults in `V2_DASHBOARD_SPEC.md` §14. Short form:

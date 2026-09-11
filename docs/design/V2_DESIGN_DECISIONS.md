@@ -9,6 +9,12 @@ rather than the whole spec.
 verdict rejected the skin, not the bones. Decision 10 is **replaced** (dark-only is now the owner's
 ruling), and Decisions 12–15 record the new Obsidian & Gold visual language.
 
+**Round 3 (owner comfort/effects rework, 2026-09-11):** the owner reviewed the round-2 mockups:
+*"the contrast are bit high on these designs its hard to keep on the eye for a long time. make it
+so it got a cool effects. remove yellow keep black and gold colors."* Decisions 12 and 15 are
+**amended** (de-yellowed ramp + comfort ceiling; expanded atmospherics), and Decision 16 is added
+(the micro-animation grammar the "cool effects" ruling required). Everything else stands.
+
 ---
 
 ## 1. A labelled icon rail, 88px, always showing text — not a hover-label rail
@@ -211,27 +217,36 @@ state prevents the misinformed commitment in the first place.
 
 ---
 
-## 12. A black + gold palette with a spending rule, not a colour scheme
+## 12. A black + gold palette with a spending rule, not a colour scheme — AMENDED round 3: de-yellowed, and bounded by a comfort ceiling
 
-**Decision.** Layered blacks (true-black void `#000000` → `#12100B` → `#1C1913` → `#282318`;
-elevation is lightness, never shadow), one saturated gold `#F0B429` for everything interactive plus
-at most one key figure per view, a dark ochre `#C9971F` for non-interactive warmth, sand `#A89A7E`
-for muted text — and **status hues that never share the brand hue**: pending moves from amber to
-orange `#FF9E45`, approved moves from accent to signal blue `#6EA8FE`. Full table + ratios in
-Amendment A.
+**Decision (as amended).** Layered warm blacks (`#0B0906` → `#16120C` → `#201A11` → `#2B2315`;
+elevation is lightness, never shadow — the canvas is deliberately lifted off pure `#000000`), one
+**antique/metallic gold** `#C9A227` for everything interactive plus at most one key figure per
+view (hover `#DBBE7F` pale champagne, pressed `#A6801F` bronze), dark antique gold `#B08A2A` for
+non-interactive warmth, sand `#9A8D71` for muted text — and **status hues that never share the
+brand hue**: pending is **copper** `#D98E4A`, approved is signal blue `#5E96E0`, consumed green
+`#3FAE6C`, refused red `#E8685C`. Contrast is now governed **on both sides**: AA 4.5:1 floor
+everywhere, **and a comfort ceiling** — sustained-reading text lands 9–13:1 (body `#CEC5B4`,
+11.6:1 on canvas), never above 13.5:1. Full table + ratios in Amendment A §A.7.
 
-**Why.** Gold only reads as precious if it is scarce; the moment a whole table is gold, the one
-button that spends money stops standing out. And with a *yellow* brand, round 1's aliases become
-traps: amber PENDING pills would look clickable, gold APPROVED pills would look like chrome. Status
-must survive the question "is this the system's voice or the situation's state?" at a glance —
-which forces the hue separation. Every pair was computed on its actual ground (worst case 4.8:1,
-most pairs 7–18:1).
+**Why (round-3 driver, owner verbatim):** *"the contrast are bit high on these designs its hard to
+keep on the eye for a long time … remove yellow keep black and gold colors."* Two distinct reports:
+(a) round 2's 18.3:1 body text was clinically bright — correct by WCAG, wrong for an 8-hours-a-day
+operator console, so maximum contrast is now treated as a defect, not a virtue; (b) `#F0B429` and
+the orange pending `#FF9E45` read *yellow*, not *gold*. Real gold is a low-saturation, mid-lightness
+metal — the ramp now behaves like metal (champagne when light hits it, bronze when pressed).
+Pending's copper sits at hue ≈28° with visible red content against the gold's ≈46°; the named
+distinction rule — **gold is the system's voice, copper is a situation's state, and status colour
+only ever appears in the pill/edge grammar with icon + label** — keeps them unmistakable at a
+glance. Round 2's hue-separation logic and gold-spending rules survive unchanged.
 
-**Rejected.** *Monochrome gold-on-black HUD (every element a gold intensity).* It is the most
-"futuristic" looking option and the least usable one: with one hue, status collapses into
-brightness, colour-blind-safe becomes impossible to reason about, and the money screen loses its
-red. Instruments are mostly monochrome *until something matters* — which is exactly the status
-palette's job.
+**Rejected (round 3).** *(a) Keeping the ratios and just darkening the gold* — halves the fix; the
+eye-strain complaint was about the text/ground contrast, not only the accent. *(b) Dimming body
+text below 9:1 for an even softer image* — drifts toward the gray-on-gray dashboards this product
+exists to not be, and squeezes muted text against the AA floor on the lightest ground.
+**Rejected (round 2, still standing).** *Monochrome gold-on-black HUD (every element a gold
+intensity).* With one hue, status collapses into brightness, colour-blind-safe becomes impossible
+to reason about, and the money screen loses its red.
 
 ---
 
@@ -276,22 +291,58 @@ operator is one known person who asked for the data.
 
 ---
 
-## 15. An atmospherics budget: hairlines, corner ticks, one whisper of texture, glow only when armed
+## 15. An atmospherics budget — AMENDED round 3: the budget is raised, and it is still a budget
 
-**Decision.** Exactly four atmospherics are permitted (Amendment A §A.4): hairline gold rules;
-14px corner ticks on the single primary panel per view; a ≤2% scanline texture on the void only;
-and the gold glow on precisely two carriers — an **armed** decision control and the **live**
-WorkIndicator. Everything at rest is flat, layered black. Parallax, animated backgrounds,
-glassmorphism blur and neon gradients are forbidden in writing.
+**Decision (as amended).** The owner asked for *"cool effects"*; the budget grows from four items
+to eight, each still named in writing (Amendment A §A.4): hairline gold rules; corner ticks on the
+one primary panel per view; the ≤1.5% scanline texture on the void only; **a barely-there panel
+sheen** (≤3% gold top-gradient on panels/cards/tables — never on untrusted blocks or chat message
+bodies); **a metallic gradient on gold button fills** (light top edge, weighted base — CSS only,
+ink AA-verified at every stop); **a faint text-glow on the single key figure per view**; the gold
+glow on the two state carriers (armed control, live WorkIndicator — **pulse slowed from 1100ms to
+2600ms**, calm breathing instead of urgency); and **one shimmer sweep on the armed confirm button
+only**. Every animation dies under `prefers-reduced-motion` and none sits on a reading surface.
+Parallax, animated backgrounds, glassmorphism blur and neon gradients stay forbidden in writing.
 
-**Why.** The futuristic feel has to survive daily 8am use over a screen where real money moves.
-Each permitted item earns its place by carrying meaning: the ticks say "this panel is the
-instrument", the texture keeps true black from reading as a dead void, and the glow — because it is
-otherwise absent — makes *armed* unmistakable from across the room. An effects budget written down
-is the only thing that stops a future contributor from adding "just one more" glow.
+**Why.** Round 2 bought legibility with near-total flatness, and the owner's verdict says it
+undershot the brief's *feel*. The added items are all material, not decoration: the sheens make
+black surfaces read as brushed metal (which is what "black and gold" wants to be), the key-figure
+glow spends light on the number the view exists for, and the shimmer marks the one control whose
+next press is irreversible as live. Meaning-carrying effects survive daily 8am use; decorative ones
+do not — which is why the list is still enumerated and closed, not "tasteful effects allowed".
 
-**Rejected.** *(a)* Ambient animated background (the V1 prototype's point-sphere) — already
-rejected in §0 of the design system for legibility, doubly wrong behind tables. *(b)* Zero
-atmospherics (flat dark-grey admin) — safe, cheap, and a failure of the actual brief: the owner
-asked for a design with a face.
+**Rejected.** *(a)* Ambient animated background (the V1 point-sphere) — still rejected; it is the
+one "cool effect" that provably costs reading. *(b)* Glassmorphism blur panels — the most-requested
+"futuristic" look of this era, and wrong here twice: blur behind an approval card makes untrusted
+text harder to inspect, and backdrop-filter is the single most expensive paint on a 10s-polling
+page. *(c)* Round 2's near-zero budget — rejected by the owner in so many words.
+
+---
+
+## 16. Motion means liveness, and only liveness — one clock (2600ms), two moving elements, zero on reading surfaces (NEW in round 3)
+
+**Decision.** The expanded effects budget needed a grammar before it needed CSS, so it is one rule:
+**a thing may animate if and only if it is claiming "this is live right now", and every such
+animation shares one clock.** Exactly two elements move: the live WorkIndicator (breathing glow)
+and the armed confirm button (shimmer sweep) — both on a 2600ms cycle with the system's single
+easing curve (`cubic-bezier(.4,0,.2,1)`), both reduced to a static glow border under
+`prefers-reduced-motion`, and neither anywhere near body text. Everything else on every view is
+still. Hover/press feedback stays in the 150–250ms transition family from §6 — transitions are
+responses, not animations, and are exempt from the two-element cap.
+
+**Why.** "Cool effects" fails in exactly one way: accumulation. Three independent pulse rates on
+one screen read as noise; two elements sharing one slow clock read as a machine idling — which is
+the futurism the owner is asking for. Tying motion to liveness also makes it *honest*: the stale
+state (Decision 11) already freezes the pulse because a glow may only claim liveness that is real,
+and the shimmer exists precisely because the armed control is the one place where "live right now"
+is a safety-relevant fact. The single clock is also the cheap-to-enforce version of the rule: any
+future animation proposal must either join the 2600ms clock and name what liveness it signals, or
+it is decoration and is refused.
+
+**Rejected.** *(a) Per-effect bespoke timings* (a 1100ms pulse + an 1800ms shimmer + 3s ambient
+drift) — each defensible alone, unarguably restless together; rhythm is a system property, not a
+component property. *(b) Entrance animations on rows/cards* (stagger-in on poll refresh) — this
+dashboard re-renders from a 10-second poll; animating arrival would make routine data refresh look
+like events, twelve times a minute. *(c) An animated topbar poll-countdown ring* — a permanently
+moving element in the periphery is exactly the fatigue the round-3 verdict complains about.
 
