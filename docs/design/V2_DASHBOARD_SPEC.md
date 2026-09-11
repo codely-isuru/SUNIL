@@ -4,16 +4,20 @@
 **Status:** For owner **Gate 2 design review**. Nothing here is built yet. Stream D implements this
 document; it is the reference, not the code.
 **Design language:** `DESIGN_SYSTEM.md` is binding. This spec **names** tokens, it does not
-redefine them. The two token extensions V2 genuinely needs (a light theme, and status/table
-semantics) are proposed as **Amendment A** appended to `DESIGN_SYSTEM.md` — marked as additions,
-nothing existing changed.
+redefine them. V2's visual language is **Amendment A** ("Obsidian & Gold", round 2 — replaced
+wholesale after the owner's Gate-2 verdict): dark-only black + gold, status semantics for the
+five-state approval lifecycle, density rules, and the Space Grotesk / Inter / JetBrains Mono type
+system. Token *names* are unchanged, so every reference below still resolves; "accent" means the
+gold `#F0B429`.
 **Contracts consumed:** `contracts/C4-approvals.md` + `C4-approvals-openapi.yaml` (approvals),
 `contracts/C5-chat.md` + `C5-chat-openapi.yaml` (chat envelope, `outcome=parked`, trace stages).
 **Scope source:** `V2_DEVELOPMENT_PLAN.md` Stream D — "approvals queue, agent activity, tasks,
 projects, audit browser" + the existing chat. `ARCHITECTURE_V2.md` §2 (`apps/web/`), §6 (L-001).
 **Predecessors honoured:** `M1_CHAT_SPEC.md` (the chat view is that spec, re-hosted, plus one new
 state); `DASHBOARD_DIRECTION.md` (icon rail, chrome-agnostic chat components, trace view lineage).
-**Mockups:** `mockups/01…06.html` — static, self-contained, light + dark, realistic data.
+**Mockups:** `mockups/01…06.html` — static, self-contained, **single committed dark theme**
+(Obsidian & Gold, Amendment A round 2 — no `prefers-color-scheme` query, every colour painted),
+realistic data.
 
 ---
 
@@ -149,7 +153,7 @@ token introduced by Amendment A.
 | Component | Purpose | Tokens | Notes |
 |---|---|---|---|
 | `AppShell` | Rail + topbar + `<main>` | `surface`, `border`, `canvas` | Owns skip-link, focus-on-route-change, live regions |
-| `NavRail` / `NavBottomBar` | §1.2 | `surface`, `text-muted`/`text-secondary`, `radius-md`, `glow-hover` (dark) / `elev-1` `[A]` (light) | Active item: 2px left bar `accent` + `text-secondary` label + `aria-current="page"` |
+| `NavRail` / `NavBottomBar` | §1.2 | `surface`, `text-muted`/`text-secondary`, `radius-md`, `surface-raised` (active ground) | Active item: 2px left bar `accent` (gold) + `text-secondary` label + `aria-current="page"`. **No glow at rest** — glow is reserved for armed/live elements (Amendment A §A.4) |
 | `PollFreshness` | §1.5 | `text-muted`, `warning`, `micro` | Button + status text, `aria-live="polite"` on the stale transition only |
 | `StatusPill` | Approval/task/stage status | `status-*` `[A]`, `radius-full`, `micro` | **Icon + uppercase label + colour**, never colour alone (§12.3) |
 | `DataTable` | Queue/tasks/audit lists | `surface`, `surface-raised` (hover/zebra), `border`, `small` | Sortable headers carry `aria-sort`; row = link, not a click handler on a div |
@@ -186,19 +190,26 @@ specifies **stale** (§1.5). A view that ships without all five is incomplete, n
 
 ## 3. Colour, type and density in an ops context
 
-- **Density.** Chat is spacious (`max-w-3xl`, `gap-4`). Ops views are dense: table rows `py-2.5`
+- **Spacing density.** Chat is spacious (`max-w-3xl`, `gap-4`). Ops views are dense: table rows `py-2.5`
   (44px effective target on touch via padding, not by shrinking), section gap `gap-6`, card padding
   `p-4`/`p-6`. This is the deliberate spacing-scale split — one product, two densities, matching how
   the surfaces are used.
-- **Type.** `font-mono-body` (JetBrains Mono) for all data and prose; `font-mono-ui` (Share Tech
-  Mono) for chips/labels/timestamps; `font-display` (Orbitron) only for the wordmark and view
-  headings (H1 scale). **All numeric columns and every countdown use tabular figures**
-  (`font-variant-numeric: tabular-nums`) so a ticking timer does not reflow its row.
-- **Light theme.** The M1 system is dark-only. V2's ops views will be read in daylight beside other
-  business tooling, so Amendment A adds a light map. It is **not an inversion**: the cyan accent is
-  darkened to `#0E7490` (5.36:1 on white) because `#22D3EE` on white is ~1.8:1 and would fail as
-  link/label text, and glow-as-elevation is replaced by a neutral shadow scale because glow is
-  invisible on a light surface. Both adaptations are recorded in Amendment A with their ratios.
+- **Type.** `font-body` (Inter) for all UI text, tables and prose; `font-mono` (JetBrains Mono)
+  for everything machine-shaped — ids, hashes, params, offsets, countdowns, JSON; `font-display`
+  (Space Grotesk) for the wordmark, view headings and summary-rail figures. Amendment A §A.5 carries
+  the full scale and the rationale (Orbitron and Share Tech Mono are retired from V2 surfaces).
+  **All numeric columns and every countdown use tabular figures**
+  (`font-variant-numeric: tabular-nums`) so a ticking timer does not reflow its row — now
+  load-bearing, since Inter is proportional by default.
+- **Theme.** **Dark-only, committed** (owner's Gate-2 ruling; Decision 10 round 2). One painted
+  theme — layered blacks, rationed gold, hue-separated status colours — no
+  `prefers-color-scheme` query, no toggle, no light map. Elevation is surface lightness, never
+  shadow; gold glow appears only on an armed decision control and the live WorkIndicator
+  (Amendment A §A.1/§A.4).
+- **Density (Amendment A §A.6, from the owner's "all the info displayed properly").** Every list
+  view opens with a **summary rail** of 3–5 at-rest figures. Timestamps show relative *and*
+  absolute together — never absolute behind hover. Nothing meant to be read hides behind hover;
+  hover adds affordance only. Collapsed audit rows surface their key figures inline.
 
 ---
 
@@ -693,23 +704,29 @@ sits on a row edge:
 
 Printed in greyscale or seen by a fully colour-blind user, every row remains classifiable.
 
-### 12.4 Contrast (Amendment A pairs, computed by the WCAG relative-luminance method)
+### 12.4 Contrast (Amendment A round-2 pairs, computed by the WCAG relative-luminance method)
+
+Grounds: canvas `#000000` (L .0000), surface `#12100B` (.0052), raised `#1C1913` (.0099),
+high `#282318` (.0172). Every text token is checked against **its actual worst ground**.
 
 | Pair | Ratio | Requirement | Result |
 |---|---|---|---|
-| light `text-primary` `#0B1220` on light `surface` `#FFFFFF` | ~18.4:1 | 4.5:1 | Pass AAA |
-| light `text-secondary` `#155E75` on `#FFFFFF` | ~7.3:1 | 4.5:1 | Pass AAA |
-| light `text-muted` `#475569` on light `canvas` `#EEF3F8` | ~6.8:1 | 4.5:1 | Pass |
-| light `accent` `#0E7490` on `#FFFFFF` | ~5.4:1 | 4.5:1 (as text) / 3:1 (focus ring) | Pass |
-| light `accent` `#0E7490` on light `canvas` `#EEF3F8` | ~4.8:1 | 4.5:1 | Pass |
-| white `#FFFFFF` on light `accent` fill `#0E7490` | ~5.4:1 | 4.5:1 | Pass |
-| light `success` `#05654A` on `#EEF3F8` | ~6.3:1 | 4.5:1 | Pass |
-| light `warning` `#92400E` on `#EEF3F8` | ~6.4:1 | 4.5:1 | Pass |
-| light `danger` `#B91C1C` on `#EEF3F8` | ~5.8:1 | 4.5:1 | Pass |
-| *(rejected)* `accent` `#22D3EE` on `#FFFFFF` | ~1.8:1 | 4.5:1 | **Fails** — why light mode darkens the accent rather than reusing it |
-| *(rejected)* amber-700 `#B45309` on `#EEF3F8` | ~4.50:1 | 4.5:1 | **Borderline** — darkened to `#92400E` instead of shipping on the line |
-
-Dark-theme pairs are unchanged from `DESIGN_SYSTEM.md` §7 and are not re-derived here.
+| `text-primary` `#F5EFE3` on canvas / surface-high | 18.3 / 13.7:1 | 4.5:1 | Pass AAA |
+| `text-secondary` `#DECFA8` on canvas / surface | 13.6 / 12.3:1 | 4.5:1 | Pass AAA |
+| `text-muted` (sand) `#A89A7E` on canvas / surface / raised / high | 7.6 / 6.9 / 6.3 / 5.7:1 | 4.5:1 | Pass on all four grounds |
+| `accent` (gold) `#F0B429` on canvas / surface / high | 11.6 / 10.5 / 8.6:1 | 4.5:1 text / 3:1 ring | Pass, both uses |
+| `gold-deep` (ochre) `#C9971F` on canvas / surface | 7.9 / 7.2:1 | 4.5:1 | Pass |
+| ink `#161006` on gold fill `#F0B429` / hover `#FFCB57` | 10.4 / 12.5:1 | 4.5:1 | Pass AAA |
+| ink on `status-pending` fill `#FF9E45` (rail badge) | 9.2:1 | 4.5:1 | Pass |
+| `status-pending` `#FF9E45` on canvas / surface | 10.2 / 9.3:1 | 4.5:1 | Pass |
+| `status-approved` `#6EA8FE` on canvas / surface | 8.7 / 7.9:1 | 4.5:1 | Pass |
+| `success` `#43C878` on canvas / surface | 9.8 / 8.8:1 | 4.5:1 | Pass |
+| `danger` `#FF6B5E` on canvas / surface / raised | 7.5 / 6.8 / 6.3:1 | 4.5:1 | Pass |
+| ink on `danger-strong` fill `#E5484D` | 4.8:1 | 4.5:1 | Pass — white on it is 3.9:1 and **fails**, hence dark ink on all fills |
+| focus ring (gold) vs `surface-high` | 8.6:1 | 3:1 | Pass |
+| *(rejected)* dark ochre `#B45309` as text on canvas | 4.2:1 | 4.5:1 | **Fails** — why the ochre is `#C9971F` |
+| *(rejected)* `#FFD700` web-gold accent | 15.0:1 | — | Passes contrast, rejected as costume (Decision 12) |
+| *(rejected)* `#FFFFFF` as text-primary | 21:1 | — | Passes, rejected for halation glare on true black (Amendment A §A.2) |
 
 ### 12.5 Motion, zoom, touch
 - `prefers-reduced-motion` is already a global kill-switch (`DESIGN_SYSTEM.md` §7, confirmed in
@@ -769,7 +786,7 @@ under the §6.3 plain-text rules — the same containment as the approval card, 
 | Q4 | Should C4 gain a risk/impact classification (e.g. `low/medium/high`, or "spends money / changes code / sends a message")? Today the queue can only sort by time, so a `$4,000 refund` and a `label added to an issue` look identical until opened | §5.4 | Ship without it; signal time pressure only |
 | Q5 | Confirm with Security: is `unicode-bidi: plaintext` + no-linkification + text-node-only rendering the accepted containment set for `summary`/`params_redacted`/`detail`, or is a stricter character policy (e.g. rejecting C0/bidi control chars at park time) wanted? | §6.3 | Ship the CSS/rendering set above and flag the character policy as a backend hardening item |
 | Q6 | Landing route: approvals-first when pending (Decision 2). Or would you rather always land in Chat? | §1.2 | Approvals-first |
-| Q7 | Light theme (Amendment A): do you want it at all, or is SUNIL dark-only as a brand position? Building both doubles the visual QA surface | Amendment A | Ship both, default to `prefers-color-scheme` with no manual toggle in v1 |
+| Q7 | ~~Light theme: do you want it at all, or is SUNIL dark-only as a brand position?~~ **ANSWERED at Gate 2 (round 2): dark-only is the brand position.** The light map is deleted; Amendment A is the committed Obsidian & Gold theme; Decision 10 records the ruling | — | — |
 | Q8 | Mobile: is a phone-usable approval decision a v1 requirement, or is desktop-only acceptable for the rebuild? | §1.4 | Approvals mobile-complete, other views best-effort |
 | Q9 | **Architect:** does a **parked** turn emit all twelve stages, or short-circuit after `permission_decision`? ET-8 guarantees stage 12 always fires, but stages 10–11 (`tool_result`, `agent_result`) have no obvious value on a turn whose tool never executed | §10.2 stage count, §10.3 partial banner | Render whatever arrives; flag any count ≠ 12 in `warning` and never pad or hide a missing stage |
 
@@ -789,4 +806,4 @@ under the §6.3 plain-text rules — the same containment as the approval card, 
 | §11.2 | C5 §2.1, ADR-031 | `outcome=parked` + `ApprovalRef` rendered; exactly-one rule respected |
 | §11.3 | C5 `ChatFailure.kind` | All seven kinds have shippable copy |
 | §12 | `DESIGN_SYSTEM.md` §7 | Accessibility floor unchanged, extended for tables/decisions |
-| Amendment A | `DESIGN_SYSTEM.md` §0 rule | Additions only, each with a computed contrast ratio |
+| Amendment A (round 2) | `DESIGN_SYSTEM.md` §0 rule; owner Gate-2 verdict | Amendment section replaced wholesale (it was PROPOSED, unapproved); nothing above the amendment line changed; every pair ships with a computed contrast ratio |

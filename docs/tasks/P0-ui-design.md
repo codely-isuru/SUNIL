@@ -53,9 +53,11 @@ No app code. No other doc touched.
 | `docs/design/mockups/05-audit-browser.html` | Index + a full 12-stage trace (expandable) + the parked-episode continuation segment |
 | `docs/design/mockups/06-nav-shell.html` | The shell with chat inside it, the parked-turn card, expanded rail, mobile bottom bar, keyboard model |
 
-All mockups are single files, inline CSS, no JS, Google Fonts only (Orbitron / Share Tech Mono /
-JetBrains Mono — the three fonts `DESIGN_SYSTEM.md` §2 already specifies), and follow the OS
-light/dark preference.
+All mockups are single files, inline CSS, no JS, Google Fonts only. **Round 2:** the fonts are now
+Space Grotesk / Inter / JetBrains Mono (Amendment A §A.5) and every mockup ships a **single
+committed dark theme** — Obsidian & Gold, no `prefers-color-scheme` query, every colour painted,
+body background explicit (owner's Gate-2 ruling; supersedes the round-1 "follow the OS preference"
+line above).
 
 ## Progress
 
@@ -73,6 +75,46 @@ light/dark preference.
   a tasks view and an audit browser reading `audit_events`. Spec §13 proposes the three minimal
   read-only shapes; Q1 asks whether to freeze them or cut those views from Stream D's first release.
 
+### Round 2 — owner-directed visual rework (2026-09-11)
+
+- **Owner's Gate-2 verdict (verbatim intent):** *"Modern styled, futuristic design. Easy to work
+  with, all the info displayed properly. Dark mode where it looks and feels like a futuristic
+  design. I like black and gold, dark yellowish colors on the dashboard."* Ruling: the round-1
+  **skin** was rejected, the **bones** (IA, six views, Decisions 1–9 and 11) were not. Q7 is
+  answered: dark-only is the brand position.
+- [2026-09-11 | uiux_designer] **Replaced `DESIGN_SYSTEM.md` Amendment A wholesale** (it was
+  PROPOSED and unapproved; nothing above the amendment line touched): new "Obsidian & Gold"
+  instrument theme — layered blacks `#000000/#12100B/#1C1913/#282318` (elevation by lightness, no
+  shadows), gold ramp `#F0B429` accent / `#FFCB57` hover / `#D69C1E` pressed / `#C9971F` ochre /
+  `#A89A7E` sand muted / `#161006` on-fill ink, hue-separated status colours (pending `#FF9E45`,
+  approved `#6EA8FE`, consumed `#43C878`, refused `#FF6B5E`, expired sand), gold-discipline and
+  atmospherics-budget rules, Space Grotesk / Inter / JetBrains Mono type system, density rules,
+  full computed contrast table (worst pair 4.8:1, most 7–18:1), Tailwind snippet. Light-theme map
+  deleted.
+- [2026-09-11 | uiux_designer] **`V2_DESIGN_DECISIONS.md`:** D10 replaced (dark-only committed —
+  rejected alternative: a dormant light map); added D12 (palette discipline + status hue
+  separation — rejected: monochrome gold HUD), D13 (type choices — rejected: keep Orbitron /
+  all-mono body), D14 (density: summary rails, both timestamps at rest, nothing readable behind
+  hover — rejected: round-1 progressive disclosure), D15 (atmospherics budget: hairlines, corner
+  ticks, ≤2% scanline on the void, glow only on armed/live — rejected: animated backgrounds and
+  flat zero-atmosphere).
+- [2026-09-11 | uiux_designer] **`V2_DASHBOARD_SPEC.md`:** token references updated (§ header,
+  §2 NavRail, §3 type/theme/density bullets, §12.4 contrast table re-derived for the new grounds,
+  Q7 marked ANSWERED, §15 traceability). All interaction/security content untouched.
+- [2026-09-11 | uiux_designer] **All six mockups regenerated** in the new system — same filenames,
+  self-contained, inline CSS, no JS, Google Fonts only, single explicit dark theme (no
+  `prefers-color-scheme`), same realistic Codely data. The parked stripe.refund card remains the
+  money screen; the C4 §4 untrusted-text quotation pattern survives restyling (sand-barred,
+  mono-set, provenance-labelled). New per-view summary rails; relative + absolute timestamps at
+  rest; audit collapsed rows now carry key figures inline; the armed decision control and the live
+  WorkIndicator are the only glowing elements.
+- **Skill note:** the brief asked for a components skill named "impeccable", which is not
+  installed; per the task instructions the sanctioned substitutes `ui-ux-pro-max` and `ui-styling`
+  were read and applied (dark-mode contrast pairs checked per ground, no hover-only reveals,
+  token-driven theming, one primary CTA per screen, reduced-motion kill-switch retained).
+- Handed to the Delivery Manager to commit (designer has no shell by design) and to route the
+  round-2 package back to the owner for Gate 2.
+
 ## Open questions for the owner's design review
 
 Full table with defaults in `V2_DASHBOARD_SPEC.md` §14. Short form:
@@ -87,8 +129,9 @@ Full table with defaults in `V2_DASHBOARD_SPEC.md` §14. Short form:
 5. **Q5 (Security).** Is text-node rendering + no linkification + `unicode-bidi: plaintext` the
    accepted containment set, or do you also want a character policy at park time?
 6. **Q6 (owner).** Land on Approvals when something is pending (my default), or always on Chat?
-7. **Q7 (owner).** Light theme at all — or is SUNIL dark-only as a brand position? (Deleting
-   Amendment A §A.2 costs nothing now and a repaint later.)
+7. **Q7 (owner).** ~~Light theme at all — or is SUNIL dark-only as a brand position?~~
+   **ANSWERED (Gate-2 round 2): dark-only is the brand position.** Light map deleted; Amendment A
+   is now the committed Obsidian & Gold theme.
 8. **Q8 (owner).** Is deciding an approval from a phone a v1 requirement?
 9. **Q9 (Architect).** Does a parked turn emit all twelve stages or short-circuit after stage 9?
 

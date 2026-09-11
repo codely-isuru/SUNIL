@@ -1,9 +1,13 @@
 # SUNIL V2 Dashboard — Design Decisions
 
-**Author:** UI/UX Designer, Minions Team 21 · **Date:** 2026-09-11 · For owner **Gate 2**.
+**Author:** UI/UX Designer, Minions Team 21 · **Date:** 2026-09-11 (round 2) · For owner **Gate 2**.
 Companion to `V2_DASHBOARD_SPEC.md`. Each decision states what was chosen, why, and the credible
 alternative that was rejected — so the owner can overturn any one of them by reading ten lines
 rather than the whole spec.
+
+**Round 2 (owner rework):** Decisions 1–9 and 11 survived the owner's Gate-2 review unchanged — the
+verdict rejected the skin, not the bones. Decision 10 is **replaced** (dark-only is now the owner's
+ruling), and Decisions 12–15 record the new Obsidian & Gold visual language.
 
 ---
 
@@ -169,22 +173,23 @@ It contradicts the contract (the envelope has already returned), it would need t
 
 ---
 
-## 10. Light theme by OS preference, derived rather than inverted; no manual toggle in v1
+## 10. Dark-only, committed — the owner's ruling (REPLACED in round 2; supersedes the round-1 light theme)
 
-**Decision.** Dark stays the authored default and the brand. Light is added under
-`prefers-color-scheme: light` with a re-derived palette (accent darkened to `#0E7490`, glow replaced
-by a neutral shadow scale) — Amendment A in `DESIGN_SYSTEM.md`. No in-app toggle.
+**Decision.** SUNIL is **dark-only as a brand position**. One theme, painted explicitly: no
+`prefers-color-scheme` media query, no toggle, no dormant light map. The round-1 light derivation
+(Amendment A §A.2) is deleted, and the palette moves to Obsidian & Gold (Amendment A, round 2).
 
-**Why.** The chat is a HUD you talk to; the ops views are business tooling read in daylight beside
-Stripe, GitHub and a mail client, and a near-black table is fatiguing in that company. Inverting the
-dark palette would ship `#22D3EE` links at ~1.8:1 on white — a straight WCAG failure — so the accent
-is darkened and every pair is re-checked. A manual toggle is omitted because it adds a persisted
-preference, a control in the chrome and a third state to QA, for a single user whose OS already
-carries the preference.
+**Why.** The owner answered Q7 directly at Gate 2: *"Dark mode where it looks and feels like a
+futuristic design. I like black and gold."* SUNIL is the owner's personal command-centre — the V1
+prototype was a dark HUD and this is that taste, matured. Beyond taste, dark-only halves the visual
+QA surface, removes an entire class of contrast re-derivation bugs, and — for a single-user product
+— serves exactly one context: the owner's. Committing (rather than defaulting) means every colour is
+authored against a known ground; nothing can silently render on a background it was never checked
+against.
 
-**Rejected.** *(a) Dark-only, as a brand position* — defensible, and the owner may choose it (spec
-Q7); it costs nothing to delete Amendment A §A.2. *(b) A manual toggle in v1* — deferred, not
-refused: it is a small addition once the tokens exist.
+**Rejected.** *Keeping the light map dormant "in case".* A palette nobody renders is a palette
+nobody maintains: it drifts, then one day an OS preference resurrects it broken. If light is ever
+wanted, it should be re-derived deliberately from a live decision, not exhumed.
 
 ---
 
@@ -203,3 +208,90 @@ misinformed decision at worst.
 **Rejected.** *Let the 409 handle it.* The 409 is a real and correct backstop, but it is a *reaction*
 after the owner has already committed to a decision on data they believed was current; the disabled
 state prevents the misinformed commitment in the first place.
+
+---
+
+## 12. A black + gold palette with a spending rule, not a colour scheme
+
+**Decision.** Layered blacks (true-black void `#000000` → `#12100B` → `#1C1913` → `#282318`;
+elevation is lightness, never shadow), one saturated gold `#F0B429` for everything interactive plus
+at most one key figure per view, a dark ochre `#C9971F` for non-interactive warmth, sand `#A89A7E`
+for muted text — and **status hues that never share the brand hue**: pending moves from amber to
+orange `#FF9E45`, approved moves from accent to signal blue `#6EA8FE`. Full table + ratios in
+Amendment A.
+
+**Why.** Gold only reads as precious if it is scarce; the moment a whole table is gold, the one
+button that spends money stops standing out. And with a *yellow* brand, round 1's aliases become
+traps: amber PENDING pills would look clickable, gold APPROVED pills would look like chrome. Status
+must survive the question "is this the system's voice or the situation's state?" at a glance —
+which forces the hue separation. Every pair was computed on its actual ground (worst case 4.8:1,
+most pairs 7–18:1).
+
+**Rejected.** *Monochrome gold-on-black HUD (every element a gold intensity).* It is the most
+"futuristic" looking option and the least usable one: with one hue, status collapses into
+brightness, colour-blind-safe becomes impossible to reason about, and the money screen loses its
+red. Instruments are mostly monochrome *until something matters* — which is exactly the status
+palette's job.
+
+---
+
+## 13. Space Grotesk + Inter + JetBrains Mono — futurism carried by type geometry, not costume faces
+
+**Decision.** V2 surfaces retire Orbitron and Share Tech Mono. Display = **Space Grotesk**
+(squared, technical grotesk; wordmark, view titles, stat figures). Body/UI = **Inter** (all prose,
+tables, controls, with `tabular-nums`). Data = **JetBrains Mono** (ids, params, hashes, offsets,
+countdowns, JSON — anything machine-shaped).
+
+**Why.** "Futuristic precision instrument" is carried by squared terminals, tight uppercase
+micro-labels and columns of tabular figures — not by a sci-fi display face. Orbitron at data sizes
+is a costume with a weak lowercase; Share Tech Mono ships one weight and cannot express emphasis.
+Inter at 13–14px buys roughly 20% more characters per line than the round-1 mono body — the
+cheapest possible answer to "all the info displayed properly". The mono earns its keep by contrast:
+when only machine-text is monospaced, provenance becomes visible in the letterforms themselves,
+which reinforces the untrusted-text containment.
+
+**Rejected.** *(a) Keeping Orbitron for continuity* — continuity with a skin the owner just
+rejected is not a virtue. *(b) An all-mono body (round 1's choice)* — authentic HUD, but it taxes
+every sentence to make no distinction, and it spends the width the density mandate needs.
+
+---
+
+## 14. Density: summary rails, both timestamps at rest, and nothing readable behind hover
+
+**Decision.** Every list view opens with a summary rail of 3–5 at-rest figures (pending count,
+oldest wait, next expiry, decided-7d, …). Timestamps render relative **and** absolute together
+(`18 min ago · 09:41:06`) — the round-1 hover-`<time>` pattern is removed. Audit exception rows
+still arrive expanded, and collapsed rows now surface their key figures (offset, duration, tokens)
+inline. Hover may add affordance, never reveal content. Normative as Amendment A §A.6.
+
+**Why.** The owner's verdict — "all the info displayed properly" — is a report that round 1 felt
+like it hid things. The expensive information in this product is small (counts, deadlines, ids);
+what made it feel hidden was that it lived one interaction away (hover, expand, navigate). Hover
+reveals also simply do not exist on touch and are invisible to keyboard users, so removing them is
+an accessibility repair, not just a density one.
+
+**Rejected.** *Round 1's progressive-disclosure-first calm.* Defensible for a consumer product;
+wrong for an operator's console, where the cost of a hidden number is a wrong decision, and the
+operator is one known person who asked for the data.
+
+---
+
+## 15. An atmospherics budget: hairlines, corner ticks, one whisper of texture, glow only when armed
+
+**Decision.** Exactly four atmospherics are permitted (Amendment A §A.4): hairline gold rules;
+14px corner ticks on the single primary panel per view; a ≤2% scanline texture on the void only;
+and the gold glow on precisely two carriers — an **armed** decision control and the **live**
+WorkIndicator. Everything at rest is flat, layered black. Parallax, animated backgrounds,
+glassmorphism blur and neon gradients are forbidden in writing.
+
+**Why.** The futuristic feel has to survive daily 8am use over a screen where real money moves.
+Each permitted item earns its place by carrying meaning: the ticks say "this panel is the
+instrument", the texture keeps true black from reading as a dead void, and the glow — because it is
+otherwise absent — makes *armed* unmistakable from across the room. An effects budget written down
+is the only thing that stops a future contributor from adding "just one more" glow.
+
+**Rejected.** *(a)* Ambient animated background (the V1 prototype's point-sphere) — already
+rejected in §0 of the design system for legibility, doubly wrong behind tables. *(b)* Zero
+atmospherics (flat dark-grey admin) — safe, cheap, and a failure of the actual brief: the owner
+asked for a design with a face.
+

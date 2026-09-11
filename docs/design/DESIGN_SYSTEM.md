@@ -326,93 +326,228 @@ backend stage, so screen reader users aren't spammed with twelve rapid announcem
 
 ---
 
-# AMENDMENT A — V2 additions (PROPOSED, pending owner Gate 2)
+# AMENDMENT A — V2 "Obsidian & Gold" instrument theme (round 2, owner-directed)
 
-**Added:** 2026-09-11 by the UI/UX Designer, Minions Team 21, for `V2_DASHBOARD_SPEC.md`.
-**Nothing above this line was changed.** Everything below is an **addition**. If the owner rejects
-the light theme (spec Q7), delete §A.2 and the rest still stands.
+**Replaced wholesale: 2026-09-11 (round 2)** by the UI/UX Designer, Minions Team 21, after the
+owner's Gate-2 verdict on the round-1 package: *"Modern styled, futuristic design. Easy to work
+with, all the info displayed properly. Dark mode where it looks and feels like a futuristic design.
+I like black and gold, dark yellowish colors on the dashboard."*
+That verdict **answers spec Q7: SUNIL is dark-only as a brand position.** The round-1 Amendment A
+(light-theme map, cyan-derived status aliases) was PROPOSED, was not approved, and is deleted —
+not archived. **Nothing above this line was changed.**
 
-Sections §0–§7 above remain the binding contract for the dark theme and for every existing M1
-component. The V2 ops dashboard needs three things the M1 token set does not carry: a light theme,
-status semantics for a five-state approval lifecycle, and table/density tokens. Each addition below
-states why the existing set could not be reused.
+Reading of the brief that governs everything below: *futuristic means precision instrument, not
+sci-fi kitsch.* The owner operates real approvals with real money on these screens, daily, at 8am.
+Futurism is carried by layered blacks, a rationed gold, technical typography and tabular data —
+never by decoration that costs legibility.
 
-## A.1 New semantic tokens (theme-independent names)
+## A.0 Scope and precedence
 
-| Token | Dark value | Light value | Role | Why not an existing token |
-|---|---|---|---|---|
-| `--status-pending` | `#FBBF24` (= `warning`) | `#92400E` | Approval awaiting the owner | Alias of `warning`, named for meaning so a later palette change can move one without the other |
-| `--status-approved` | `#22D3EE` (= `accent`) | `#0E7490` | Decided, not yet executed | Deliberately **not** green: approved ≠ done. Green is reserved for `consumed` |
-| `--status-consumed` | `#34D399` (= `success`) | `#05654A` | Executed, single use spent | — |
-| `--status-refused` | `#F87171` (= `danger`) | `#B91C1C` | Owner said no | — |
-| `--status-expired` | `#4FA8C7` (= `text-muted`) | `#475569` | Timed out, never ran | Neutral on purpose: an expiry is not an error the owner caused |
-| `--color-untrusted-bg` | `#111B2E` (= `surface-raised`) | `#F1F5F9` | Background of the quoted block containing attacker-influenceable strings (C4 §4) | New *role*, existing value — the containment is carried by the left bar + label, not by a novel colour |
-| `--color-untrusted-bar` | `#4FA8C7` (= `text-muted`) | `#475569` | 3px left bar on that block | — |
-| `--color-row-hover` | `#111B2E` (= `surface-raised`) | `#F1F5F9` | Table row hover/zebra | — |
-| `--color-redacted` | `#2E4256` (= `text-disabled`) | `#94A3B8` | `●●●●●●●● redacted` glyph run | Reuses the disabled value at a non-interactive role |
+- This amendment is the visual language for **every surface rendered inside the V2 shell** — the
+  six views of `V2_DASHBOARD_SPEC.md`, including chat, which V2 re-hosts inside the shell. In
+  practice every V2 screen is Obsidian & Gold.
+- §0–§7 above remain binding for **structure**: the accessibility floor (§7), motion durations and
+  the reduced-motion kill-switch (§6), radii (§4), spacing conventions (§3), the lamp pattern, the
+  focus-visible rule. Where §1/§2 name a **colour or font** and this amendment names another, V2
+  surfaces use this amendment. The cyan/Orbitron values above stay recorded as the approved M1
+  contract of record.
+- Token **names** are unchanged (`--color-accent`, `--color-text-muted`, …) so every reference in
+  `V2_DASHBOARD_SPEC.md` still resolves; only the values move. "Accent" now *means* the gold.
 
-## A.2 Light theme map (new)
+## A.1 Grounds — layered blacks (elevation is lightness, not shadow)
 
-The dark palette is the brand. The light palette is a **re-derivation, not an inversion**: the
-accent is darkened because `#22D3EE` on white computes to ~1.8:1 and fails as text or as a focus
-ring, and elevation becomes a neutral shadow because cyan glow is invisible on a light surface.
-Ratios below are by the WCAG relative-luminance method; the full table lives in
-`V2_DASHBOARD_SPEC.md` §12.4.
-
-| Token | Dark (§1, unchanged) | Light (new) | Light contrast check |
+| Token | Hex | L (rel. lum.) | Role |
 |---|---|---|---|
-| `--color-canvas` | `#030712` | `#EEF3F8` | — |
-| `--color-surface` | `#0B1220` | `#FFFFFF` | — |
-| `--color-surface-raised` | `#111B2E` | `#F1F5F9` | — |
-| `--color-border` | `#1E2A3E` | `#CBD5E1` | 1.5:1 vs surface — structural only, non-text |
-| `--color-border-accent` | `rgba(34,211,238,.18)` | `rgba(14,116,144,.25)` | decorative |
-| `--color-border-strong` | `rgba(34,211,238,.4)` | `rgba(14,116,144,.5)` | decorative |
-| `--color-accent` | `#22D3EE` | `#0E7490` | 5.4:1 on surface, 4.8:1 on canvas |
-| `--color-accent-hover` | `#67E8F9` | `#0891B2` | hover only |
-| `--color-accent-active` | `#06B6D4` | `#155E75` | pressed |
-| `--color-accent-on` | `#031015` | `#FFFFFF` | 5.4:1 on the accent fill |
-| `--color-text-primary` | `#E8FBFF` | `#0B1220` | 18.4:1 |
-| `--color-text-secondary` | `#7DD3FC` | `#155E75` | 7.3:1 |
-| `--color-text-muted` | `#4FA8C7` | `#475569` | 6.8:1 on canvas |
-| `--color-text-disabled` | `#2E4256` | `#94A3B8` | non-text |
-| `--color-success` | `#34D399` | `#05654A` | 6.3:1 on canvas |
-| `--color-warning` | `#FBBF24` | `#92400E` | 6.4:1 on canvas |
-| `--color-danger` | `#F87171` | `#B91C1C` | 5.8:1 on canvas |
-| `--color-danger-strong` | `#EF4444` | `#B91C1C` | paired with `#FFFFFF` |
+| `--color-canvas` | `#000000` | .0000 | The void. True-black page ground. The only surface that may carry the scanline texture (A.4) |
+| `--color-surface` | `#12100B` | .0052 | Panels, cards, tables, rail, topbar — warm charcoal, one step up |
+| `--color-surface-raised` | `#1C1913` | .0099 | Row hover, untrusted blocks, expanded trace rows, table headers |
+| `--color-surface-high` | `#282318` | .0172 | Inputs, code blocks, the highest layer (confirm steps, sheets) |
+| `--color-border` | `#2B2416` | .0183 | Structural 1px dividers (non-text; 1.3:1 vs surface — deliberate, like §1's border) |
+| `--color-border-accent` | `rgba(240,180,41,.20)` | — | Decorative gold hairline on framed panels. Non-text only |
+| `--color-border-strong` | `rgba(240,180,41,.45)` | — | Hover/focus-adjacent hairline upgrade, corner ticks. Non-text only |
 
-**Elevation in light (§5's glow does not transfer).** Glow *is* elevation in the dark theme; on a
-white surface a cyan glow reads as a printing error. Light-theme equivalents:
+**The elevation rule (replaces §5 for V2 surfaces):** depth = one surface step up + a 1px border.
+There is **no drop-shadow scale and no glow-as-elevation** in this theme. Glow exists, but it is a
+*state* (A.4), never a height. A panel that needs to read "above" another gets a lighter ground,
+which is how a physical instrument panel does it.
 
-| Dark token | Light equivalent |
-|---|---|
-| `elevation-0` | `border: 1px solid var(--color-border)` |
-| `glow-hover` | `0 1px 2px rgba(15,23,42,.06), 0 2px 8px rgba(15,23,42,.06)` |
-| `glow-active` | `0 2px 4px rgba(15,23,42,.08), 0 8px 24px rgba(15,23,42,.10)` |
-| `glow-focus` | `0 0 0 3px rgba(14,116,144,.30)` (paired with the same 2px `accent` outline, 2px offset) |
+## A.2 The gold ramp — and the discipline that keeps it precious
 
-**Selection rule:** `color-scheme: light dark` on `:root`, dark as the authored default, light
-applied under `@media (prefers-color-scheme: light)`. No manual theme toggle in v1 (spec Q7).
-The `dark`-class gating mistake from other Codely projects is avoided by having no class gate at
-all — the OS preference is the only input.
+| Token | Hex | Role |
+|---|---|---|
+| `--color-accent` | `#F0B429` | **The gold.** Interactive elements: links, primary button fill, active nav edge, focus ring, the single key figure per view |
+| `--color-accent-hover` | `#FFCB57` | Hover lift |
+| `--color-accent-active` | `#D69C1E` | Pressed |
+| `--color-accent-on` | `#161006` | Ink — text/icons on any gold or status fill (10.4:1 on the gold) |
+| `--color-gold-deep` | `#C9971F` | Dark amber/ochre: secondary emphasis — decided-count figures, section accents, "warm" metadata that must not compete with interactive gold (7.9:1 on canvas) |
+| `--color-text-primary` | `#F5EFE3` | Body text — warm off-white, not `#FFFFFF` (pure white on true black causes halation glare at night; 18.3:1 is already AAA with room to spare) |
+| `--color-text-secondary` | `#DECFA8` | Headings, emphasis, panel titles (13.6:1) |
+| `--color-text-muted` | `#A89A7E` | Desaturated sand: meta text, timestamps, labels (7.6:1 canvas / 5.7:1 on the lightest surface — AA everywhere it can legally sit) |
+| `--color-text-disabled` | `#5D5442` | Disabled labels (non-text requirement; ~2.1:1 vs `surface-high`, visibly dimmer, clearly not interactive) |
 
-## A.3 Density scale for ops views (new)
+**Gold discipline (normative, not taste):**
+1. **Gold is spent, not poured.** Per view: interactive elements + at most **one** key figure (the
+   pending count on Approvals, the live phase on Activity, nothing on a reading surface). A page
+   drowning in gold is a page with no hierarchy.
+2. Gold is **never body text** and never a large area fill except the primary button.
+3. **Status is never gold** (A.3). If a status and the brand share a hue, "decided" becomes
+   indistinguishable from "clickable".
+4. `--color-gold-deep` is the release valve: when something wants warmth but is not interactive,
+   it gets ochre, not gold.
 
-Chat keeps §3's spacing. Ops tables and cards are denser; these are conventions, not new units —
-still Tailwind's 4px scale.
+## A.3 Status colours — hue-separated from the brand
 
-| Context | Value |
-|---|---|
-| Table row padding | `py-2.5 px-4` (44px effective touch target via padding, never by shrinking type) |
-| Table header | `py-2 px-4`, `Micro/badge` style |
-| Card padding | `p-4` mobile / `p-6` desktop (unchanged from §3) |
-| Section gap | `gap-6` |
-| Ops content max width | `max-w-6xl` (1152px) — chat stays `max-w-3xl` inside it |
-| Nav rail | 88px collapsed / 232px expanded / 64px at `md` / bottom bar `<768px` |
-| Topbar | 56px (unchanged from `M1_CHAT_SPEC.md` §1.1) |
+Round 1 aliased `approved → accent` and `pending → warning(amber)`. Both aliases break under a gold
+brand: an amber pending pill would read as a button, and a gold APPROVED pill would read as brand
+chrome. V2 statuses are therefore their own hues, each AA on every ground they sit on:
 
-## A.4 Tabular figures (new)
+| Token | Hex | On canvas | Meaning | Why this hue |
+|---|---|---|---|---|
+| `--status-pending` | `#FF9E45` | 10.2:1 | Waiting on the owner. Also `--color-warning` (stale, banners, parked) | Orange — attention, clearly not the yellow gold |
+| `--status-approved` | `#6EA8FE` | 8.7:1 | Decided, not yet executed | Signal blue — "cleared to run". Deliberately still not green: approved ≠ done |
+| `--status-consumed` | `#43C878` | 9.8:1 | Executed, single use spent. Also `--color-success` | Green stays reserved for *actually happened* |
+| `--status-refused` | `#FF6B5E` | 7.5:1 | Owner said no. Also `--color-danger` | — |
+| `--status-expired` | `#A89A7E` | 7.6:1 | Timed out, never ran (= `text-muted`) | Neutral on purpose: an expiry is not an error the owner caused |
+| `--color-danger-strong` | `#E5484D` | fill | Danger button fill, paired with `--color-accent-on` ink (4.8:1) | — |
 
-Any column of numbers, any countdown, any offset (`+2.4s`) and any id uses
-`font-variant-numeric: tabular-nums`. JetBrains Mono and Share Tech Mono are monospaced, so this is
-belt-and-braces — but the rule is written down because a ticking countdown that reflows its row is
-the most avoidable jank in the product.
+Task `in_progress`/RUNNING maps to **gold** deliberately — it is the one status allowed to share
+the brand hue, because "SUNIL is alive right now" *is* the live/active state the glow budget (A.4)
+exists for. Every status remains icon + uppercase text + colour + edge pattern (spec §12.3);
+greyscale-printed rows stay classifiable.
+
+Untrusted-containment and table roles carry over from round 1 unchanged in role, revalued:
+`--color-untrusted-bg` = `surface-raised`, `--color-untrusted-bar` = `text-muted` (sand),
+`--color-row-hover` = `surface-raised`, `--color-redacted` = `text-disabled`. The containment is
+carried by the left bar + provenance label, not by a novel colour — unchanged from Decision 3.
+
+## A.4 Light is a state; texture is a whisper (the atmospherics budget)
+
+Permitted, and only these:
+- **Hairline gold rules** — 1px, `border-accent`/`border-strong`, under view titles and around
+  framed panels. `linear-gradient(90deg, var(--color-border-strong), transparent)` fade allowed.
+- **Corner ticks** — 14px L-brackets in `border-strong` on **the one primary panel per view**
+  (the approval card, the live activity card, the trace summary). Not on every panel: a frame that
+  is everywhere frames nothing.
+- **Scanline texture** — `repeating-linear-gradient(0deg, rgba(240,180,41,.013) 0 1px,
+  transparent 1px 3px)` on `--color-canvas` **only**, never behind a panel's text. ≤2% opacity,
+  imperceptible as a pattern, present as tooth.
+- **Gold glow — on the armed/active element only:** `--glow-armed: 0 0 0 1px
+  rgba(240,180,41,.55), 0 0 18px rgba(240,180,41,.28)`. Exactly two legal carriers: an **armed**
+  decision control (spec §6.7 Armed state) and the **live** WorkIndicator pulse (§6 `work-pulse`,
+  re-coloured gold, same 1100ms timing, same reduced-motion kill-switch). Nothing at rest glows.
+- **Focus ring** — 2px solid `accent` outline, 2px offset, + `--focus: 0 0 0 4px
+  rgba(240,180,41,.25)`. Ring contrast ≥8.6:1 against the lightest surface (needs 3:1).
+
+Forbidden, in writing: parallax, animated backgrounds, glassmorphism/backdrop blur, neon
+multi-hue gradients, decorative motion, any texture behind body text. The test for every
+atmospheric: *would it annoy at 8am on a Tuesday?*
+
+## A.5 Typography — futurism by geometry, not costume
+
+| Token | Face (Google Fonts) | Weights | Use |
+|---|---|---|---|
+| `--font-display` | **Space Grotesk** | 500 / 700 | Wordmark, view titles (H1), panel headings, stat figures. Squared terminals and technical counters carry the instrument feel at reading sizes — which Orbitron cannot: it is a costume face with a weak lowercase, and at micro sizes it costs exactly the legibility this rework is buying. Orbitron is retired from V2 surfaces |
+| `--font-body` | **Inter** | 400 / 500 / 600 / 700 | All UI text, table cells, prose. Replaces the all-mono body: a proportional body at 13–14px buys ~20% more characters per line — the owner asked for *"all the info displayed properly"*, and density is a typography decision before it is a layout one. Share Tech Mono (one weight, no bold) is retired from V2 surfaces |
+| `--font-mono` | **JetBrains Mono** | 400 / 600 / 700 | Everything that is *data*: ids, hashes, params, code, timestamps, countdowns, trace offsets, JSON. Continuity with M1; the mono is what makes machine-text visibly machine-text next to an Inter body |
+
+Scale (rem-based, root 16px — rem rule from §2 unchanged):
+
+| Style | Font | Size / line | Weight | Tracking | Use |
+|---|---|---|---|---|---|
+| Display | display | 22px / 1.2 | 700 | .08em, uppercase | View H1, wordmark |
+| H2 / panel | display | 12px / 1.4 | 700 | .18em, uppercase | Section + panel headings, `text-secondary` |
+| Body | body | 14px / 1.55 | 400 | normal | Default UI text |
+| Table cell | body | 13px / 1.5 | 400 | normal | Dense list rows |
+| Small / meta | body | 12px / 1.5 | 400 | .01em | Captions, helper lines |
+| Micro / label | body | 10px / 1.4 | 600 | .12em, uppercase | Column headers, pills, provenance labels |
+| Data | mono | 12–13px / 1.5 | 400 | normal | Ids, params, offsets, countdowns |
+| Stat figure | display | 20px / 1.2 | 700 | .02em | Summary-rail numbers |
+
+**Tabular figures everywhere data aligns** (kept from round 1, now load-bearing for Inter, which is
+proportional by default): `font-variant-numeric: tabular-nums` on `body`, and any ticking countdown
+must never reflow its row.
+
+## A.6 Density — "all the info displayed properly" (normative)
+
+The owner's verdict says round 1 felt like it hid things. These rules fix that:
+
+1. **Summary rail** at the top of every list view: 3–5 figures visible at rest (Approvals: pending /
+   oldest wait / next expiry / decided-7d. Activity: running / parked / failed-today. Tasks, Audit:
+   equivalents). One figure per view may be gold (A.2 rule 1).
+2. **Timestamps show relative *and* absolute at rest** — `18 min ago · 09:41:06` — never absolute
+   behind hover only. Round 1's hover-`<time>` pattern is dead.
+3. **Exception rows arrive expanded** (audit traces: non-`allow` decisions, `ok:false` results,
+   non-`ok` outcomes — unchanged from Decision 8) and collapsed rows still surface their contracted
+   key figures inline (offset, duration, token counts) so a closed trace is scannable.
+4. **Nothing meant to be read hides behind hover.** Hover may *add* affordance (row tint), never
+   *reveal* content. Keyboard and touch see everything a mouse sees.
+5. Table density: row padding `py-2.5 px-4` (44px effective target preserved via padding), header
+   `py-2 px-4` micro-label style, section gap `gap-6`, ops content `max-w-6xl`, chat column
+   `max-w-3xl` inside it, nav rail 88/232/64px + 5-item bottom bar <768px — carried from round 1.
+
+## A.7 Contrast — computed pairs (WCAG relative-luminance method)
+
+| Pair | Ratio | Requirement | Result |
+|---|---|---|---|
+| `text-primary` #F5EFE3 on canvas #000000 | 18.3:1 | 4.5:1 | Pass AAA |
+| `text-primary` on `surface-high` #282318 (hardest ground) | 13.7:1 | 4.5:1 | Pass AAA |
+| `text-secondary` #DECFA8 on canvas | 13.6:1 | 4.5:1 | Pass AAA |
+| `text-muted` #A89A7E on canvas / surface / raised / high | 7.6 / 6.9 / 6.3 / 5.7:1 | 4.5:1 | Pass on all four grounds |
+| `accent` (gold) #F0B429 on canvas / surface / high | 11.6 / 10.5 / 8.6:1 | 4.5:1 (text) / 3:1 (ring) | Pass everywhere, both uses |
+| `gold-deep` #C9971F on canvas / surface | 7.9 / 7.2:1 | 4.5:1 | Pass |
+| `accent-on` ink #161006 on gold fill #F0B429 | 10.4:1 | 4.5:1 | Pass AAA |
+| ink on `accent-hover` #FFCB57 | 12.5:1 | 4.5:1 | Pass AAA |
+| ink on `status-pending` fill #FF9E45 (rail badge) | 9.2:1 | 4.5:1 | Pass |
+| `status-pending` #FF9E45 on canvas / surface | 10.2 / 9.3:1 | 4.5:1 | Pass |
+| `status-approved` #6EA8FE on canvas / surface | 8.7 / 7.9:1 | 4.5:1 | Pass |
+| `success` #43C878 on canvas / surface | 9.8 / 8.8:1 | 4.5:1 | Pass |
+| `danger` #FF6B5E on canvas / surface / raised | 7.5 / 6.8 / 6.3:1 | 4.5:1 | Pass |
+| ink on `danger-strong` fill #E5484D | 4.8:1 | 4.5:1 | Pass (white on it is 3.9:1 — **fails**, which is why the on-fill ink is dark, not white) |
+| focus ring gold vs `surface-high` | 8.6:1 | 3:1 | Pass |
+| *(rejected)* dark ochre #B45309 as text on canvas | 4.2:1 | 4.5:1 | **Fails** — why the ochre is #C9971F, not the darker "antique" value the mood wanted |
+| *(rejected)* #FFD700 web-gold as the accent | 15.0:1 | — | Passes contrast, rejected on discipline: neon-yellow reads as costume, not instrument, and collides with any amber signal |
+| *(rejected)* #FFFFFF as text-primary | 21:1 | — | Passes, rejected for halation glare on true black in a dark room — warm off-white keeps AAA without the shimmer |
+
+Rule of thumb, restated for the new grounds: a solid colour needs relative luminance ≥ **0.20** to
+clear 4.5:1 body-text contrast on these blacks. Compute before shipping; never eyeball.
+
+## A.8 Tailwind config (paste into `tailwind.config.ts` → `theme.extend`)
+
+```ts
+colors: {
+  canvas: "#000000",
+  surface: { DEFAULT: "#12100B", raised: "#1C1913", high: "#282318" },
+  border: { DEFAULT: "#2B2416", accent: "rgba(240,180,41,.20)", strong: "rgba(240,180,41,.45)" },
+  accent: { DEFAULT: "#F0B429", hover: "#FFCB57", active: "#D69C1E", on: "#161006" },
+  gold: { deep: "#C9971F" },
+  text: { primary: "#F5EFE3", secondary: "#DECFA8", muted: "#A89A7E", disabled: "#5D5442" },
+  status: {
+    pending: "#FF9E45", approved: "#6EA8FE", consumed: "#43C878",
+    refused: "#FF6B5E", expired: "#A89A7E",
+  },
+  success: "#43C878",
+  warning: "#FF9E45",
+  danger: { DEFAULT: "#FF6B5E", strong: "#E5484D" },
+},
+fontFamily: {
+  display: ["var(--font-display)", "ui-sans-serif", "system-ui", "sans-serif"],   // Space Grotesk
+  body: ["var(--font-body)", "ui-sans-serif", "system-ui", "sans-serif"],         // Inter
+  mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"], // JetBrains Mono
+},
+boxShadow: {
+  "glow-armed": "0 0 0 1px rgba(240,180,41,.55), 0 0 18px rgba(240,180,41,.28)",
+  "glow-focus": "0 0 0 4px rgba(240,180,41,.25)",
+},
+keyframes: {
+  "work-pulse": {
+    "0%, 100%": { boxShadow: "0 0 0 1px rgba(240,180,41,.45), 0 0 16px rgba(240,180,41,.22)" },
+    "50%":      { boxShadow: "0 0 0 1px rgba(240,180,41,.60), 0 0 30px rgba(240,180,41,.34)" },
+  },
+},
+animation: { "work-pulse": "work-pulse 1100ms cubic-bezier(0.4,0,0.2,1) infinite" },
+```
+
+`color-scheme: dark` on `:root`. **No `prefers-color-scheme` media query anywhere** — the theme is
+committed, every colour painted explicitly, body background explicit. There is no light map to
+drift out of sync. The `prefers-reduced-motion` kill-switch from §7 stays global and unchanged.
+

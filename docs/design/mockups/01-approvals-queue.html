@@ -6,108 +6,113 @@
 <title>SUNIL V2 — Approvals queue (mockup 01)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-/* ── SUNIL design tokens — DESIGN_SYSTEM.md §1 (dark, authored default) + Amendment A.2 (light) ── */
+/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 2, dark-only, committed) ── */
 :root{
-  color-scheme: dark light;
-  --canvas:#030712; --surface:#0B1220; --raised:#111B2E;
-  --border:#1E2A3E; --border-accent:rgba(34,211,238,.18); --border-strong:rgba(34,211,238,.4);
-  --accent:#22D3EE; --accent-hover:#67E8F9; --accent-active:#06B6D4; --accent-on:#031015;
-  --text:#E8FBFF; --text-2:#7DD3FC; --muted:#4FA8C7; --disabled:#2E4256;
-  --success:#34D399; --warning:#FBBF24; --danger:#F87171; --danger-strong:#EF4444;
-  --untrusted-bg:#111B2E; --untrusted-bar:#4FA8C7; --row-hover:#111B2E; --redacted:#2E4256;
-  --elev-1:0 0 12px rgba(34,211,238,.25); --elev-2:0 0 24px rgba(34,211,238,.35);
-  --focus:0 0 0 3px rgba(34,211,238,.35);
-  --r-sm:4px; --r-md:6px; --r-lg:12px;
-  --f-display:'Orbitron',ui-sans-serif,system-ui,sans-serif;
-  --f-ui:'Share Tech Mono',ui-monospace,monospace;
-  --f-body:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-}
-@media (prefers-color-scheme: light){
-  :root{
-    --canvas:#EEF3F8; --surface:#FFFFFF; --raised:#F1F5F9;
-    --border:#CBD5E1; --border-accent:rgba(14,116,144,.25); --border-strong:rgba(14,116,144,.5);
-    --accent:#0E7490; --accent-hover:#0891B2; --accent-active:#155E75; --accent-on:#FFFFFF;
-    --text:#0B1220; --text-2:#155E75; --muted:#475569; --disabled:#94A3B8;
-    --success:#05654A; --warning:#92400E; --danger:#B91C1C; --danger-strong:#B91C1C;
-    --untrusted-bg:#F1F5F9; --untrusted-bar:#475569; --row-hover:#F1F5F9; --redacted:#94A3B8;
-    --elev-1:0 1px 2px rgba(15,23,42,.06),0 2px 8px rgba(15,23,42,.06);
-    --elev-2:0 2px 4px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.10);
-    --focus:0 0 0 3px rgba(14,116,144,.30);
-  }
+  color-scheme: dark;
+  --canvas:#000000; --surface:#12100B; --raised:#1C1913; --high:#282318;
+  --border:#2B2416; --border-accent:rgba(240,180,41,.20); --border-strong:rgba(240,180,41,.45);
+  --accent:#F0B429; --accent-hover:#FFCB57; --accent-active:#D69C1E; --accent-on:#161006;
+  --gold-deep:#C9971F;
+  --text:#F5EFE3; --text-2:#DECFA8; --muted:#A89A7E; --disabled:#5D5442;
+  --success:#43C878; --warning:#FF9E45; --approved:#6EA8FE; --danger:#FF6B5E; --danger-strong:#E5484D;
+  --untrusted-bg:#1C1913; --untrusted-bar:#A89A7E; --row-hover:#1C1913; --redacted:#5D5442;
+  --glow-armed:0 0 0 1px rgba(240,180,41,.55),0 0 18px rgba(240,180,41,.28);
+  --focus:0 0 0 4px rgba(240,180,41,.25);
+  --r-sm:3px; --r-md:6px; --r-lg:10px;
+  --f-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --f-body:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{background:var(--canvas);color:var(--text);font-family:var(--f-body);font-size:.9375rem;line-height:1.6;font-variant-numeric:tabular-nums}
+body{background-color:#000000;background-image:repeating-linear-gradient(0deg,rgba(240,180,41,.013) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
 a{color:var(--accent);text-decoration:none}
 a:hover{color:var(--accent-hover);text-decoration:underline}
 :focus{outline:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
-.h1{font-family:var(--f-display);font-size:1.5rem;line-height:1.3;letter-spacing:.15em;text-transform:uppercase;font-weight:700;margin:0}
-.h2{font-family:var(--f-display);font-size:.75rem;line-height:1.4;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--text-2);margin:0}
-.small{font-size:.75rem;line-height:1.5;letter-spacing:.02em}
-.micro{font-family:var(--f-ui);font-size:.625rem;line-height:1.4;letter-spacing:.15em;text-transform:uppercase}
+.h1{font-family:var(--f-display);font-size:1.375rem;line-height:1.2;letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin:0;position:relative;padding-bottom:10px}
+.h1::after{content:"";position:absolute;left:0;bottom:0;width:140px;height:1px;background:linear-gradient(90deg,var(--border-strong),transparent)}
+.h2{font-family:var(--f-display);font-size:.75rem;line-height:1.4;letter-spacing:.18em;text-transform:uppercase;font-weight:700;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5;letter-spacing:.01em}
+.micro{font-size:.625rem;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase}
+.mono{font-family:var(--f-mono)}
 .muted{color:var(--muted)}
 .icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .skip{position:absolute;left:-9999px;top:0}
 .skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+/* corner-tick framing — the one primary panel per view (Amendment A §A.4) */
+.tick{position:relative}
+.tick::before,.tick::after{content:"";position:absolute;width:14px;height:14px;border:1px solid var(--border-strong);pointer-events:none;z-index:2}
+.tick::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.tick::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
 /* ── shell ── */
 .shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
 .rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
-.brand{font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.16em;color:var(--accent);padding:6px 0 16px}
+.brand{font-family:var(--f-display);font-weight:700;font-size:.8125rem;letter-spacing:.24em;color:var(--accent);padding:6px 0 16px}
 .nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
 .nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
 .nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
-.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent);box-shadow:var(--elev-1)}
-.nav .lbl{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.08em;text-transform:uppercase}
-.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--canvas);font-family:var(--f-ui);font-size:.625rem;display:flex;align-items:center;justify-content:center}
-@media (prefers-color-scheme: light){.nav .cnt{color:#fff}}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent)}
+.nav .lbl{font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--accent-on);font-family:var(--f-mono);font-size:.625rem;font-weight:600;display:flex;align-items:center;justify-content:center}
 .railspacer{flex:1}
-.railbtn{display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:52px;padding:8px 2px;border:0;background:none;color:var(--muted);border-radius:var(--r-md);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.railbtn{display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:52px;padding:8px 2px;border:0;background:none;color:var(--muted);border-radius:var(--r-md);font-family:var(--f-body);font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 .railbtn:hover{background:var(--row-hover);color:var(--danger)}
 /* ── topbar ── */
 .topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
 .crumb{display:flex;align-items:center;gap:8px;color:var(--muted)}
 .crumb b{color:var(--text-2);font-weight:600}
 .grow{flex:1}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.chip .mono{font-size:.6875rem}
 .chip.warn{color:var(--warning);border-color:var(--warning)}
 button.chip{cursor:pointer}
 .dot{width:8px;height:8px;border-radius:999px;background:var(--success);flex:none}
 main{padding:26px 32px 72px;max-width:1152px}
+/* ── summary rail (Amendment A §A.6 — info at rest) ── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin:18px 0 0}
+.stat{background:var(--surface);padding:10px 14px}
+.stat b{display:block;font-family:var(--f-display);font-size:1.25rem;line-height:1.2;letter-spacing:.02em;font-weight:700;color:var(--text-2)}
+.stat.key b{color:var(--accent)} /* the one gold figure on this view */
+.stat.dang b{color:var(--danger)}
+.stat .micro{color:var(--muted)}
 /* ── filters ── */
 .seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
-.seg a{padding:7px 13px;color:var(--muted);border-right:1px solid var(--border);font-size:.75rem;letter-spacing:.04em}
+.seg a{padding:7px 13px;color:var(--muted);border-right:1px solid var(--border);font-size:.75rem;font-weight:500}
 .seg a:last-child{border-right:0}
 .seg a:hover{background:var(--row-hover);text-decoration:none;color:var(--text-2)}
 .seg a[aria-current="true"]{background:var(--raised);color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
 .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 14px}
 /* ── table ── */
+.tablewrap{border-radius:var(--r-md)}
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
-thead th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.15em;text-transform:uppercase;font-weight:400;background:var(--raised)}
+thead th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;background:var(--raised)}
 tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top;font-size:.8125rem}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--row-hover)}
 tbody tr td:first-child{border-left:2px solid transparent}
 tr.s-pending td:first-child{border-left:2px solid var(--warning)}
-tr.s-approved td:first-child{border-left:2px solid var(--accent)}
+tr.s-approved td:first-child{border-left:2px solid var(--approved)}
 tr.s-consumed td:first-child{border-left:2px solid var(--success)}
 tr.s-refused td:first-child{border-left:2px dashed var(--danger)}
 tr.s-expired td:first-child{border-left:2px dotted var(--muted)}
-.op{font-size:.8125rem;color:var(--text);white-space:nowrap}
-.op .t{color:var(--text-2)}
-.sum{display:block;max-width:46ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:3px 8px;border-radius:0 var(--r-sm) var(--r-sm) 0}
+.op{font-family:var(--f-mono);font-size:.75rem;color:var(--text);white-space:nowrap}
+.op .t{color:var(--gold-deep)}
+.sum{display:block;max-width:46ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-family:var(--f-mono);font-size:.75rem;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:3px 8px;border-radius:0 var(--r-sm) var(--r-sm) 0}
+.when time{display:block}
+.when .abs{display:block;color:var(--muted);font-family:var(--f-mono);font-size:.6875rem}
 /* one primary link per row (Action cell); the row itself is a mouse-only convenience click */
 tbody tr{cursor:pointer}
 .rowlink{color:var(--text);display:block}
 .rowlink:hover{color:var(--accent-hover);text-decoration:underline}
 /* ── status pill: icon + TEXT + colour (never colour alone) ── */
-.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
-.p-pending{color:var(--warning)} .p-approved{color:var(--accent)} .p-consumed{color:var(--success)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.p-pending{color:var(--warning)} .p-approved{color:var(--approved)} .p-consumed{color:var(--success)}
 .p-refused{color:var(--danger)} .p-expired{color:var(--muted)}
-.exp{white-space:nowrap} .exp.warn{color:var(--warning)} .exp.dang{color:var(--danger);font-weight:600}
+.exp{white-space:nowrap;font-family:var(--f-mono);font-size:.75rem} .exp.warn{color:var(--warning)} .exp.dang{color:var(--danger);font-weight:600}
 .suffix{margin-left:6px;color:var(--danger)}
 /* ── annotation blocks (mockup only) ── */
 .ann{margin-top:40px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 22px}
@@ -119,8 +124,8 @@ tbody tr{cursor:pointer}
 .skrow{display:grid;grid-template-columns:90px 190px 1fr 110px 90px;gap:14px;padding:12px 14px;border-bottom:1px solid var(--border)}
 .empty{text-align:center;padding:34px 18px}
 .empty .h2{margin-bottom:8px}
-.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;cursor:pointer}
-.btn:hover{background:var(--raised);box-shadow:var(--elev-1)}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--raised);border-color:var(--accent)}
 .banner{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--warning);border-radius:var(--r-md);padding:11px 14px;color:var(--warning);background:var(--raised);font-size:.8125rem}
 .banner.err{border-color:var(--danger);color:var(--danger)}
 footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:1152px}
@@ -156,12 +161,20 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
       <span class="grow"></span>
       <span class="chip"><span class="dot"></span> SUNIL online</span>
       <span class="chip warn"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 3 pending</span>
-      <button class="chip" aria-label="Last updated 6 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> 6s</button>
+      <button class="chip" aria-label="Last updated 6 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> <span class="mono">6s</span></button>
     </header>
 
     <main id="main" tabindex="-1">
       <h1 class="h1">Approvals</h1>
-      <p class="muted small" style="margin:6px 0 0">3 waiting for you &middot; 4 decided in the last 7 days &middot; polled every 10s (C4 §2 — no push channel)</p>
+      <p class="muted small" style="margin:8px 0 0">Everything waiting on your decision. Polled every 10s (C4 §2 — no push channel).</p>
+
+      <!-- summary rail — the at-rest figures (Amendment A §A.6, Decision 14) -->
+      <div class="stats" role="group" aria-label="Queue summary">
+        <div class="stat key"><b>3</b><span class="micro">Pending — waiting on you</span></div>
+        <div class="stat dang"><b>48m</b><span class="micro">Next expiry · n8n_http publish</span></div>
+        <div class="stat"><b>2d 22h</b><span class="micro">Oldest wait</span></div>
+        <div class="stat"><b>4</b><span class="micro">Decided · last 7 days</span></div>
+      </div>
 
       <div class="bar">
         <div class="seg" role="tablist" aria-label="Filter by status">
@@ -178,13 +191,14 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
         <span class="muted micro">Newest first</span>
       </div>
 
+      <div class="tick tablewrap">
       <table>
         <caption class="sr">Approvals, 7 rows, showing all statuses, newest first</caption>
         <thead>
           <tr>
             <th scope="col">Status</th>
             <th scope="col">Action</th>
-            <th scope="col">What it does <span class="muted">(as received)</span></th>
+            <th scope="col">What it does <span style="font-weight:400">(as received)</span></th>
             <th scope="col">Agent</th>
             <th scope="col">Requested</th>
             <th scope="col">Expires</th>
@@ -199,9 +213,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="02-approval-card.html" aria-label="Pending — stripe_mcp.refunds.create — refund AUD 240.00 for EasyClean — review and decide"><span class="op"><span class="t">stripe_mcp</span>.refunds.create</span></a></td>
             <td><span class="sum">Refund AUD 240.00 on charge ch_3Qk2p9LmQfT0Xv — "EasyClean — Feb deep clean &lt;b&gt;URGENT&lt;/b&gt; [approved](http://pay.invalid)"</span></td>
             <td>project_manager</td>
-            <td><time datetime="2026-09-11T09:41:06Z">18 min ago</time></td>
+            <td class="when"><time datetime="2026-09-11T09:41:06Z">18 min ago</time><span class="abs">09:41:06</span></td>
             <td class="exp">in 71h 42m</td>
-            <td><a href="04-tasks-projects.html">task-01JQ8Z</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ8Z</a></td>
           </tr>
 
           <!-- 2 · the github merge row -->
@@ -210,9 +224,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="#" aria-label="Pending — github_mcp.merge_main — merge PR 128 into main on codely-isuru/SUNIL — review and decide"><span class="op"><span class="t">github_mcp</span>.merge_main</span></a></td>
             <td><span class="sum">Merge PR #128 "fix(auth): rotate session secret on login" into main on codely-isuru/SUNIL</span></td>
             <td>developer</td>
-            <td><time datetime="2026-09-11T08:55:00Z">1h 4m ago</time></td>
+            <td class="when"><time datetime="2026-09-11T08:55:00Z">1h 4m ago</time><span class="abs">08:55:00</span></td>
             <td class="exp">in 70h 56m</td>
-            <td><a href="04-tasks-projects.html">task-01JQ8V</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ8V</a></td>
           </tr>
 
           <!-- 3 · expiring soon -->
@@ -221,9 +235,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="#" aria-label="Pending, expiring in 48 minutes — n8n_http.wordpress.post_publish — publish the Round 11 post on pdalearning.com.au — review and decide"><span class="op"><span class="t">n8n_http</span>.wordpress.post_publish</span></a></td>
             <td><span class="sum">Publish post "Round 11 — FWPCOT3326 winch recovery is live" on pdalearning.com.au</span></td>
             <td>project_manager</td>
-            <td><time datetime="2026-09-08T11:11:00Z">2d 22h ago</time></td>
+            <td class="when"><time datetime="2026-09-08T11:11:00Z">2d 22h ago</time><span class="abs">8 Sep 11:11</span></td>
             <td class="exp dang"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;vertical-align:-1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg> in 48m<span class="suffix micro">Expiring</span></td>
-            <td><a href="04-tasks-projects.html">task-01JQ6M</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ6M</a></td>
           </tr>
 
           <!-- 4 · approved, inside the consume grace window -->
@@ -232,9 +246,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="#" aria-label="Approved, runs within 52 minutes — github_mcp.issues_close — close issue 42 on codely-isuru/SUNIL — open"><span class="op"><span class="t">github_mcp</span>.issues_close</span></a></td>
             <td><span class="sum">Close issue #42 "Round-11 cert tagline still rendering" on codely-isuru/SUNIL</span></td>
             <td>project_manager</td>
-            <td><time datetime="2026-09-11T09:02:00Z">57 min ago</time></td>
+            <td class="when"><time datetime="2026-09-11T09:02:00Z">57 min ago</time><span class="abs">09:02:00</span></td>
             <td class="exp warn">runs within 52m</td>
-            <td><a href="04-tasks-projects.html">task-01JQ8R</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ8R</a></td>
           </tr>
 
           <!-- 5 · consumed -->
@@ -243,9 +257,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="#" aria-label="Consumed — gmail_mcp.messages.send — emailed the February invoice summary — open"><span class="op"><span class="t">gmail_mcp</span>.messages.send</span></a></td>
             <td><span class="sum">Email "EasyClean — February invoice summary" to accounts@ezycleanco.com.au</span></td>
             <td>project_manager</td>
-            <td><time datetime="2026-09-10T16:20:00Z">Yesterday 4:20 pm</time></td>
+            <td class="when"><time datetime="2026-09-10T16:20:00Z">Yesterday 4:20 pm</time><span class="abs">10 Sep 16:20</span></td>
             <td class="muted">executed 4:22 pm</td>
-            <td><a href="04-tasks-projects.html">task-01JQ4A</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ4A</a></td>
           </tr>
 
           <!-- 6 · refused -->
@@ -254,9 +268,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="#" aria-label="Refused — stripe_mcp.refunds.create — refund AUD 1,180.00 for 925 Driving — open"><span class="op"><span class="t">stripe_mcp</span>.refunds.create</span></a></td>
             <td><span class="sum">Refund AUD 1,180.00 on charge ch_3Qj7w1PpLd92Kc — "925 Driving — duplicate session booking"</span></td>
             <td>project_manager</td>
-            <td><time datetime="2026-09-09T13:05:00Z">2 days ago</time></td>
+            <td class="when"><time datetime="2026-09-09T13:05:00Z">2 days ago</time><span class="abs">9 Sep 13:05</span></td>
             <td class="muted">refused 1:31 pm</td>
-            <td><a href="04-tasks-projects.html">task-01JQ1C</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ1C</a></td>
           </tr>
 
           <!-- 7 · expired -->
@@ -265,13 +279,14 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
             <td><a class="rowlink" href="#" aria-label="Expired — github_mcp.merge_main — merge PR 119 on Codelyy/pda_learning — open"><span class="op"><span class="t">github_mcp</span>.merge_main</span></a></td>
             <td><span class="sum">Merge PR #119 "chore: bump pda plugin to 1.14.3" into main on Codelyy/pda_learning</span></td>
             <td>developer</td>
-            <td><time datetime="2026-09-06T10:00:00Z">5 days ago</time></td>
+            <td class="when"><time datetime="2026-09-06T10:00:00Z">5 days ago</time><span class="abs">6 Sep 10:00</span></td>
             <td class="muted">expired 9 Sep</td>
-            <td><a href="04-tasks-projects.html">task-01JPX2</a></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JPX2</a></td>
           </tr>
 
         </tbody>
       </table>
+      </div>
 
       <p class="muted small" style="margin:14px 0 0">End of list — 7 shown. <span class="micro">Cursor pagination (C4: limit/cursor) — "Load 50 more" appears here when next_cursor is not null.</span></p>
 
@@ -329,8 +344,9 @@ footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:11
     </main>
 
     <footer>
-      Mockup 01 of 6 · <b>SUNIL V2 ops dashboard</b> · theme follows your OS light/dark setting (DESIGN_SYSTEM.md Amendment A) ·
-      data is illustrative Codely example content · every element maps to a C4 <code>Approval</code> field — see V2_DASHBOARD_SPEC.md §5.2.
+      Mockup 01 of 6 · <b>SUNIL V2 ops dashboard</b> · single committed dark theme — Obsidian &amp; Gold
+      (DESIGN_SYSTEM.md Amendment A, round 2; owner ruling: dark-only) · data is illustrative Codely example
+      content · every element maps to a C4 <code>Approval</code> field — see V2_DASHBOARD_SPEC.md §5.2.
     </footer>
   </div>
 </div>

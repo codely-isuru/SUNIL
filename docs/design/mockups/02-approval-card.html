@@ -6,110 +6,110 @@
 <title>SUNIL V2 — Approval card, stripe_mcp.refunds.create (mockup 02)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
+/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 2, dark-only, committed) ── */
 :root{
-  color-scheme: dark light;
-  --canvas:#030712; --surface:#0B1220; --raised:#111B2E;
-  --border:#1E2A3E; --border-accent:rgba(34,211,238,.18); --border-strong:rgba(34,211,238,.4);
-  --accent:#22D3EE; --accent-hover:#67E8F9; --accent-active:#06B6D4; --accent-on:#031015;
-  --text:#E8FBFF; --text-2:#7DD3FC; --muted:#4FA8C7; --disabled:#2E4256;
-  --success:#34D399; --warning:#FBBF24; --danger:#F87171; --danger-strong:#EF4444;
-  --untrusted-bg:#111B2E; --untrusted-bar:#4FA8C7; --row-hover:#111B2E; --redacted:#2E4256;
-  --elev-1:0 0 12px rgba(34,211,238,.25); --elev-2:0 0 24px rgba(34,211,238,.35);
-  --focus:0 0 0 3px rgba(34,211,238,.35);
-  --r-sm:4px; --r-md:6px; --r-lg:12px;
-  --f-display:'Orbitron',ui-sans-serif,system-ui,sans-serif;
-  --f-ui:'Share Tech Mono',ui-monospace,monospace;
-  --f-body:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-}
-@media (prefers-color-scheme: light){
-  :root{
-    --canvas:#EEF3F8; --surface:#FFFFFF; --raised:#F1F5F9;
-    --border:#CBD5E1; --border-accent:rgba(14,116,144,.25); --border-strong:rgba(14,116,144,.5);
-    --accent:#0E7490; --accent-hover:#0891B2; --accent-active:#155E75; --accent-on:#FFFFFF;
-    --text:#0B1220; --text-2:#155E75; --muted:#475569; --disabled:#94A3B8;
-    --success:#05654A; --warning:#92400E; --danger:#B91C1C; --danger-strong:#B91C1C;
-    --untrusted-bg:#F1F5F9; --untrusted-bar:#475569; --row-hover:#F1F5F9; --redacted:#94A3B8;
-    --elev-1:0 1px 2px rgba(15,23,42,.06),0 2px 8px rgba(15,23,42,.06);
-    --elev-2:0 2px 4px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.10);
-    --focus:0 0 0 3px rgba(14,116,144,.30);
-  }
+  color-scheme: dark;
+  --canvas:#000000; --surface:#12100B; --raised:#1C1913; --high:#282318;
+  --border:#2B2416; --border-accent:rgba(240,180,41,.20); --border-strong:rgba(240,180,41,.45);
+  --accent:#F0B429; --accent-hover:#FFCB57; --accent-active:#D69C1E; --accent-on:#161006;
+  --gold-deep:#C9971F;
+  --text:#F5EFE3; --text-2:#DECFA8; --muted:#A89A7E; --disabled:#5D5442;
+  --success:#43C878; --warning:#FF9E45; --approved:#6EA8FE; --danger:#FF6B5E; --danger-strong:#E5484D;
+  --untrusted-bg:#1C1913; --untrusted-bar:#A89A7E; --row-hover:#1C1913; --redacted:#5D5442;
+  --glow-armed:0 0 0 1px rgba(240,180,41,.55),0 0 18px rgba(240,180,41,.28);
+  --focus:0 0 0 4px rgba(240,180,41,.25);
+  --r-sm:3px; --r-md:6px; --r-lg:10px;
+  --f-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --f-body:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--canvas);color:var(--text);font-family:var(--f-body);font-size:.9375rem;line-height:1.6;font-variant-numeric:tabular-nums}
+body{background-color:#000000;background-image:repeating-linear-gradient(0deg,rgba(240,180,41,.013) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
 a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-hover);text-decoration:underline}
 :focus{outline:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
-.h1{font-family:var(--f-display);font-size:1.5rem;letter-spacing:.15em;text-transform:uppercase;font-weight:700;margin:0}
-.h2{font-family:var(--f-display);font-size:.75rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--text-2);margin:0}
-.small{font-size:.75rem;line-height:1.5;letter-spacing:.02em}
-.micro{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.15em;text-transform:uppercase}
+.h1{font-family:var(--f-display);font-size:1.375rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin:0;position:relative;padding-bottom:10px}
+.h1::after{content:"";position:absolute;left:0;bottom:0;width:140px;height:1px;background:linear-gradient(90deg,var(--border-strong),transparent)}
+.h2{font-family:var(--f-display);font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5;letter-spacing:.01em}
+.micro{font-size:.625rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.mono{font-family:var(--f-mono)}
 .muted{color:var(--muted)}
 .icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .skip{position:absolute;left:-9999px}.skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+.tick{position:relative}
+.tick::before,.tick::after{content:"";position:absolute;width:14px;height:14px;border:1px solid var(--border-strong);pointer-events:none;z-index:2}
+.tick::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.tick::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
 .shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
 .rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
-.brand{font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.16em;color:var(--accent);padding:6px 0 16px}
+.brand{font-family:var(--f-display);font-weight:700;font-size:.8125rem;letter-spacing:.24em;color:var(--accent);padding:6px 0 16px}
 .nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
 .nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
 .nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
-.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent);box-shadow:var(--elev-1)}
-.nav .lbl{font-family:var(--f-ui);font-size:.625rem;letter-spacing:.08em;text-transform:uppercase}
-.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--canvas);font-family:var(--f-ui);font-size:.625rem;display:flex;align-items:center;justify-content:center}
-@media (prefers-color-scheme: light){.nav .cnt{color:#fff}}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent)}
+.nav .lbl{font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--accent-on);font-family:var(--f-mono);font-size:.625rem;font-weight:600;display:flex;align-items:center;justify-content:center}
 .topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
 .grow{flex:1}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
 .chip.warn{color:var(--warning);border-color:var(--warning)}
 button.chip{cursor:pointer}
 .dot{width:8px;height:8px;border-radius:999px;background:var(--success)}
 main{padding:24px 32px 72px;max-width:900px}
-/* ── approval card ── */
-.card{background:var(--surface);border:1px solid var(--border-accent);border-radius:var(--r-lg);box-shadow:var(--elev-2);overflow:hidden;margin-top:16px}
+/* ── approval card — the one corner-ticked panel on this view ── */
+.card{background:var(--surface);border:1px solid var(--border-accent);border-radius:var(--r-lg);overflow:visible;margin-top:16px}
+.card > :first-child{border-radius:var(--r-lg) var(--r-lg) 0 0}
+.card > :last-child{border-radius:0 0 var(--r-lg) var(--r-lg)}
 .strip{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--raised)}
 .strip.pending{box-shadow:inset 3px 0 0 var(--warning)}
-.strip.approved{box-shadow:inset 3px 0 0 var(--accent)}
+.strip.approved{box-shadow:inset 3px 0 0 var(--approved)}
 .strip.conflict{box-shadow:inset 3px 0 0 var(--danger)}
-.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;font-family:var(--f-ui);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
-.p-pending{color:var(--warning)} .p-approved{color:var(--accent)} .p-consumed{color:var(--success)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.p-pending{color:var(--warning)} .p-approved{color:var(--approved)} .p-consumed{color:var(--success)}
 .p-refused{color:var(--danger)} .p-expired{color:var(--muted)}
-.idcopy{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--muted);font-family:var(--f-ui);font-size:.6875rem;padding:3px 8px;cursor:pointer}
+.idcopy{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--muted);font-family:var(--f-mono);font-size:.6875rem;padding:3px 8px;cursor:pointer}
 .idcopy:hover{color:var(--text-2);border-color:var(--border-strong)}
-.count{margin-left:auto;color:var(--warning);font-size:.8125rem;display:flex;align-items:center;gap:7px}
+.count{margin-left:auto;color:var(--warning);font-family:var(--f-mono);font-size:.8125rem;display:flex;align-items:center;gap:7px}
 .count.dang{color:var(--danger);font-weight:600}
+.count.grace{color:var(--approved)}
 .sec{padding:18px 20px;border-bottom:1px solid var(--border)}
 .sec:last-child{border-bottom:0}
 .lead{color:var(--text-2);margin:0 0 10px}
-.opbig{font-size:1.0625rem;letter-spacing:.01em}
-.opbig .t{color:var(--text-2)}
+.opbig{font-family:var(--f-mono);font-size:1.0625rem;letter-spacing:.01em}
+.opbig .t{color:var(--gold-deep)}
 dl.prov{display:grid;grid-template-columns:140px 1fr;gap:6px 16px;margin:12px 0 0;font-size:.8125rem}
-dl.prov dt{color:var(--muted);font-family:var(--f-ui);font-size:.6875rem;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+dl.prov dt{color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding-top:3px}
 dl.prov dd{margin:0}
-/* ── the untrusted-content container ── */
+/* ── the untrusted-content container — machine-quoted, visibly not SUNIL's voice ── */
 .ulabel{display:flex;align-items:center;gap:7px;color:var(--muted);margin-bottom:6px}
-.untrusted{border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);border:1px solid var(--border);border-left-width:3px;border-radius:0 var(--r-md) var(--r-md) 0;padding:12px 14px;font-family:var(--f-body);font-size:.875rem;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext;max-height:16em;overflow:auto}
+.untrusted{border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);border:1px solid var(--border);border-left-width:3px;border-radius:0 var(--r-md) var(--r-md) 0;padding:12px 14px;font-family:var(--f-mono);font-size:.8125rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext;max-height:16em;overflow:auto}
 .warnline{display:flex;gap:8px;align-items:flex-start;color:var(--muted);margin-top:8px;font-size:.6875rem;line-height:1.5}
 table.params{width:100%;border-collapse:collapse;margin-top:10px;font-size:.8125rem}
-table.params th{width:190px;text-align:left;vertical-align:top;padding:7px 12px 7px 0;color:var(--muted);font-family:var(--f-ui);font-size:.6875rem;letter-spacing:.08em;font-weight:400;border-bottom:1px solid var(--border)}
+table.params th{width:190px;text-align:left;vertical-align:top;padding:7px 12px 7px 0;color:var(--muted);font-family:var(--f-mono);font-size:.6875rem;letter-spacing:.04em;font-weight:400;border-bottom:1px solid var(--border)}
 table.params td{padding:7px 0;border-bottom:1px solid var(--border)}
 table.params tr:last-child th,table.params tr:last-child td{border-bottom:0}
-.val{display:inline-block;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:2px 9px;border-radius:0 var(--r-sm) var(--r-sm) 0;overflow-wrap:anywhere;unicode-bidi:plaintext}
-.redacted{color:var(--redacted);display:inline-flex;align-items:center;gap:6px;font-style:normal}
-.hash{color:var(--muted);font-size:.6875rem;font-family:var(--f-ui)}
+.val{display:inline-block;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:2px 9px;border-radius:0 var(--r-sm) var(--r-sm) 0;font-family:var(--f-mono);overflow-wrap:anywhere;unicode-bidi:plaintext}
+.redacted{color:var(--redacted);display:inline-flex;align-items:center;gap:6px;font-style:normal;font-family:var(--f-mono)}
+.hash{color:var(--muted);font-size:.6875rem;font-family:var(--f-mono)}
 ul.links{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;font-size:.8125rem}
 ul.links li{display:grid;grid-template-columns:140px 1fr;gap:16px}
-ul.links .k{color:var(--muted);font-family:var(--f-ui);font-size:.6875rem;letter-spacing:.1em;text-transform:uppercase}
-.note{display:flex;gap:10px;align-items:flex-start;background:var(--raised);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding:12px 14px;font-size:.8125rem;color:var(--text)}
+ul.links .k{color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.note{display:flex;gap:10px;align-items:flex-start;background:var(--raised);border:1px solid var(--border);border-left:3px solid var(--gold-deep);border-radius:0 var(--r-md) var(--r-md) 0;padding:12px 14px;font-size:.8125rem;color:var(--text)}
 .bar{display:flex;align-items:center;gap:16px;padding:18px 20px;background:var(--raised)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;min-width:124px;padding:10px 18px;border-radius:var(--r-md);font-family:var(--f-body);font-size:.875rem;cursor:pointer;border:1px solid transparent}
-.btn-primary{background:var(--accent);color:var(--accent-on);border-color:var(--accent);font-weight:600}
-.btn-primary:hover{background:var(--accent-hover);box-shadow:var(--elev-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;min-width:124px;padding:10px 18px;border-radius:var(--r-md);font-family:var(--f-body);font-size:.875rem;font-weight:600;cursor:pointer;border:1px solid transparent}
+.btn-primary{background:var(--accent);color:var(--accent-on);border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-primary:active{background:var(--accent-active)}
 .btn-danger{background:transparent;color:var(--danger);border-color:var(--danger)}
-.btn-danger:hover{background:rgba(248,113,113,.08)}
+.btn-danger:hover{background:rgba(255,107,94,.08)}
 .btn-ghost{background:transparent;color:var(--accent);border-color:var(--border-strong)}
+.btn-ghost:hover{background:var(--high);border-color:var(--accent)}
+.btn-armed{box-shadow:var(--glow-armed)} /* the ONLY glow on this page: the armed decision (Amendment A §A.4) */
 .btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none}
 .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:999px;display:inline-block;animation:sp 900ms linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -117,13 +117,13 @@ ul.links .k{color:var(--muted);font-family:var(--f-ui);font-size:.6875rem;letter
 .banner.err{border-color:var(--danger);color:var(--danger)}
 .banner.ok{border-color:var(--success);color:var(--success)}
 .receipt{display:grid;grid-template-columns:150px 1fr;gap:6px 16px;font-size:.8125rem}
-.receipt dt{color:var(--muted);font-family:var(--f-ui);font-size:.6875rem;letter-spacing:.1em;text-transform:uppercase}
+.receipt dt{color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
 .receipt dd{margin:0}
 .ann{margin-top:44px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 24px}
 .annnote{color:var(--muted);font-size:.75rem;margin:4px 0 18px}
 .states{display:grid;gap:22px}
 .mini{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:16px}
-kbd{font-family:var(--f-ui);font-size:.6875rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:var(--r-sm);padding:1px 6px;color:var(--text-2)}
+kbd{font-family:var(--f-mono);font-size:.6875rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:var(--r-sm);padding:1px 6px;color:var(--text-2);background:var(--high)}
 footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:900px}
 @media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:18px 16px 60px}dl.prov,ul.links li{grid-template-columns:1fr}table.params th{width:auto;display:block;padding-bottom:0;border-bottom:0}table.params td{display:block;padding-top:2px}.bar{flex-direction:column-reverse;align-items:stretch}.btn{width:100%}}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
@@ -147,18 +147,18 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
   <div>
     <header class="topbar">
       <span class="brand" style="padding:0">S.U.N.I.L</span>
-      <span class="small muted"><a href="01-approvals-queue.html">Approvals</a> &rsaquo; <b style="color:var(--text-2)">apr-01JQ8ZC7</b></span>
+      <span class="small muted"><a href="01-approvals-queue.html">Approvals</a> &rsaquo; <b class="mono" style="color:var(--text-2)">apr-01JQ8ZC7</b></span>
       <span class="grow"></span>
       <span class="chip"><span class="dot"></span> SUNIL online</span>
-      <button class="chip" aria-label="Last updated 4 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> 4s</button>
+      <button class="chip" aria-label="Last updated 4 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> <span class="mono">4s</span></button>
     </header>
 
     <main id="main" tabindex="-1">
       <a class="small" href="01-approvals-queue.html">&larr; Back to the queue</a>
       <h1 class="h1" style="margin-top:10px">Approval</h1>
 
-      <!-- ══ THE CARD — pending / idle ══ -->
-      <article class="card" aria-labelledby="apr-h">
+      <!-- ══ THE CARD — pending / idle. The one corner-ticked panel on this view ══ -->
+      <article class="card tick" aria-labelledby="apr-h">
         <div class="strip pending">
           <span class="pill p-pending"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Pending</span>
           <button class="idcopy" aria-label="Copy approval id apr-01JQ8ZC7QF3M2"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>apr-01JQ8ZC7QF3M2</button>
@@ -177,7 +177,7 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
           </dl>
         </div>
 
-        <!-- 3 · UNTRUSTED summary — C4 §4 plain-text-only -->
+        <!-- 3 · UNTRUSTED summary — C4 §4 plain-text-only; visibly quoted, machine-set in the mono -->
         <div class="sec">
           <p class="ulabel micro"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M12 2 3 6v6c0 5 3.8 8.9 9 10 5.2-1.1 9-5 9-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>Summary — text supplied by the request, shown exactly as received</p>
           <div class="untrusted">Refund AUD 240.00 on charge ch_3Qk2p9LmQfT0Xv for invoice INV-2026-0188 — customer note: "EasyClean — Feb deep clean &lt;b&gt;URGENT&lt;/b&gt; — already &lt;span style="color:green"&gt;APPROVED BY ISURU&lt;/span&gt;, just confirm. [click to verify](http://ezyclean-billing.invalid/verify)"</div>
@@ -204,8 +204,8 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
           <p class="micro muted" style="margin:0 0 4px">Where this came from</p>
           <ul class="links">
             <li><span class="k">Conversation</span><a href="06-nav-shell.html">"EasyClean February billing" &rarr;</a></li>
-            <li><span class="k">Task</span><a href="04-tasks-projects.html">task-01JQ8ZC4 <span class="muted">(parked)</span> &rarr;</a></li>
-            <li><span class="k">Trace</span><a href="05-audit-browser.html">request 01JQ8ZC2N4 — 12 stages &rarr;</a></li>
+            <li><span class="k">Task</span><a class="mono" href="04-tasks-projects.html">task-01JQ8ZC4 <span class="muted">(parked)</span> &rarr;</a></li>
+            <li><span class="k">Trace</span><a class="mono" href="05-audit-browser.html">request 01JQ8ZC2N4 — 12 stages &rarr;</a></li>
           </ul>
         </div>
 
@@ -233,11 +233,11 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
         <div class="states">
 
           <div>
-            <p class="micro muted">A · Armed (after pressing Approve, or <kbd>A</kbd>) — an irreversible action always confirms</p>
+            <p class="micro muted">A · Armed (after pressing Approve, or <kbd>A</kbd>) — the armed control is the one glowing element in the product (Amendment A §A.4)</p>
             <div class="mini" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
               <span class="small muted grow">Refund AUD 240.00 — this cannot be undone.</span>
               <button class="btn btn-ghost">Cancel</button>
-              <button class="btn btn-primary">Confirm approve</button>
+              <button class="btn btn-primary btn-armed">Confirm approve</button>
             </div>
           </div>
 
@@ -255,7 +255,7 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
               <div class="strip approved" style="border-radius:var(--r-md) var(--r-md) 0 0">
                 <span class="pill p-approved"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Approved</span>
                 <span class="idcopy" style="cursor:default">apr-01JQ8ZC7QF3M2</span>
-                <span class="count"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>runs within 58m</span>
+                <span class="count grace"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>runs within 58m</span>
               </div>
               <div style="padding:16px">
                 <dl class="receipt">
@@ -312,10 +312,10 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
             <p class="micro muted">H · Refuse, armed — the reason box is expanded for a refusal (you will read it back in three weeks); it is optional and stored verbatim (C4 DecisionRequest.reason)</p>
             <div class="mini">
               <label class="micro muted" for="rs">Reason (optional, max 1000)</label>
-              <textarea id="rs" rows="2" style="width:100%;margin-top:6px;background:var(--raised);color:var(--text);border:1px solid var(--border);border-radius:var(--r-md);padding:10px;font-family:var(--f-body);font-size:.8125rem">Already refunded manually in Stripe on 9 Sep — this would double-refund the customer.</textarea>
+              <textarea id="rs" rows="2" style="width:100%;margin-top:6px;background:var(--high);color:var(--text);border:1px solid var(--border);border-radius:var(--r-md);padding:10px;font-family:var(--f-body);font-size:.8125rem">Already refunded manually in Stripe on 9 Sep — this would double-refund the customer.</textarea>
               <div style="display:flex;gap:14px;justify-content:flex-end;margin-top:12px">
                 <button class="btn btn-ghost">Cancel</button>
-                <button class="btn btn-danger">Confirm refuse</button>
+                <button class="btn btn-danger btn-armed" style="box-shadow:0 0 0 1px rgba(255,107,94,.55),0 0 18px rgba(255,107,94,.22)">Confirm refuse</button>
               </div>
             </div>
           </div>
@@ -325,10 +325,10 @@ footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:90
     </main>
 
     <footer>
-      Mockup 02 of 6 — the money screen. The summary above deliberately contains hostile example content
-      (HTML tags, a markdown link, a false "APPROVED BY ISURU" claim) so the Gate 2 reviewer can see the
-      C4 §4 plain-text containment working: nothing is interpreted, everything is visibly quoted and labelled as
-      supplied by the request. Light/dark follows your OS setting.
+      Mockup 02 of 6 — the money screen, in the committed Obsidian &amp; Gold dark theme. The summary above
+      deliberately contains hostile example content (HTML tags, a markdown link, a false "APPROVED BY ISURU" claim)
+      so the Gate 2 reviewer can see the C4 §4 plain-text containment working: nothing is interpreted, everything is
+      visibly quoted — machine-set in the mono, barred, and labelled as supplied by the request.
     </footer>
   </div>
 </div>
