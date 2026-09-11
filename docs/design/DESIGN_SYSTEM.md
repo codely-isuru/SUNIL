@@ -323,3 +323,297 @@ already does this correctly (`ONLINE`/`STANDBY`/`OFFLINE` text next to the colou
 errors/timeouts use `aria-live="assertive"`. Stage-progress updates (see
 `M1_CHAT_SPEC.md` §5.3) are throttled to one live-region update per phase change, not per raw
 backend stage, so screen reader users aren't spammed with twelve rapid announcements.
+
+---
+
+# AMENDMENT A — V2 "Obsidian & Gold" instrument theme (rounds 2–3, owner-directed)
+
+**Replaced wholesale: 2026-09-11 (round 2)** by the UI/UX Designer, Minions Team 21, after the
+owner's Gate-2 verdict on the round-1 package: *"Modern styled, futuristic design. Easy to work
+with, all the info displayed properly. Dark mode where it looks and feels like a futuristic design.
+I like black and gold, dark yellowish colors on the dashboard."*
+That verdict **answers spec Q7: SUNIL is dark-only as a brand position.** The round-1 Amendment A
+(light-theme map, cyan-derived status aliases) was PROPOSED, was not approved, and is deleted —
+not archived. **Nothing above this line was changed.**
+
+Reading of the brief that governs everything below: *futuristic means precision instrument, not
+sci-fi kitsch.* The owner operates real approvals with real money on these screens, daily, at 8am.
+Futurism is carried by layered blacks, a rationed gold, technical typography and tabular data —
+never by decoration that costs legibility.
+
+**Re-tuned in place: 2026-09-11 (round 3)** after the owner reviewed the round-2 mockups:
+*"the contrast are bit high on these designs its hard to keep on the eye for a long time. make it
+so it got a cool effects. remove yellow keep black and gold colors."* Three rulings, applied
+throughout this amendment:
+1. **A comfort ceiling joins the AA floor (§A.7).** Round 2's body text ran to 18.3:1 — clinical
+   and fatiguing over hours. Body text now lands **9–13:1** on every ground (never below AA 4.5:1
+   anywhere), muted text is dimmer, hairlines are quieter, and the canvas lifts off pure `#000000`
+   to a warm near-black — pure black maximises the perceived harshness of any text on it.
+2. **The gold is de-yellowed.** `#F0B429` read yellow; the ramp moves to antique/metallic gold —
+   accent `#C9A227`, hover toward pale champagne (not lemon), pressed toward bronze. Pending
+   moves from yellow-orange `#FF9E45` to **copper** `#D98E4A` so nothing on screen reads yellow,
+   with a named distinction rule from the brand gold (§A.3).
+3. **The atmospherics budget (§A.4) is deliberately expanded** — panel sheens, a metallic gradient
+   on gold fills, a key-figure glow, a slowed live pulse and one shimmer sweep — every animation
+   reduced-motion-safe, none on a reading surface.
+Structure, token names, type system (§A.5), density rules (§A.6) and every interaction/security
+decision are unchanged from round 2.
+
+## A.0 Scope and precedence
+
+- This amendment is the visual language for **every surface rendered inside the V2 shell** — the
+  six views of `V2_DASHBOARD_SPEC.md`, including chat, which V2 re-hosts inside the shell. In
+  practice every V2 screen is Obsidian & Gold.
+- §0–§7 above remain binding for **structure**: the accessibility floor (§7), motion durations and
+  the reduced-motion kill-switch (§6), radii (§4), spacing conventions (§3), the lamp pattern, the
+  focus-visible rule. Where §1/§2 name a **colour or font** and this amendment names another, V2
+  surfaces use this amendment. The cyan/Orbitron values above stay recorded as the approved M1
+  contract of record.
+- Token **names** are unchanged (`--color-accent`, `--color-text-muted`, …) so every reference in
+  `V2_DASHBOARD_SPEC.md` still resolves; only the values move. "Accent" now *means* the gold.
+
+## A.1 Grounds — layered blacks (elevation is lightness, not shadow)
+
+| Token | Hex | L (rel. lum.) | Role |
+|---|---|---|---|
+| `--color-canvas` | `#0B0906` | .0028 | The void — warm **near**-black, lifted off pure `#000000` (round 3). Still reads black; the lift removes the halation harshness true black gives every glyph on it. The only surface that may carry the scanline texture (A.4) |
+| `--color-surface` | `#16120C` | .0063 | Panels, cards, tables, rail, topbar — warm charcoal, one step up |
+| `--color-surface-raised` | `#201A11` | .0109 | Row hover, untrusted blocks, expanded trace rows, table headers |
+| `--color-surface-high` | `#2B2315` | .0177 | Inputs, code blocks, the highest layer (confirm steps, sheets) |
+| `--color-border` | `#282013` | .0175 | Structural 1px dividers (non-text; ~1.2:1 vs surface — deliberately quiet, quieter than round 2) |
+| `--color-border-accent` | `rgba(201,162,39,.16)` | — | Decorative gold hairline on framed panels (was .20 — hairlines quieter for long sessions). Non-text only |
+| `--color-border-strong` | `rgba(201,162,39,.38)` | — | Hover/focus-adjacent hairline upgrade, corner ticks (was .45). Non-text only |
+
+**The elevation rule (replaces §5 for V2 surfaces):** depth = one surface step up + a 1px border.
+There is **no drop-shadow scale and no glow-as-elevation** in this theme. Glow exists, but it is a
+*state* (A.4), never a height. A panel that needs to read "above" another gets a lighter ground,
+which is how a physical instrument panel does it.
+
+## A.2 The gold ramp — and the discipline that keeps it precious
+
+| Token | Hex | Role |
+|---|---|---|
+| `--color-accent` | `#C9A227` | **The gold — antique/metallic (hue ≈46°), not yellow.** Interactive elements: links, primary button fill, active nav edge, focus ring, the single key figure per view. 8.2:1 on canvas — reads as metal, not lemon |
+| `--color-accent-hover` | `#DBBE7F` | Hover lift — **pale champagne**, the "light catches the metal" direction, deliberately not a brighter yellow (11.1:1) |
+| `--color-accent-active` | `#A6801F` | Pressed — **bronze**, darker than rest, the "metal compresses" direction (5.4:1) |
+| `--color-accent-on` | `#14100A` | Ink — text/icons on any gold or status fill (7.8:1 on the gold, 10.5:1 on champagne hover, 5.2:1 on pressed bronze — AA at every stop of the metallic sheen too) |
+| `--color-gold-deep` | `#B08A2A` | Dark antique gold: secondary emphasis — decided-count figures, section accents, "warm" metadata that must not compete with interactive gold (6.2:1 on canvas) |
+| `--color-text-primary` | `#CEC5B4` | Body text — warm bone, tuned INTO the 9–13:1 comfort band: 11.6:1 on canvas, 9.1:1 on the lightest ground. Round 2's `#F5EFE3` (18.3:1) is retired as sustained-reading text — the owner's "hard to keep on the eye" verdict is a report that AAA-with-room-to-spare was over-bright for hours-long use |
+| `--color-text-secondary` | `#C4B48D` | Headings, emphasis, panel titles — champagne-tinted (9.7:1 canvas) |
+| `--color-text-muted` | `#9A8D71` | Desaturated sand: meta text, timestamps, labels (6.1:1 canvas / 4.7:1 on the lightest surface — dimmer than round 2, still AA everywhere it can legally sit) |
+| `--color-text-disabled` | `#59503C` | Disabled labels (non-text requirement; visibly dimmer, clearly not interactive) |
+
+**Gold discipline (normative, not taste):**
+1. **Gold is spent, not poured.** Per view: interactive elements + at most **one** key figure (the
+   pending count on Approvals, the live phase on Activity, nothing on a reading surface). A page
+   drowning in gold is a page with no hierarchy.
+2. Gold is **never body text** and never a large area fill except the primary button.
+3. **Status is never gold** (A.3). If a status and the brand share a hue, "decided" becomes
+   indistinguishable from "clickable".
+4. `--color-gold-deep` is the release valve: when something wants warmth but is not interactive,
+   it gets ochre, not gold.
+
+## A.3 Status colours — hue-separated from the brand
+
+Round 1 aliased `approved → accent` and `pending → warning(amber)`. Both aliases break under a gold
+brand: an amber pending pill would read as a button, and a gold APPROVED pill would read as brand
+chrome. V2 statuses are therefore their own hues, each AA on every ground they sit on. Round 3
+re-tuned every status: pending moved off yellow-orange entirely (owner: *"remove yellow"*), and the
+blue/green/red were pulled down into the comfort range:
+
+| Token | Hex | On canvas | Meaning | Why this hue |
+|---|---|---|---|---|
+| `--status-pending` | `#D98E4A` | 7.5:1 | Waiting on the owner. Also `--color-warning` (stale, banners, parked) | **Copper** (hue ≈28°, visible red content) — round 2's `#FF9E45` still read yellow-orange. **Distinction rule from the brand gold (≈46°, no red): gold is the system's voice, copper is a situation's state — and status colour only ever appears in the pill/edge/badge grammar with icon + label, where gold never wears a pill** |
+| `--status-approved` | `#5E96E0` | 6.5:1 | Decided, not yet executed | Signal blue — "cleared to run". Deliberately still not green: approved ≠ done |
+| `--status-consumed` | `#3FAE6C` | 7.1:1 | Executed, single use spent. Also `--color-success` | Green stays reserved for *actually happened* |
+| `--status-refused` | `#E8685C` | 6.2:1 | Owner said no. Also `--color-danger` | — |
+| `--status-expired` | `#9A8D71` | 6.1:1 | Timed out, never ran (= `text-muted`) | Neutral on purpose: an expiry is not an error the owner caused |
+| `--color-danger-strong` | `#E5484D` | fill | Danger button fill, paired with `--color-accent-on` ink (4.8:1 — unchanged: dimming this fill would break the on-fill ink's AA) | — |
+
+Task `in_progress`/RUNNING maps to **gold** deliberately — it is the one status allowed to share
+the brand hue, because "SUNIL is alive right now" *is* the live/active state the glow budget (A.4)
+exists for. Every status remains icon + uppercase text + colour + edge pattern (spec §12.3);
+greyscale-printed rows stay classifiable.
+
+Untrusted-containment and table roles carry over from round 1 unchanged in role, revalued:
+`--color-untrusted-bg` = `surface-raised`, `--color-untrusted-bar` = `text-muted` (sand),
+`--color-row-hover` = `surface-raised`, `--color-redacted` = `text-disabled`. The containment is
+carried by the left bar + provenance label, not by a novel colour — unchanged from Decision 3.
+
+## A.4 Light is a state; texture is a whisper (the atmospherics budget — EXPANDED in round 3)
+
+The owner's round-3 verdict asked for *"cool effects"*. The budget below is that request granted
+deliberately: each item is CSS-only, carries meaning or material (never mere decoration), respects
+`prefers-reduced-motion`, and **no animation ever sits on a reading surface** (untrusted blocks,
+chat message bodies, param tables stay flat and still).
+
+Permitted, and only these:
+- **Hairline gold rules** — 1px, `border-accent`/`border-strong`, under view titles and around
+  framed panels. `linear-gradient(90deg, var(--color-border-strong), transparent)` fade allowed.
+- **Corner ticks** — 14px L-brackets in `border-strong` on **the one primary panel per view**
+  (the approval card, the live activity card, the trace summary). Not on every panel: a frame that
+  is everywhere frames nothing.
+- **Scanline texture** — `repeating-linear-gradient(0deg, rgba(201,162,39,.012) 0 1px,
+  transparent 1px 3px)` on `--color-canvas` **only**, never behind a panel's text. ≤1.5% opacity,
+  imperceptible as a pattern, present as tooth.
+- **Panel sheen (new, round 3)** — `--sheen-panel: linear-gradient(180deg, rgba(201,162,39,.03),
+  rgba(201,162,39,0) 46%)` as a `background-image` on panels, cards and tables: a barely-there
+  top light that makes surfaces read as brushed material instead of flat fills. ≤3% gold alpha —
+  its worst-case effect on any text contrast is below one decimal place. **Never** on the
+  untrusted-text containers or chat message bodies: reading surfaces stay flat.
+- **Metallic sheen on gold fills (new, round 3)** — `--sheen-metal: linear-gradient(180deg,
+  rgba(255,255,255,.14), rgba(255,255,255,0) 45%, rgba(0,0,0,.12))` overlaid on the primary
+  button's gold: light top edge, weighted base — gold as machined metal, no image assets. The
+  on-fill ink stays ≥4.5:1 at the brightest stop (§A.7).
+- **Key-figure glow (new, round 3)** — `text-shadow: 0 0 14px rgba(201,162,39,.32)` on **the one
+  gold figure per view** (§A.6 rule 1). A faint halo on the number the view exists for; not on any
+  other stat.
+- **Gold glow — armed/live states:** `--glow-armed: 0 0 0 1px rgba(201,162,39,.55), 0 0 18px
+  rgba(201,162,39,.30)`. Two legal carriers, unchanged: an **armed** decision control (spec §6.7)
+  and the **live** WorkIndicator pulse. **The pulse slows from 1100ms to 2600ms (round 3):** a
+  working system breathes calmly; 1100ms read as urgency. Same reduced-motion kill-switch — the
+  static border fallback keeps the state legible without motion. Nothing at rest glows.
+- **Shimmer sweep (new, round 3)** — a single 45%-wide, 20%-white diagonal highlight sweeping the
+  **armed confirm button only** (`@keyframes shimmer`, 2600ms, same easing family). It marks the
+  one control whose next press is irreversible as *live, right now*. Removed entirely under
+  `prefers-reduced-motion` (`content: none`), where the armed glow border still carries the state.
+- **Focus ring** — 2px solid `accent` outline, 2px offset, + `--focus: 0 0 0 4px
+  rgba(201,162,39,.22)`. Ring contrast 6.4:1 against the lightest surface (needs 3:1).
+
+Forbidden, in writing: parallax, animated backgrounds, glassmorphism/backdrop blur, neon
+multi-hue gradients, decorative motion, any texture or animation behind body text. The test for
+every atmospheric: *would it annoy at 8am on a Tuesday?*
+
+## A.5 Typography — futurism by geometry, not costume
+
+| Token | Face (Google Fonts) | Weights | Use |
+|---|---|---|---|
+| `--font-display` | **Space Grotesk** | 500 / 700 | Wordmark, view titles (H1), panel headings, stat figures. Squared terminals and technical counters carry the instrument feel at reading sizes — which Orbitron cannot: it is a costume face with a weak lowercase, and at micro sizes it costs exactly the legibility this rework is buying. Orbitron is retired from V2 surfaces |
+| `--font-body` | **Inter** | 400 / 500 / 600 / 700 | All UI text, table cells, prose. Replaces the all-mono body: a proportional body at 13–14px buys ~20% more characters per line — the owner asked for *"all the info displayed properly"*, and density is a typography decision before it is a layout one. Share Tech Mono (one weight, no bold) is retired from V2 surfaces |
+| `--font-mono` | **JetBrains Mono** | 400 / 600 / 700 | Everything that is *data*: ids, hashes, params, code, timestamps, countdowns, trace offsets, JSON. Continuity with M1; the mono is what makes machine-text visibly machine-text next to an Inter body |
+
+Scale (rem-based, root 16px — rem rule from §2 unchanged):
+
+| Style | Font | Size / line | Weight | Tracking | Use |
+|---|---|---|---|---|---|
+| Display | display | 22px / 1.2 | 700 | .08em, uppercase | View H1, wordmark |
+| H2 / panel | display | 12px / 1.4 | 700 | .18em, uppercase | Section + panel headings, `text-secondary` |
+| Body | body | 14px / 1.55 | 400 | normal | Default UI text |
+| Table cell | body | 13px / 1.5 | 400 | normal | Dense list rows |
+| Small / meta | body | 12px / 1.5 | 400 | .01em | Captions, helper lines |
+| Micro / label | body | 10px / 1.4 | 600 | .12em, uppercase | Column headers, pills, provenance labels |
+| Data | mono | 12–13px / 1.5 | 400 | normal | Ids, params, offsets, countdowns |
+| Stat figure | display | 20px / 1.2 | 700 | .02em | Summary-rail numbers |
+
+**Tabular figures everywhere data aligns** (kept from round 1, now load-bearing for Inter, which is
+proportional by default): `font-variant-numeric: tabular-nums` on `body`, and any ticking countdown
+must never reflow its row.
+
+## A.6 Density — "all the info displayed properly" (normative)
+
+The owner's verdict says round 1 felt like it hid things. These rules fix that:
+
+1. **Summary rail** at the top of every list view: 3–5 figures visible at rest (Approvals: pending /
+   oldest wait / next expiry / decided-7d. Activity: running / parked / failed-today. Tasks, Audit:
+   equivalents). One figure per view may be gold (A.2 rule 1).
+2. **Timestamps show relative *and* absolute at rest** — `18 min ago · 09:41:06` — never absolute
+   behind hover only. Round 1's hover-`<time>` pattern is dead.
+3. **Exception rows arrive expanded** (audit traces: non-`allow` decisions, `ok:false` results,
+   non-`ok` outcomes — unchanged from Decision 8) and collapsed rows still surface their contracted
+   key figures inline (offset, duration, token counts) so a closed trace is scannable.
+4. **Nothing meant to be read hides behind hover.** Hover may *add* affordance (row tint), never
+   *reveal* content. Keyboard and touch see everything a mouse sees.
+5. Table density: row padding `py-2.5 px-4` (44px effective target preserved via padding), header
+   `py-2 px-4` micro-label style, section gap `gap-6`, ops content `max-w-6xl`, chat column
+   `max-w-3xl` inside it, nav rail 88/232/64px + 5-item bottom bar <768px — carried from round 1.
+
+## A.7 Contrast — computed pairs (WCAG relative-luminance method), with the comfort ceiling
+
+**The two-sided rule (round 3, normative).** The AA floor is unchanged: **≥4.5:1 for all text,
+everywhere, no exceptions.** Round 3 adds a **comfort ceiling**: any text read at length (body,
+table cells, prose, headings) targets **9–13:1** against its actual ground and must not exceed
+**13.5:1**. Very high contrast is not "extra accessible" — on a dark theme used for hours it is
+glare (the owner's verdict: *"hard to keep on the eye for a long time"*). Short-exposure elements
+(a hover state, a key figure, an armed label) may sit near the top of the band; nothing on a V2
+surface renders text above 11.6:1. Anyone adding a token later must satisfy **both** bounds.
+
+Grounds: canvas `#0B0906` L≈.0028 · surface `#16120C` L≈.0063 · raised `#201A11` L≈.0109 ·
+high `#2B2315` L≈.0177.
+
+| Pair | Ratio | Requirement | Result |
+|---|---|---|---|
+| `text-primary` #CEC5B4 on canvas / surface / raised / high | 11.6 / 10.9 / 10.1 / 9.1:1 | 4.5:1 floor · 9–13:1 band | Pass — in the comfort band on all four grounds |
+| `text-secondary` #C4B48D on canvas / high | 9.7 / 7.6:1 | 4.5:1 | Pass |
+| `text-muted` #9A8D71 on canvas / surface / raised / high | 6.1 / 5.7 / 5.3 / 4.7:1 | 4.5:1 | Pass on all four grounds (high is the binding case — this is why muted is not dimmer still) |
+| `accent` (gold) #C9A227 on canvas / surface / high | 8.2 / 7.7 / 6.4:1 | 4.5:1 (text) / 3:1 (ring) | Pass everywhere, both uses |
+| `accent-hover` #DBBE7F on canvas | 11.1:1 | 4.5:1 | Pass (momentary state — top of band is fine) |
+| `accent-active` #A6801F (bronze) on canvas | 5.4:1 | 4.5:1 | Pass |
+| `gold-deep` #B08A2A on canvas / surface | 6.2 / 5.8:1 | 4.5:1 | Pass |
+| `accent-on` ink #14100A on gold fill #C9A227 | 7.8:1 | 4.5:1 | Pass |
+| ink on `accent-hover` #DBBE7F / on `accent-active` #A6801F | 10.5 / 5.2:1 | 4.5:1 | Pass — the metallic sheen's brightest and darkest stops both hold AA for the button label |
+| ink on `status-pending` fill #D98E4A (rail badge) | 8.1:1 | 4.5:1 | Pass |
+| `status-pending` #D98E4A (copper) on canvas / high | 7.5 / 5.9:1 | 4.5:1 | Pass |
+| `status-approved` #5E96E0 on canvas / high | 6.5 / 5.1:1 | 4.5:1 | Pass |
+| `success` #3FAE6C on canvas / high | 7.1 / 5.5:1 | 4.5:1 | Pass |
+| `danger` #E8685C on canvas / surface / raised / high | 6.2 / 5.8 / 5.4 / 4.9:1 | 4.5:1 | Pass |
+| ink on `danger-strong` fill #E5484D | 4.8:1 | 4.5:1 | Pass (fill kept from round 2 — dimming it would break this pair) |
+| focus ring gold #C9A227 vs `surface-high` | 6.4:1 | 3:1 | Pass |
+| *(retired)* round 2's `text-primary` #F5EFE3 on canvas | 18.3:1 | ≤13.5:1 ceiling | **Above the ceiling** — the exact value the owner reported as eye strain; retired from sustained-reading use |
+| *(rejected)* #B8912F as the accent | 6.8:1 canvas / 5.3:1 high | 4.5:1 | Passes, rejected on ramp mechanics: it sits only ~0.9 above the pressed bronze #A6801F (5.4:1), so accent / gold-deep / pressed collapse into one brightness and the pressed state stops reading — #C9A227 keeps the same antique hue with a legible three-step ramp |
+| *(rejected)* pure #000000 canvas | — | — | Kept round 2's mood but maximises perceived harshness (halation) of every glyph; the #0B0906 lift is invisible as "grey" and measurably gentler |
+| *(rejected)* #8A7D63 as text-muted | 3.8:1 on surface-high | 4.5:1 | **Fails** on the lightest ground — why muted is #9A8D71 and not one step dimmer |
+
+Rule of thumb, restated for the new grounds: a solid colour needs relative luminance ≥ **0.255**
+to clear 4.5:1 on `surface-high` (the binding ground), and should stay ≤ **0.63** to respect the
+comfort ceiling on canvas. Compute before shipping; never eyeball.
+
+## A.8 Tailwind config (paste into `tailwind.config.ts` → `theme.extend`)
+
+```ts
+colors: {
+  canvas: "#0B0906",
+  surface: { DEFAULT: "#16120C", raised: "#201A11", high: "#2B2315" },
+  border: { DEFAULT: "#282013", accent: "rgba(201,162,39,.16)", strong: "rgba(201,162,39,.38)" },
+  accent: { DEFAULT: "#C9A227", hover: "#DBBE7F", active: "#A6801F", on: "#14100A" },
+  gold: { deep: "#B08A2A" },
+  text: { primary: "#CEC5B4", secondary: "#C4B48D", muted: "#9A8D71", disabled: "#59503C" },
+  status: {
+    pending: "#D98E4A", approved: "#5E96E0", consumed: "#3FAE6C",
+    refused: "#E8685C", expired: "#9A8D71",
+  },
+  success: "#3FAE6C",
+  warning: "#D98E4A",
+  danger: { DEFAULT: "#E8685C", strong: "#E5484D" },
+},
+fontFamily: {
+  display: ["var(--font-display)", "ui-sans-serif", "system-ui", "sans-serif"],   // Space Grotesk
+  body: ["var(--font-body)", "ui-sans-serif", "system-ui", "sans-serif"],         // Inter
+  mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"], // JetBrains Mono
+},
+backgroundImage: {
+  // atmosphere (§A.4): panel top-light + metallic overlay for gold fills
+  "sheen-panel": "linear-gradient(180deg, rgba(201,162,39,.03), rgba(201,162,39,0) 46%)",
+  "sheen-metal": "linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,0) 45%, rgba(0,0,0,.12))",
+},
+boxShadow: {
+  "glow-armed": "0 0 0 1px rgba(201,162,39,.55), 0 0 18px rgba(201,162,39,.30)",
+  "glow-focus": "0 0 0 4px rgba(201,162,39,.22)",
+},
+keyframes: {
+  "work-pulse": {
+    "0%, 100%": { boxShadow: "0 0 0 1px rgba(201,162,39,.42), 0 0 14px rgba(201,162,39,.20)" },
+    "50%":      { boxShadow: "0 0 0 1px rgba(201,162,39,.58), 0 0 26px rgba(201,162,39,.32)" },
+  },
+  shimmer: { "0%": { left: "-60%" }, "60%, 100%": { left: "115%" } },
+},
+animation: {
+  // round 3: the live pulse breathes at 2600ms (1100ms read as urgency, not liveness)
+  "work-pulse": "work-pulse 2600ms cubic-bezier(0.4,0,0.2,1) infinite",
+  shimmer: "shimmer 2600ms cubic-bezier(0.4,0,0.2,1) infinite", // armed confirm button only (§A.4)
+},
+```
+
+`color-scheme: dark` on `:root`. **No `prefers-color-scheme` media query anywhere** — the theme is
+committed, every colour painted explicitly, body background explicit. There is no light map to
+drift out of sync. The `prefers-reduced-motion` kill-switch from §7 stays global and unchanged.
+

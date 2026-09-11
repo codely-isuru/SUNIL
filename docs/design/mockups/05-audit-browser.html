@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUNIL V2 — Audit browser (mockup 05)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 3: comfort-tuned, de-yellowed; dark-only, committed) ── */
+:root{
+  color-scheme: dark;
+  --canvas:#0B0906; --surface:#16120C; --raised:#201A11; --high:#2B2315;
+  --border:#282013; --border-accent:rgba(201,162,39,.16); --border-strong:rgba(201,162,39,.38);
+  --accent:#C9A227; --accent-hover:#DBBE7F; --accent-on:#14100A;
+  --gold-deep:#B08A2A;
+  --sheen-panel:linear-gradient(180deg,rgba(201,162,39,.03),rgba(201,162,39,0) 46%);
+  --text:#CEC5B4; --text-2:#C4B48D; --muted:#9A8D71; --disabled:#59503C;
+  --success:#3FAE6C; --warning:#D98E4A; --approved:#5E96E0; --danger:#E8685C;
+  --untrusted-bg:#201A11; --untrusted-bar:#9A8D71; --row-hover:#201A11;
+  --focus:0 0 0 4px rgba(201,162,39,.22);
+  --r-sm:3px; --r-md:6px; --r-lg:10px;
+  --f-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --f-body:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{background-color:#0B0906;background-image:repeating-linear-gradient(0deg,rgba(201,162,39,.012) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-hover);text-decoration:underline}
+:focus{outline:none} :focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
+.h1{font-family:var(--f-display);font-size:1.375rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin:0;position:relative;padding-bottom:10px}
+.h1::after{content:"";position:absolute;left:0;bottom:0;width:140px;height:1px;background:linear-gradient(90deg,var(--border-strong),transparent)}
+.h2{font-family:var(--f-display);font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5} .micro{font-size:.625rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.mono{font-family:var(--f-mono)}
+.muted{color:var(--muted)}
+.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.skip{position:absolute;left:-9999px}.skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+.tick{position:relative}
+.tick::before,.tick::after{content:"";position:absolute;width:14px;height:14px;border:1px solid var(--border-strong);pointer-events:none;z-index:2}
+.tick::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.tick::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
+.rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
+.brand{font-family:var(--f-display);font-weight:700;font-size:.8125rem;letter-spacing:.24em;color:var(--accent);padding:6px 0 16px}
+.nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
+.nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
+.nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent)}
+.nav .lbl{font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--accent-on);font-family:var(--f-mono);font-size:.625rem;font-weight:600;display:flex;align-items:center;justify-content:center}
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
+.grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.chip.warn{color:var(--warning);border-color:var(--warning)} button.chip{cursor:pointer}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--success)}
+main{padding:24px 32px 72px;max-width:1060px}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 14px}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:7px 11px;color:var(--muted);min-width:300px}
+.search input{background:none;border:0;color:var(--text);font-family:var(--f-mono);font-size:.8125rem;width:100%}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+thead th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;background:var(--raised)}
+tbody td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:.8125rem}
+tbody tr:last-child td{border-bottom:0} tbody tr:hover{background:var(--row-hover)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.p-ok{color:var(--success)} .p-parked{color:var(--warning)} .p-failed{color:var(--danger)} .p-muted{color:var(--muted)}
+/* ── trace ── */
+.trace{margin-top:14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);overflow:hidden}
+details.stage{border-bottom:1px solid var(--border)}
+details.stage:last-child{border-bottom:0}
+details.stage > summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:44px 1fr 82px 18px;gap:12px;align-items:baseline;padding:10px 14px;border-left:3px solid transparent}
+details.stage > summary::-webkit-details-marker{display:none}
+details.stage > summary:hover{background:var(--row-hover)}
+details.stage[open] > summary{background:var(--raised)}
+.seq{font-family:var(--f-mono);font-size:.6875rem;color:var(--gold-deep)}
+.lab{color:var(--text)} .lab b{color:var(--text-2);font-weight:600}
+.sub{display:block;color:var(--muted);font-family:var(--f-mono);font-size:.6875rem}
+.off{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);text-align:right}
+.chev{color:var(--muted);justify-self:end}
+details.stage[open] .chev{transform:rotate(90deg)}
+details.warnrow > summary{border-left-color:var(--warning)}
+details.dangrow > summary{border-left-color:var(--danger)}
+details.okrow > summary{border-left-color:transparent}
+.body{padding:4px 14px 16px 70px;background:var(--raised)}
+dl.kv{display:grid;grid-template-columns:170px 1fr;gap:4px 14px;margin:8px 0 10px;font-size:.8125rem}
+dl.kv dt{color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
+dl.kv dd{margin:0;overflow-wrap:anywhere}
+pre{margin:0;padding:11px 13px;background:var(--untrusted-bg);border:1px solid var(--border);border-left:3px solid var(--untrusted-bar);border-radius:0 var(--r-sm) var(--r-sm) 0;font-family:var(--f-mono);font-size:.75rem;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext;color:var(--text)}
+.gap{display:flex;align-items:center;gap:12px;padding:14px 16px;background:repeating-linear-gradient(135deg,transparent,transparent 8px,var(--raised) 8px,var(--raised) 16px);border-top:1px dashed var(--warning);border-bottom:1px dashed var(--warning);color:var(--warning);font-size:.8125rem}
+.seghead{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--raised);border-top:1px solid var(--border);color:var(--text-2)}
+.tsum{display:flex;gap:20px;flex-wrap:wrap;align-items:center;background:var(--surface);border:1px solid var(--border-accent);border-radius:var(--r-md);padding:14px 16px}
+.tsum b{display:block;font-family:var(--f-display);font-size:1.125rem;font-weight:700;letter-spacing:.02em;color:var(--text-2)}
+.tsum .key b{color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--raised);border-color:var(--accent)}
+.banner{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--warning);border-radius:var(--r-md);padding:11px 14px;color:var(--warning);background:var(--raised);font-size:.8125rem;margin-top:14px}
+.banner.err{border-color:var(--danger);color:var(--danger)}
+.ann{margin-top:44px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 24px}
+.annnote{color:var(--muted);font-size:.75rem;margin:4px 0 18px}
+.states{display:grid;gap:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:18px}
+.sk{height:13px;border-radius:var(--r-sm);background:var(--raised)}
+.empty{text-align:center;padding:30px 18px}
+kbd{font-family:var(--f-mono);font-size:.6875rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:var(--r-sm);padding:1px 6px;color:var(--text-2);background:var(--high)}
+footer{padding:18px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:1060px}
+/* ── ROUND 3 — atmosphere (Amendment A §A.4 expanded): panel sheen + key-figure glow ── */
+.trace,.tsum,.panel,table{background-image:var(--sheen-panel)}
+.tsum .key b{text-shadow:0 0 14px rgba(201,162,39,.32)}
+@media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:18px 16px 60px}.body{padding-left:16px}dl.kv{grid-template-columns:1fr}details.stage > summary{grid-template-columns:36px 1fr 62px 16px}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div class="shell">
+  <nav class="rail" aria-label="Primary">
+    <div class="brand">S</div>
+    <div class="nav">
+      <a href="06-nav-shell.html"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">Chat</span></a>
+      <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">Approve</span><span class="cnt" aria-hidden="true">3</span></a>
+      <a href="03-agent-activity.html"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="lbl">Activity</span></a>
+      <a href="04-tasks-projects.html"><svg class="icon" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg><span class="lbl">Tasks</span></a>
+      <a href="04-tasks-projects.html"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v11z"/></svg><span class="lbl">Projects</span></a>
+      <a href="05-audit-browser.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m16 19-2.2-2.2"/></svg><span class="lbl">Audit</span></a>
+    </div>
+  </nav>
+
+  <div>
+    <header class="topbar">
+      <span class="brand" style="padding:0">S.U.N.I.L</span>
+      <span class="small muted"><a href="#index">Audit</a> &rsaquo; <b class="mono" style="color:var(--text-2)">01JQ82PP7K</b></span>
+      <span class="grow"></span>
+      <span class="chip"><span class="dot"></span> SUNIL online</span>
+      <span class="chip warn">3 pending</span>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <h1 class="h1">Audit</h1>
+      <p class="muted small" style="margin:8px 0 0">Every turn SUNIL has run, stage by stage, reconstructable from <span class="mono">audit_events</span> alone.</p>
+
+      <div class="bar" id="index">
+        <label class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><span class="sr">Find by request id</span><input value="01JQ82PP7K" aria-label="Request id"></label>
+        <span class="chip">Today</span><span class="chip">Outcome: any</span><span class="chip">Agent: any</span>
+      </div>
+
+      <table>
+        <caption class="sr">Recent turns, 4 rows</caption>
+        <thead><tr><th scope="col">Request</th><th scope="col">When</th><th scope="col">Conversation / trigger</th><th scope="col">Outcome</th><th scope="col">Stages</th><th scope="col">Took</th></tr></thead>
+        <tbody>
+          <tr style="background:var(--row-hover)"><td><a class="mono" href="#trace"><b>01JQ82PP7K</b></a></td><td>7:00:02 am</td><td>n8n:morning-brief <span class="muted">(service lane)</span></td><td><span class="pill p-ok"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Ok</span></td><td class="mono">12 of 12</td><td class="mono">12.6s</td></tr>
+          <tr><td><a class="mono" href="#parked">01JQ8ZC2N4</a></td><td>9:41:02 am</td><td>"EasyClean February billing"</td><td><span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span></td><td class="mono">12 of 12</td><td class="mono">4.1s <span class="muted">+ wait</span></td></tr>
+          <tr><td><a class="mono" href="#">01JQ85MCQ1</a></td><td>8:12:44 am</td><td>"925 duplicate bookings"</td><td><span class="pill p-failed"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>tool_failed</span></td><td class="mono">12 of 12</td><td class="mono">30.1s</td></tr>
+          <tr><td><a class="mono" href="#">01JQ7Q0W8B</a></td><td>Yesterday 4:22 pm</td><td>"EasyClean invoicing"</td><td><span class="pill p-ok"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Ok</span></td><td class="mono" style="color:var(--warning)">9 of 12</td><td class="mono">11.4s</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ══════════ THE TRACE ══════════ -->
+      <h2 class="h2" id="trace" style="margin-top:34px">Trace — request 01JQ82PP7K</h2>
+      <div class="tsum tick" style="margin-top:12px">
+        <span class="key"><b>12 / 12</b><span class="muted small">stages, in order</span></span>
+        <span><b>12.58s</b><span class="muted small">total</span></span>
+        <span><b>ok</b><span class="muted small">outcome</span></span>
+        <span><b>project_manager</b><span class="muted small">agent</span></span>
+        <span><b>$0.0041</b><span class="muted small">cost</span></span>
+        <span class="grow"></span>
+        <button class="btn"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy request_id</button>
+        <button class="btn">Copy trace as text</button>
+      </div>
+      <p class="small muted" style="margin:12px 0 0">Rows that need attention are open by default; everything else is collapsed but still shows its stage name, module and offset at rest. Expand with <kbd>Enter</kbd> or click — these are native disclosure elements.</p>
+
+      <div class="trace">
+
+        <details class="stage okrow"><summary><span class="seq">01</span><span class="lab"><b>Received your message</b><span class="sub">message_received · api/routes/chat.py · 68 chars, channel=service</span></span><span class="off">+0.00s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Actor</dt><dd class="mono">api/routes/chat.py</dd><dt>Summary</dt><dd>Message accepted (68 chars) on conversation conv-01JQ82NF, channel=service</dd><dt>At</dt><dd class="mono">2026-09-11T07:00:02.004Z</dd></dl>
+            <pre>{"channel": "service", "channel_label": "n8n:morning-brief", "input_modality": "text", "chars": 68}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">02</span><span class="lab"><b>Loaded conversation context</b><span class="sub">context_loaded · core/conversations · 6 prior messages</span></span><span class="off">+0.12s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Summary</dt><dd>Loaded 6 prior messages (window 20)</dd></dl><pre>{"messages_loaded": 6, "window": 20}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">03</span><span class="lab"><b>Checked memory</b><span class="sub">memory_retrieved · core/memory · 3 recalled, 260 ms</span></span><span class="off">+0.38s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Summary</dt><dd>Recalled 3 memories, scope=project:easy_clean_workforce (260 ms, within the 800 ms budget)</dd></dl><pre>{"recalled": 3, "scope": "project:easy_clean_workforce", "latency_ms": 260, "degraded": false}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">04</span><span class="lab"><b>Chose a model</b><span class="sub">model_selected · core/routing · gateway / gpt-5.1</span></span><span class="off">+0.41s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Capability</dt><dd>general_reasoning</dd><dt>Provider</dt><dd>gateway (LiteLLM, virtual key: project_manager)</dd><dt>Model</dt><dd class="mono">gpt-5.1-2025-11-13</dd></dl>
+            <pre>{"capability": "general_reasoning", "provider": "gateway", "model": "gpt-5.1-2025-11-13"}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">05</span><span class="lab"><b>Interpreted the request</b><span class="sub">llm_io · purpose=plan · 1,842 in / 213 out</span></span><span class="off">+2.61s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Purpose</dt><dd>plan (structured output, json_schema — §25)</dd><dt>Attempts</dt><dd>1</dd><dt>Tokens</dt><dd class="mono">1,842 in / 213 out</dd></dl>
+            <pre>{"purpose": "plan", "provider_attempts": 1, "input_tokens": 1842, "output_tokens": 213}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">06</span><span class="lab"><b>Created a plan</b><span class="sub">plan_created · plan_validator · easy_clean_workforce, 2 steps</span></span><span class="off">+2.74s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Project</dt><dd>EasyClean Workforce <span class="muted mono">(easy_clean_workforce)</span></dd><dt>Agent</dt><dd>project_manager</dd><dt>Plan attempts</dt><dd>1 <span class="muted">(validated first time)</span></dd></dl>
+            <pre>{"project_key": "easy_clean_workforce", "project_display_name": "EasyClean Workforce", "agent": "project_manager", "plan_attempts": 1, "steps": 2}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">07</span><span class="lab"><b>Started the agent</b><span class="sub">agent_started · agent_framework/runner · project_manager</span></span><span class="off">+2.81s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Agent</dt><dd>Project Manager Agent <span class="muted mono">(project_manager)</span></dd><dt>Task</dt><dd><a class="mono" href="04-tasks-projects.html">task-01JQ82PQ</a></dd></dl>
+            <pre>{"agent": "project_manager", "agent_display_name": "Project Manager Agent"}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">08</span><span class="lab"><b>Asked to use a tool</b><span class="sub">tool_requested · github_mcp.list_pull_requests</span></span><span class="off">+2.86s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Tool</dt><dd class="mono">github_mcp <span class="muted">(adapter kind: mcp_stdio)</span></dd><dt>Operation</dt><dd class="mono">list_pull_requests</dd></dl>
+            <pre>{"tool": "github_mcp", "operation": "list_pull_requests"}</pre></div></details>
+
+        <details class="stage okrow" open><summary><span class="seq">09</span><span class="lab"><b>Permission check</b> — allowed<span class="sub">permission_decision · core/permissions · allow</span></span><span class="off">+2.87s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Decision</dt><dd><span style="color:var(--success)">ALLOW</span> — read-only operation</dd><dt>Source</dt><dd class="mono">config:project_manager.github_mcp.list_pull_requests</dd></dl>
+            <pre>{"decision": "allow", "tool": "github_mcp", "operation": "list_pull_requests"}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">10</span><span class="lab"><b>Tool result</b> — ok in 2.25s<span class="sub">tool_result · tools/mcp/stdio · ok=true, 2,246 ms</span></span><span class="off">+5.12s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Ok</dt><dd>true</dd><dt>Duration</dt><dd class="mono">2,246 ms</dd><dt>Error kind</dt><dd class="muted">null</dd></dl>
+            <p class="micro muted" style="margin:0 0 6px">Result excerpt — returned by an external tool, shown exactly as received</p>
+            <pre>{"excerpt": "4 open pull requests on codely-isuru/easy_clean_workforce: #212 \"feat(mobile): offline job sync\" (CI failing), #209 \"fix(admin): franchise rollup totals\", #205 …", "truncated": true, "bytes": 18422}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">11</span><span class="lab"><b>Analysed the result</b><span class="sub">agent_result · llm_io purpose=analysis · 6,410 in / 388 out</span></span><span class="off">+12.44s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Ok</dt><dd>true</dd><dt>Tokens</dt><dd class="mono">6,410 in / 388 out <span class="muted">(streamed)</span></dd></dl><pre>{"ok": true}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">12</span><span class="lab"><b>Prepared the answer</b><span class="sub">final_response · core/orchestrator · outcome=ok</span></span><span class="off">+12.58s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Outcome</dt><dd><span style="color:var(--success)">ok</span></dd><dt>Failure kind</dt><dd class="muted">null</dd><dt>Message</dt><dd><a href="06-nav-shell.html"><span class="mono">msg-01JQ82PZ</span> — open in the conversation &rarr;</a></dd></dl>
+            <pre>{"outcome": "ok", "failure_kind": null}</pre></div></details>
+
+      </div>
+
+      <!-- ══════════ AN APPROVAL EPISODE ══════════ -->
+      <h2 class="h2" id="parked" style="margin-top:40px">Trace — request 01JQ8ZC2N4 <span class="muted" style="letter-spacing:normal;text-transform:none;font-family:var(--f-body);font-weight:400">(the refund episode — one story, two executions)</span></h2>
+      <p class="small muted" style="margin:6px 0 0">This is the pattern Decision 8 exists for: the turn parked, a human took 26 minutes, then the continuation ran under the same request lineage. Rendered flat, the offset column would jump from +3.1s to +1583s and read as a performance catastrophe.</p>
+
+      <div class="trace" style="margin-top:12px">
+        <details class="stage okrow"><summary><span class="seq">01–08</span><span class="lab"><b>Received &rarr; planned &rarr; agent started &rarr; tool requested</b><span class="sub">8 stages, collapsed — nothing exceptional</span></span><span class="off">+0.0 … +3.0s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><p class="small muted" style="margin:0">Expands to the eight individual rows. Grouped here only to keep this mockup readable — the real view lists all twelve.</p></div></details>
+
+        <details class="stage warnrow" open><summary><span class="seq">09</span><span class="lab"><b>Permission check</b> — needs your approval<span class="sub">permission_decision · stripe_mcp.refunds.create · ask_user</span></span><span class="off">+3.05s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Decision</dt><dd><span style="color:var(--warning)">ASK_USER</span></dd><dt>Source</dt><dd class="mono">config:project_manager.stripe_mcp.refunds.create</dd><dt>Approval</dt><dd><a class="mono" href="02-approval-card.html">apr-01JQ8ZC7QF3M2 &rarr;</a></dd><dt>args_hash</dt><dd class="mono">9f21c3…a91</dd></dl>
+            <pre>{"decision": "ask_user", "tool": "stripe_mcp", "operation": "refunds.create"}</pre></div></details>
+
+        <details class="stage warnrow"><summary><span class="seq">10–12</span><span class="lab"><b>Turn finalised as parked</b><span class="sub">tool_result (not_executed) · agent_result · final_response (outcome=parked)</span></span><span class="off">+4.10s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><pre>{"outcome": "parked", "approval_id": "apr-01JQ8ZC7QF3M2", "task_status": "parked"}</pre>
+          <p class="small muted" style="margin:8px 0 0">Open question Q9: does a parked turn emit all twelve stages or short-circuit after stage 9? The view renders whatever arrives and flags any count other than twelve — it never pads or hides.</p></div></details>
+
+        <div class="gap"><svg class="icon" viewBox="0 0 24 24"><path d="M10 4v16M14 4v16"/></svg><b>Waiting for you — 26 min 04 s</b><span class="muted">not a performance problem: this is the governance model working</span></div>
+
+        <div class="seghead"><svg class="icon" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></svg><b class="micro">After your decision — continuation (resumed_from_approval_id apr-01JQ8ZC7QF3M2)</b></div>
+
+        <details class="stage okrow" open><summary><span class="seq">c1</span><span class="lab"><b>You approved it</b><span class="sub">approval_approved · decided_by owner</span></span><span class="off">10:07:06</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Decided by</dt><dd>owner</dd><dt>Reason</dt><dd class="muted">— none given —</dd><dt>Runs before</dt><dd>11:07:06 <span class="muted">(1h consume grace)</span></dd></dl></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">c2</span><span class="lab"><b>Approval consumed — single use spent</b><span class="sub">binding re-verified: agent · tool · operation · args_hash</span></span><span class="off">+0.31s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><pre>{"approval_id": "apr-01JQ8ZC7QF3M2", "result": "consumed", "args_hash_match": true}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">c3</span><span class="lab"><b>Tool result</b> — refund created<span class="sub">tool_call · stripe_mcp.refunds.create · approval_id set · 1,604 ms</span></span><span class="off">+1.92s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Ok</dt><dd>true</dd><dt>Duration</dt><dd class="mono">1,604 ms</dd></dl>
+            <p class="micro muted" style="margin:0 0 6px">Result excerpt — returned by an external tool, shown exactly as received</p>
+            <pre>{"excerpt": "re_3Qk2p9Lm0001 — refunded 24000 aud on ch_3Qk2p9LmQfT0Xv, status: succeeded", "truncated": false}</pre></div></details>
+
+        <details class="stage okrow"><summary><span class="seq">c4</span><span class="lab"><b>Task completed and answered in the original conversation</b><span class="sub">final_response · outcome ok</span></span><span class="off">+4.88s</span><svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
+          <div class="body"><dl class="kv"><dt>Conversation</dt><dd><a href="06-nav-shell.html">"EasyClean February billing" &rarr;</a></dd><dt>Task</dt><dd><a class="mono" href="04-tasks-projects.html">task-01JQ8ZC4 — completed</a></dd></dl></div></details>
+      </div>
+
+      <!-- ── STATES ── -->
+      <section class="ann">
+        <h3 class="h2">Mockup annotation — states</h3>
+        <p class="annnote">Spec §10.3.</p>
+        <div class="states">
+          <div><p class="micro muted">1 · Loading — exactly 12 skeleton rows, because a trace is always about twelve rows</p>
+            <div class="panel" aria-busy="true" style="display:grid;gap:9px">
+              <div class="sk" style="width:60%"></div><div class="sk" style="width:74%"></div><div class="sk" style="width:52%"></div><div class="sk" style="width:66%"></div><div class="sk" style="width:48%"></div><div class="sk" style="width:70%"></div>
+            </div></div>
+          <div><p class="micro muted">2 · Empty — id not found</p>
+            <div class="panel empty"><p class="h2">No trace for that request id.</p>
+              <p class="muted small" style="max-width:52ch;margin:0 auto 16px">Ids look like <span class="mono">01JQ8ZC2N4</span>. Check the id, or browse recent turns.</p>
+              <button class="btn">Browse recent</button></div></div>
+          <div><p class="micro muted">3 · Partial — information, not an error to hide</p>
+            <div class="panel"><div class="banner"><svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <div><b>This trace has 9 of 12 stages — the turn ended early.</b><br><span class="small">Stage 12 (final_response) is present, so the turn did finalise. Stages 10 and 11 never fired.</span></div></div></div></div>
+          <div><p class="micro muted">4 · Error</p>
+            <div class="panel"><div class="banner err"><svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <div><b>Couldn't load this trace.</b><br><span class="small">The API returned 500. The audit rows themselves are untouched — they are append-only.</span></div></div>
+              <div style="margin-top:14px"><button class="btn">Try again</button></div></div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Mockup 05 of 6 · stage names are the twelve NFR-020 / ADR-023 names, rendered in plain English exactly as
+      M1's TraceDisclosure does. Collapsed rows carry their key figures inline (Amendment A §A.6 — nothing readable
+      behind hover). Every <code>detail</code> value — including tool-result excerpts — is contained and labelled as
+      received, not rendered as markup. No audit endpoint exists yet (spec §13.3, Q1).
+    </footer>
+  </div>
+</div>
+</body>
+</html>

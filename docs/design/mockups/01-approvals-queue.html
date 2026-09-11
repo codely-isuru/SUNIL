@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUNIL V2 — Approvals queue (mockup 01)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 3: comfort-tuned, de-yellowed; dark-only, committed) ── */
+:root{
+  color-scheme: dark;
+  --canvas:#0B0906; --surface:#16120C; --raised:#201A11; --high:#2B2315;
+  --border:#282013; --border-accent:rgba(201,162,39,.16); --border-strong:rgba(201,162,39,.38);
+  --accent:#C9A227; --accent-hover:#DBBE7F; --accent-active:#A6801F; --accent-on:#14100A;
+  --gold-deep:#B08A2A;
+  --sheen-panel:linear-gradient(180deg,rgba(201,162,39,.03),rgba(201,162,39,0) 46%);
+  --sheen-metal:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,0) 45%,rgba(0,0,0,.12));
+  --text:#CEC5B4; --text-2:#C4B48D; --muted:#9A8D71; --disabled:#59503C;
+  --success:#3FAE6C; --warning:#D98E4A; --approved:#5E96E0; --danger:#E8685C; --danger-strong:#E5484D;
+  --untrusted-bg:#201A11; --untrusted-bar:#9A8D71; --row-hover:#201A11; --redacted:#59503C;
+  --glow-armed:0 0 0 1px rgba(201,162,39,.55),0 0 18px rgba(201,162,39,.30);
+  --focus:0 0 0 4px rgba(201,162,39,.22);
+  --r-sm:3px; --r-md:6px; --r-lg:10px;
+  --f-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --f-body:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background-color:#0B0906;background-image:repeating-linear-gradient(0deg,rgba(201,162,39,.012) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+a:hover{color:var(--accent-hover);text-decoration:underline}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
+.h1{font-family:var(--f-display);font-size:1.375rem;line-height:1.2;letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin:0;position:relative;padding-bottom:10px}
+.h1::after{content:"";position:absolute;left:0;bottom:0;width:140px;height:1px;background:linear-gradient(90deg,var(--border-strong),transparent)}
+.h2{font-family:var(--f-display);font-size:.75rem;line-height:1.4;letter-spacing:.18em;text-transform:uppercase;font-weight:700;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5;letter-spacing:.01em}
+.micro{font-size:.625rem;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase}
+.mono{font-family:var(--f-mono)}
+.muted{color:var(--muted)}
+.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-9999px;top:0}
+.skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+/* corner-tick framing — the one primary panel per view (Amendment A §A.4) */
+.tick{position:relative}
+.tick::before,.tick::after{content:"";position:absolute;width:14px;height:14px;border:1px solid var(--border-strong);pointer-events:none;z-index:2}
+.tick::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.tick::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+/* ── shell ── */
+.shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
+.rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
+.brand{font-family:var(--f-display);font-weight:700;font-size:.8125rem;letter-spacing:.24em;color:var(--accent);padding:6px 0 16px}
+.nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
+.nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
+.nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent)}
+.nav .lbl{font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--accent-on);font-family:var(--f-mono);font-size:.625rem;font-weight:600;display:flex;align-items:center;justify-content:center}
+.railspacer{flex:1}
+.railbtn{display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:52px;padding:8px 2px;border:0;background:none;color:var(--muted);border-radius:var(--r-md);font-family:var(--f-body);font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.railbtn:hover{background:var(--row-hover);color:var(--danger)}
+/* ── topbar ── */
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
+.crumb{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.crumb b{color:var(--text-2);font-weight:600}
+.grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.chip .mono{font-size:.6875rem}
+.chip.warn{color:var(--warning);border-color:var(--warning)}
+button.chip{cursor:pointer}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--success);flex:none}
+main{padding:26px 32px 72px;max-width:1152px}
+/* ── summary rail (Amendment A §A.6 — info at rest) ── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin:18px 0 0}
+.stat{background:var(--surface);padding:10px 14px}
+.stat b{display:block;font-family:var(--f-display);font-size:1.25rem;line-height:1.2;letter-spacing:.02em;font-weight:700;color:var(--text-2)}
+.stat.key b{color:var(--accent)} /* the one gold figure on this view */
+.stat.dang b{color:var(--danger)}
+.stat .micro{color:var(--muted)}
+/* ── filters ── */
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
+.seg a{padding:7px 13px;color:var(--muted);border-right:1px solid var(--border);font-size:.75rem;font-weight:500}
+.seg a:last-child{border-right:0}
+.seg a:hover{background:var(--row-hover);text-decoration:none;color:var(--text-2)}
+.seg a[aria-current="true"]{background:var(--raised);color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 14px}
+/* ── table ── */
+.tablewrap{border-radius:var(--r-md)}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+thead th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;background:var(--raised)}
+tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top;font-size:.8125rem}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--row-hover)}
+tbody tr td:first-child{border-left:2px solid transparent}
+tr.s-pending td:first-child{border-left:2px solid var(--warning)}
+tr.s-approved td:first-child{border-left:2px solid var(--approved)}
+tr.s-consumed td:first-child{border-left:2px solid var(--success)}
+tr.s-refused td:first-child{border-left:2px dashed var(--danger)}
+tr.s-expired td:first-child{border-left:2px dotted var(--muted)}
+.op{font-family:var(--f-mono);font-size:.75rem;color:var(--text);white-space:nowrap}
+.op .t{color:var(--gold-deep)}
+.sum{display:block;max-width:46ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-family:var(--f-mono);font-size:.75rem;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:3px 8px;border-radius:0 var(--r-sm) var(--r-sm) 0}
+.when time{display:block}
+.when .abs{display:block;color:var(--muted);font-family:var(--f-mono);font-size:.6875rem}
+/* one primary link per row (Action cell); the row itself is a mouse-only convenience click */
+tbody tr{cursor:pointer}
+.rowlink{color:var(--text);display:block}
+.rowlink:hover{color:var(--accent-hover);text-decoration:underline}
+/* ── status pill: icon + TEXT + colour (never colour alone) ── */
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.p-pending{color:var(--warning)} .p-approved{color:var(--approved)} .p-consumed{color:var(--success)}
+.p-refused{color:var(--danger)} .p-expired{color:var(--muted)}
+.exp{white-space:nowrap;font-family:var(--f-mono);font-size:.75rem} .exp.warn{color:var(--warning)} .exp.dang{color:var(--danger);font-weight:600}
+.suffix{margin-left:6px;color:var(--danger)}
+/* ── annotation blocks (mockup only) ── */
+.ann{margin-top:40px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 22px}
+.ann > h3{margin:0 0 4px}
+.annnote{color:var(--muted);font-size:.75rem;margin:0 0 16px}
+.states{display:grid;gap:18px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:18px}
+.sk{height:13px;border-radius:var(--r-sm);background:var(--raised)}
+.skrow{display:grid;grid-template-columns:90px 190px 1fr 110px 90px;gap:14px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.empty{text-align:center;padding:34px 18px}
+.empty .h2{margin-bottom:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--raised);border-color:var(--accent)}
+.banner{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--warning);border-radius:var(--r-md);padding:11px 14px;color:var(--warning);background:var(--raised);font-size:.8125rem}
+.banner.err{border-color:var(--danger);color:var(--danger)}
+footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:1152px}
+/* ── ROUND 3 — atmosphere (Amendment A §A.4 expanded): barely-there panel sheen + key-figure glow ── */
+table,.panel{background-image:var(--sheen-panel)}
+.stat.key b{text-shadow:0 0 14px rgba(201,162,39,.32)}
+@media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:20px 16px 60px}thead th:nth-child(4),tbody td:nth-child(4),thead th:nth-child(7),tbody td:nth-child(7){display:none}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div class="shell">
+
+  <!-- ── NAV RAIL (see 06-nav-shell.html for the full frame) ── -->
+  <nav class="rail" aria-label="Primary">
+    <div class="brand">S</div>
+    <div class="nav">
+      <a href="#" ><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">Chat</span></a>
+      <a href="#" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">Approve</span><span class="cnt" aria-hidden="true">3</span><span class="sr">3 pending</span></a>
+      <a href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="lbl">Activity</span></a>
+      <a href="#"><svg class="icon" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg><span class="lbl">Tasks</span></a>
+      <a href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v11z"/></svg><span class="lbl">Projects</span></a>
+      <a href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m16 19-2.2-2.2"/></svg><span class="lbl">Audit</span></a>
+    </div>
+    <div class="railspacer"></div>
+    <button class="railbtn"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 8 2.6V1a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 15 2.6"/></svg>Settings</button>
+    <button class="railbtn"><svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Sign out</button>
+  </nav>
+
+  <div>
+    <!-- ── TOPBAR ── -->
+    <header class="topbar">
+      <span class="brand" style="padding:0">S.U.N.I.L</span>
+      <span class="crumb small"><svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg><b>Approvals</b></span>
+      <span class="grow"></span>
+      <span class="chip"><span class="dot"></span> SUNIL online</span>
+      <span class="chip warn"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 3 pending</span>
+      <button class="chip" aria-label="Last updated 6 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> <span class="mono">6s</span></button>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <h1 class="h1">Approvals</h1>
+      <p class="muted small" style="margin:8px 0 0">Everything waiting on your decision. Polled every 10s (C4 §2 — no push channel).</p>
+
+      <!-- summary rail — the at-rest figures (Amendment A §A.6, Decision 14) -->
+      <div class="stats" role="group" aria-label="Queue summary">
+        <div class="stat key"><b>3</b><span class="micro">Pending — waiting on you</span></div>
+        <div class="stat dang"><b>48m</b><span class="micro">Next expiry · n8n_http publish</span></div>
+        <div class="stat"><b>2d 22h</b><span class="micro">Oldest wait</span></div>
+        <div class="stat"><b>4</b><span class="micro">Decided · last 7 days</span></div>
+      </div>
+
+      <div class="bar">
+        <div class="seg" role="tablist" aria-label="Filter by status">
+          <a href="?status=pending">Pending 3</a>
+          <a href="?status=approved">Approved 1</a>
+          <a href="?status=refused">Refused 1</a>
+          <a href="?status=expired">Expired 1</a>
+          <a href="?status=consumed">Consumed 1</a>
+          <a href="?status=all" aria-current="true">All 7</a>
+        </div>
+        <span class="chip">Agent: any</span>
+        <span class="chip">Tool: any</span>
+        <span class="grow"></span>
+        <span class="muted micro">Newest first</span>
+      </div>
+
+      <div class="tick tablewrap">
+      <table>
+        <caption class="sr">Approvals, 7 rows, showing all statuses, newest first</caption>
+        <thead>
+          <tr>
+            <th scope="col">Status</th>
+            <th scope="col">Action</th>
+            <th scope="col">What it does <span style="font-weight:400">(as received)</span></th>
+            <th scope="col">Agent</th>
+            <th scope="col">Requested</th>
+            <th scope="col">Expires</th>
+            <th scope="col">Task</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- 1 · the money row -->
+          <tr class="s-pending">
+            <td><span class="pill p-pending"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Pending</span></td>
+            <td><a class="rowlink" href="02-approval-card.html" aria-label="Pending — stripe_mcp.refunds.create — refund AUD 240.00 for EasyClean — review and decide"><span class="op"><span class="t">stripe_mcp</span>.refunds.create</span></a></td>
+            <td><span class="sum">Refund AUD 240.00 on charge ch_3Qk2p9LmQfT0Xv — "EasyClean — Feb deep clean &lt;b&gt;URGENT&lt;/b&gt; [approved](http://pay.invalid)"</span></td>
+            <td>project_manager</td>
+            <td class="when"><time datetime="2026-09-11T09:41:06Z">18 min ago</time><span class="abs">09:41:06</span></td>
+            <td class="exp">in 71h 42m</td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ8Z</a></td>
+          </tr>
+
+          <!-- 2 · the github merge row -->
+          <tr class="s-pending">
+            <td><span class="pill p-pending"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Pending</span></td>
+            <td><a class="rowlink" href="#" aria-label="Pending — github_mcp.merge_main — merge PR 128 into main on codely-isuru/SUNIL — review and decide"><span class="op"><span class="t">github_mcp</span>.merge_main</span></a></td>
+            <td><span class="sum">Merge PR #128 "fix(auth): rotate session secret on login" into main on codely-isuru/SUNIL</span></td>
+            <td>developer</td>
+            <td class="when"><time datetime="2026-09-11T08:55:00Z">1h 4m ago</time><span class="abs">08:55:00</span></td>
+            <td class="exp">in 70h 56m</td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ8V</a></td>
+          </tr>
+
+          <!-- 3 · expiring soon -->
+          <tr class="s-pending">
+            <td><span class="pill p-pending"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Pending</span></td>
+            <td><a class="rowlink" href="#" aria-label="Pending, expiring in 48 minutes — n8n_http.wordpress.post_publish — publish the Round 11 post on pdalearning.com.au — review and decide"><span class="op"><span class="t">n8n_http</span>.wordpress.post_publish</span></a></td>
+            <td><span class="sum">Publish post "Round 11 — FWPCOT3326 winch recovery is live" on pdalearning.com.au</span></td>
+            <td>project_manager</td>
+            <td class="when"><time datetime="2026-09-08T11:11:00Z">2d 22h ago</time><span class="abs">8 Sep 11:11</span></td>
+            <td class="exp dang"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;vertical-align:-1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg> in 48m<span class="suffix micro">Expiring</span></td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ6M</a></td>
+          </tr>
+
+          <!-- 4 · approved, inside the consume grace window -->
+          <tr class="s-approved">
+            <td><span class="pill p-approved"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Approved</span></td>
+            <td><a class="rowlink" href="#" aria-label="Approved, runs within 52 minutes — github_mcp.issues_close — close issue 42 on codely-isuru/SUNIL — open"><span class="op"><span class="t">github_mcp</span>.issues_close</span></a></td>
+            <td><span class="sum">Close issue #42 "Round-11 cert tagline still rendering" on codely-isuru/SUNIL</span></td>
+            <td>project_manager</td>
+            <td class="when"><time datetime="2026-09-11T09:02:00Z">57 min ago</time><span class="abs">09:02:00</span></td>
+            <td class="exp warn">runs within 52m</td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ8R</a></td>
+          </tr>
+
+          <!-- 5 · consumed -->
+          <tr class="s-consumed">
+            <td><span class="pill p-consumed"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m18 6-8.5 8.5L6 11"/><path d="m22 10-7.5 7.5L13 16"/></svg>Consumed</span></td>
+            <td><a class="rowlink" href="#" aria-label="Consumed — gmail_mcp.messages.send — emailed the February invoice summary — open"><span class="op"><span class="t">gmail_mcp</span>.messages.send</span></a></td>
+            <td><span class="sum">Email "EasyClean — February invoice summary" to accounts@ezycleanco.com.au</span></td>
+            <td>project_manager</td>
+            <td class="when"><time datetime="2026-09-10T16:20:00Z">Yesterday 4:20 pm</time><span class="abs">10 Sep 16:20</span></td>
+            <td class="muted">executed 4:22 pm</td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ4A</a></td>
+          </tr>
+
+          <!-- 6 · refused -->
+          <tr class="s-refused">
+            <td><span class="pill p-refused"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M18 6 6 18M6 6l12 12"/></svg>Refused</span></td>
+            <td><a class="rowlink" href="#" aria-label="Refused — stripe_mcp.refunds.create — refund AUD 1,180.00 for 925 Driving — open"><span class="op"><span class="t">stripe_mcp</span>.refunds.create</span></a></td>
+            <td><span class="sum">Refund AUD 1,180.00 on charge ch_3Qj7w1PpLd92Kc — "925 Driving — duplicate session booking"</span></td>
+            <td>project_manager</td>
+            <td class="when"><time datetime="2026-09-09T13:05:00Z">2 days ago</time><span class="abs">9 Sep 13:05</span></td>
+            <td class="muted">refused 1:31 pm</td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JQ1C</a></td>
+          </tr>
+
+          <!-- 7 · expired -->
+          <tr class="s-expired">
+            <td><span class="pill p-expired"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>Expired</span></td>
+            <td><a class="rowlink" href="#" aria-label="Expired — github_mcp.merge_main — merge PR 119 on Codelyy/pda_learning — open"><span class="op"><span class="t">github_mcp</span>.merge_main</span></a></td>
+            <td><span class="sum">Merge PR #119 "chore: bump pda plugin to 1.14.3" into main on Codelyy/pda_learning</span></td>
+            <td>developer</td>
+            <td class="when"><time datetime="2026-09-06T10:00:00Z">5 days ago</time><span class="abs">6 Sep 10:00</span></td>
+            <td class="muted">expired 9 Sep</td>
+            <td><a class="mono" href="04-tasks-projects.html">task-01JPX2</a></td>
+          </tr>
+
+        </tbody>
+      </table>
+      </div>
+
+      <p class="muted small" style="margin:14px 0 0">End of list — 7 shown. <span class="micro">Cursor pagination (C4: limit/cursor) — "Load 50 more" appears here when next_cursor is not null.</span></p>
+
+      <!-- ── MOCKUP ANNOTATION: the other required states ── -->
+      <section class="ann">
+        <h3 class="h2">Mockup annotation — the other four list states</h3>
+        <p class="annnote">Not stacked like this in the real UI. Each replaces the table above. Spec §2.1 / §5.3.</p>
+        <div class="states">
+
+          <div>
+            <p class="micro muted">1 · Loading (first paint) — skeleton at the real row height, aria-busy, never a centred spinner</p>
+            <div class="panel" aria-busy="true" style="padding:0">
+              <div class="skrow"><div class="sk" style="width:78px"></div><div class="sk" style="width:150px"></div><div class="sk"></div><div class="sk" style="width:84px"></div><div class="sk" style="width:70px"></div></div>
+              <div class="skrow"><div class="sk" style="width:78px"></div><div class="sk" style="width:170px"></div><div class="sk" style="width:80%"></div><div class="sk" style="width:84px"></div><div class="sk" style="width:70px"></div></div>
+              <div class="skrow"><div class="sk" style="width:78px"></div><div class="sk" style="width:140px"></div><div class="sk" style="width:92%"></div><div class="sk" style="width:84px"></div><div class="sk" style="width:70px"></div></div>
+              <div class="skrow" style="border-bottom:0"><div class="sk" style="width:78px"></div><div class="sk" style="width:160px"></div><div class="sk" style="width:70%"></div><div class="sk" style="width:84px"></div><div class="sk" style="width:70px"></div></div>
+            </div>
+          </div>
+
+          <div>
+            <p class="micro muted">2 · Empty (status=pending) — the good day</p>
+            <div class="panel empty">
+              <p class="h2">Nothing needs your approval.</p>
+              <p class="muted small" style="max-width:52ch;margin:0 auto 16px">SUNIL parks a task here whenever a plan reaches an action it isn't allowed to take on its own. Nothing is waiting on you right now.</p>
+              <button class="btn">View decided approvals</button>
+            </div>
+          </div>
+
+          <div>
+            <p class="micro muted">3 · Error — cause + recovery, never a bare "Error"</p>
+            <div class="panel">
+              <div class="banner err"><svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <div><b>Couldn't load the approvals queue.</b><br><span class="small">SUNIL's API didn't respond (network error reaching localhost:8000). Nothing has changed — approvals are safe on the server.</span></div>
+              </div>
+              <div style="margin-top:14px"><button class="btn">Try again</button></div>
+            </div>
+          </div>
+
+          <div>
+            <p class="micro muted">4 · Stale — last poll failed &gt;30s ago. Data stays on screen; decisions are blocked (Decision 11)</p>
+            <div class="panel">
+              <div class="banner"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <div><b>Can't reach SUNIL — showing data from 10:41 am.</b><br><span class="small">Decisions are disabled until this reconnects. This list may be out of date.</span></div>
+              </div>
+              <div style="margin-top:14px;opacity:.85">
+                <span class="pill p-pending"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Pending</span>
+                <span class="op" style="margin-left:10px"><span class="t">stripe_mcp</span>.refunds.create</span>
+                <span class="muted small" style="margin-left:10px">(rows dimmed to 85%)</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Mockup 01 of 6 · <b>SUNIL V2 ops dashboard</b> · single committed dark theme — Obsidian &amp; Gold
+      (DESIGN_SYSTEM.md Amendment A, round 3: contrast comfort-tuned for long sessions, gold de-yellowed
+      to antique #C9A227, owner ruling: dark-only) · data is illustrative Codely example
+      content · every element maps to a C4 <code>Approval</code> field — see V2_DASHBOARD_SPEC.md §5.2.
+    </footer>
+  </div>
+</div>
+</body>
+</html>

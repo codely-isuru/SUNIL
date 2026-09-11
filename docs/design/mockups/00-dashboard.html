@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUNIL V2 — Dashboard, the landing view (mockup 00)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── SUNIL "Obsidian & Gold" tokens — DESIGN_SYSTEM.md Amendment A (round 3: comfort-tuned, de-yellowed; dark-only, committed). Round 4 adds NO tokens. ── */
+:root{
+  color-scheme: dark;
+  --canvas:#0B0906; --surface:#16120C; --raised:#201A11; --high:#2B2315;
+  --border:#282013; --border-accent:rgba(201,162,39,.16); --border-strong:rgba(201,162,39,.38);
+  --accent:#C9A227; --accent-hover:#DBBE7F; --accent-active:#A6801F; --accent-on:#14100A;
+  --gold-deep:#B08A2A;
+  --sheen-panel:linear-gradient(180deg,rgba(201,162,39,.03),rgba(201,162,39,0) 46%);
+  --sheen-metal:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,0) 45%,rgba(0,0,0,.12));
+  --text:#CEC5B4; --text-2:#C4B48D; --muted:#9A8D71; --disabled:#59503C;
+  --success:#3FAE6C; --warning:#D98E4A; --approved:#5E96E0; --danger:#E8685C; --danger-strong:#E5484D;
+  --untrusted-bg:#201A11; --untrusted-bar:#9A8D71; --row-hover:#201A11; --redacted:#59503C;
+  --focus:0 0 0 4px rgba(201,162,39,.22);
+  --r-sm:3px; --r-md:6px; --r-lg:10px;
+  --f-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --f-body:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background-color:#0B0906;background-image:repeating-linear-gradient(0deg,rgba(201,162,39,.012) 0 1px,transparent 1px 3px);color:var(--text);font-family:var(--f-body);font-size:.875rem;line-height:1.55;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+a:hover{color:var(--accent-hover);text-decoration:underline}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--focus);border-radius:var(--r-sm)}
+.h1{font-family:var(--f-display);font-size:1.375rem;line-height:1.2;letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin:0;position:relative;padding-bottom:10px}
+.h1::after{content:"";position:absolute;left:0;bottom:0;width:140px;height:1px;background:linear-gradient(90deg,var(--border-strong),transparent)}
+.h2{font-family:var(--f-display);font-size:.75rem;line-height:1.4;letter-spacing:.18em;text-transform:uppercase;font-weight:700;color:var(--text-2);margin:0}
+.small{font-size:.75rem;line-height:1.5;letter-spacing:.01em}
+.micro{font-size:.625rem;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase}
+.mono{font-family:var(--f-mono)}
+.muted{color:var(--muted)}
+.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-9999px;top:0}
+.skip:focus{left:8px;top:8px;background:var(--surface);border:1px solid var(--accent);padding:8px 12px;border-radius:var(--r-md);z-index:50}
+/* corner-tick framing — the one primary panel per view (Amendment A §A.4): the approvals hero */
+.tick{position:relative}
+.tick::before,.tick::after{content:"";position:absolute;width:14px;height:14px;border:1px solid var(--border-strong);pointer-events:none;z-index:2}
+.tick::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.tick::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+/* ── shell ── */
+.shell{display:grid;grid-template-columns:88px 1fr;min-height:100dvh}
+.rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;position:sticky;top:0;height:100dvh}
+.brand{font-family:var(--f-display);font-weight:700;font-size:.8125rem;letter-spacing:.24em;color:var(--accent);padding:6px 0 16px}
+.nav{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center}
+.nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:56px;padding:8px 2px;border-radius:var(--r-md);color:var(--muted);border-left:2px solid transparent}
+.nav a:hover{background:var(--row-hover);color:var(--text-2);text-decoration:none}
+.nav a[aria-current="page"]{color:var(--text-2);background:var(--raised);border-left-color:var(--accent)}
+.nav .lbl{font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.nav .cnt{position:absolute;top:4px;right:10px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--accent-on);font-family:var(--f-mono);font-size:.625rem;font-weight:600;display:flex;align-items:center;justify-content:center}
+.railspacer{flex:1}
+.railbtn{display:flex;flex-direction:column;align-items:center;gap:5px;width:76px;min-height:52px;padding:8px 2px;border:0;background:none;color:var(--muted);border-radius:var(--r-md);font-family:var(--f-body);font-size:.625rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.railbtn:hover{background:var(--row-hover);color:var(--text-2)}
+/* ── topbar ── */
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;position:sticky;top:0;z-index:10}
+.crumb{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.crumb b{color:var(--text-2);font-weight:600}
+.grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--raised);color:var(--muted);font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.chip .mono{font-size:.6875rem}
+.chip.warn{color:var(--warning);border-color:var(--warning)}
+button.chip{cursor:pointer}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--success);flex:none}
+main{padding:26px 32px 72px;max-width:1152px}
+/* ── chat quick-entry affordance — a link dressed as the composer; routes to /chat with focus in the real composer ── */
+.quick{display:flex;align-items:center;gap:12px;margin:18px 0 0;background:var(--high);border:1px solid var(--border);border-radius:var(--r-md);padding:11px 14px;color:var(--muted)}
+.quick:hover{text-decoration:none;border-color:var(--border-strong);color:var(--text-2)}
+.quick .go{margin-left:auto;color:var(--accent);font-weight:600;font-size:.8125rem;white-space:nowrap}
+/* ── section boxes — native <details>: click the box to expand, or take the "open full view" link ── */
+.sect{background:var(--surface);background-image:var(--sheen-panel);border:1px solid var(--border);border-radius:var(--r-md);margin:0}
+.sect>summary{display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;list-style:none;border-radius:var(--r-md);min-height:48px}
+.sect>summary::-webkit-details-marker{display:none}
+.sect>summary:hover{background:var(--row-hover)}
+.sect[open]>summary{border-bottom:1px solid var(--border);border-radius:var(--r-md) var(--r-md) 0 0}
+.sect .chev{transition:transform 180ms cubic-bezier(.4,0,.2,1);color:var(--muted)}
+.sect[open]>summary .chev{transform:rotate(90deg)}
+.sect .figs{margin-left:auto;display:flex;align-items:center;gap:14px;color:var(--muted);font-size:.75rem;white-space:nowrap}
+.sect .full{color:var(--accent);font-weight:600;font-size:.75rem;white-space:nowrap}
+.sect .body{padding:6px 16px 14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+/* hero — pending approvals */
+.hero{margin-top:18px;border-color:var(--border-accent)}
+.hero>summary{min-height:64px}
+.hero .big{font-family:var(--f-display);font-size:1.625rem;font-weight:700;line-height:1;color:var(--accent);text-shadow:0 0 14px rgba(201,162,39,.32)} /* the view's ONE gold key figure (glow per §A.4) */
+/* compact approval rows */
+.arow{display:grid;grid-template-columns:170px minmax(0,1fr) 110px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.arow:last-of-type{border-bottom:0}
+.op{font-family:var(--f-mono);font-size:.75rem;color:var(--text);white-space:nowrap}
+.op .t{color:var(--gold-deep)}
+.sum{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-family:var(--f-mono);font-size:.75rem;border-left:3px solid var(--untrusted-bar);background:var(--untrusted-bg);padding:3px 8px;border-radius:0 var(--r-sm) var(--r-sm) 0}
+.exp{white-space:nowrap;font-family:var(--f-mono);font-size:.75rem;text-align:right}
+.exp.dang{color:var(--danger);font-weight:600}
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-size:.625rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.p-run{color:var(--accent)} .p-parked{color:var(--warning)} .p-ok{color:var(--success)} .p-failed{color:var(--danger)}
+/* generic compact rows for the four secondary sections */
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);min-width:0}
+.row:last-of-type{border-bottom:0}
+.row .grow{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.when{color:var(--muted);font-family:var(--f-mono);font-size:.6875rem;white-space:nowrap}
+/* the ONE moving element on this view: the live pulse on the activity section's running indicator (2600ms system clock — Decision 16) */
+.live{width:10px;height:10px;border-radius:999px;background:var(--accent);animation:pulse 2600ms cubic-bezier(.4,0,.2,1) infinite;flex:none}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 1px rgba(201,162,39,.42),0 0 10px rgba(201,162,39,.20)}50%{box-shadow:0 0 0 1px rgba(201,162,39,.58),0 0 18px rgba(201,162,39,.32)}}
+/* annotation */
+.ann{margin-top:40px;border:1px dashed var(--border-strong);border-radius:var(--r-lg);padding:18px 20px 22px}
+.ann>h3{margin:0 0 4px}
+.annnote{color:var(--muted);font-size:.75rem;margin:0 0 16px}
+.states{display:grid;gap:18px}
+.panel{background:var(--surface);background-image:var(--sheen-panel);border:1px solid var(--border);border-radius:var(--r-md);padding:18px}
+.empty{text-align:center;padding:30px 18px}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:9px 16px;border-radius:var(--r-md);border:1px solid var(--border-strong);background:transparent;color:var(--accent);font-family:var(--f-body);font-size:.8125rem;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--raised);border-color:var(--accent)}
+.sk{height:13px;border-radius:var(--r-sm);background:var(--raised)}
+footer{padding:20px 32px 40px;color:var(--muted);font-size:.6875rem;max-width:1152px}
+@media (max-width:1000px){.grid2{grid-template-columns:1fr}}
+@media (max-width:900px){.shell{grid-template-columns:64px 1fr}.nav a{width:58px}main{padding:20px 16px 60px}.arow{grid-template-columns:150px minmax(0,1fr)}.arow .exp{grid-column:2;text-align:left}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  .live{box-shadow:0 0 0 1px rgba(201,162,39,.5)}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div class="shell">
+
+  <!-- ── NAV RAIL — round 4: Dashboard is the first item and the landing ── -->
+  <nav class="rail" aria-label="Primary">
+    <div class="brand">S</div>
+    <div class="nav">
+      <a href="00-dashboard.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="lbl">Home</span></a>
+      <a href="06-nav-shell.html"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">Chat</span></a>
+      <a href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">Approve</span><span class="cnt" aria-hidden="true">3</span><span class="sr">3 pending</span></a>
+      <a href="03-agent-activity.html"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="lbl">Activity</span></a>
+      <a href="04-tasks-projects.html"><svg class="icon" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg><span class="lbl">Tasks</span></a>
+      <a href="04-tasks-projects.html#projects"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v11z"/></svg><span class="lbl">Projects</span></a>
+      <a href="05-audit-browser.html"><svg class="icon" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m16 19-2.2-2.2"/></svg><span class="lbl">Audit</span></a>
+    </div>
+    <div class="railspacer"></div>
+    <button class="railbtn"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4"/></svg>Settings</button>
+    <button class="railbtn"><svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Sign out</button>
+  </nav>
+
+  <div>
+    <!-- ── TOPBAR ── -->
+    <header class="topbar">
+      <span class="brand" style="padding:0">S.U.N.I.L</span>
+      <span class="crumb small"><svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg><b>Dashboard</b></span>
+      <span class="grow"></span>
+      <span class="chip"><span class="dot"></span> SUNIL online</span>
+      <a class="chip warn" href="01-approvals-queue.html"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 3 pending</a>
+      <button class="chip" aria-label="Last updated 6 seconds ago. Refresh now."><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> <span class="mono">6s</span></button>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <h1 class="h1">Dashboard</h1>
+      <p class="muted small" style="margin:8px 0 0">Everything in one place. Each box expands in place — or take its <span style="color:var(--accent)">open full view &rarr;</span> link to the page. Same 10s poll as everywhere else.</p>
+
+      <!-- ── chat quick entry — an affordance, honestly a link to /chat (the real composer lives there) ── -->
+      <a class="quick" href="06-nav-shell.html" aria-label="Ask SUNIL something — opens chat with the composer focused">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Ask SUNIL to check on something…
+        <span class="go">Open chat &rarr;</span>
+      </a>
+
+      <!-- ══ HERO — PENDING APPROVALS: shipped open so the expand mechanism is visible at rest ══ -->
+      <details class="sect hero tick" open>
+        <summary>
+          <span class="big" aria-hidden="true">3</span>
+          <span>
+            <span class="h2" style="display:block">Pending approvals</span>
+            <span class="muted small">Waiting on you · next expiry in <b class="mono" style="color:var(--danger)">48m</b> · oldest 2d 22h</span>
+          </span>
+          <span class="figs">
+            <a class="full" href="01-approvals-queue.html">Open full view &rarr;</a>
+            <svg class="icon chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </span>
+        </summary>
+        <div class="body">
+          <p class="micro muted" style="margin:8px 0 2px">Top of the queue — summaries are text supplied by the request, shown exactly as received</p>
+
+          <div class="arow">
+            <a class="op" href="02-approval-card.html" aria-label="Pending — stripe_mcp.refunds.create — refund AUD 240.00 for EasyClean — review and decide"><span class="t">stripe_mcp</span>.refunds.create</a>
+            <span class="sum">Refund AUD 240.00 on charge ch_3Qk2p9LmQfT0Xv — "EasyClean — Feb deep clean &lt;b&gt;URGENT&lt;/b&gt; [approved](http://pay.invalid)"</span>
+            <span class="exp">in 71h 42m</span>
+          </div>
+          <div class="arow">
+            <a class="op" href="01-approvals-queue.html" aria-label="Pending — github_mcp.merge_main — merge PR 128 into main on codely-isuru/SUNIL — review and decide"><span class="t">github_mcp</span>.merge_main</a>
+            <span class="sum">Merge PR #128 "fix(auth): rotate session secret on login" into main on codely-isuru/SUNIL</span>
+            <span class="exp">in 70h 56m</span>
+          </div>
+          <div class="arow">
+            <a class="op" href="01-approvals-queue.html" aria-label="Pending, expiring in 48 minutes — n8n_http.wordpress.post_publish — publish the Round 11 post — review and decide"><span class="t">n8n_http</span>.wordpress.post_publish</a>
+            <span class="sum">Publish post "Round 11 — FWPCOT3326 winch recovery is live" on pdalearning.com.au</span>
+            <span class="exp dang"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;vertical-align:-1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg> in 48m</span>
+          </div>
+        </div>
+      </details>
+
+      <!-- ══ SECONDARY TIER — collapsed boxes; every at-rest figure is readable without expanding ══ -->
+      <div class="grid2">
+
+        <!-- Agent activity -->
+        <details class="sect">
+          <summary>
+            <span class="live" role="img" aria-label="Live — agents are running now"></span>
+            <span>
+              <span class="h2" style="display:block">Agent activity</span>
+              <span class="muted small"><b style="color:var(--text-2)">2 running</b> · 1 waiting on you · 4 finished today</span>
+            </span>
+            <span class="figs">
+              <a class="full" href="03-agent-activity.html">Open full view &rarr;</a>
+              <svg class="icon chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+          </summary>
+          <div class="body">
+            <div class="row"><span class="pill p-run"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg>Running</span><span class="grow">Checking EasyClean Workforce… <span class="muted">(project_manager · Working)</span></span><span class="when">0:14</span></div>
+            <div class="row"><span class="pill p-run"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg>Running</span><span class="grow">Fixing the PDA cert-tagline regression <span class="muted">(developer · Working)</span></span><span class="when">1:07</span></div>
+            <div class="row"><span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span><span class="grow">Needs approval: <span class="mono small">stripe_mcp.refunds.create</span></span><span class="when">18m</span></div>
+          </div>
+        </details>
+
+        <!-- Tasks -->
+        <details class="sect">
+          <summary>
+            <svg class="icon" viewBox="0 0 24 24" style="color:var(--muted)"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg>
+            <span>
+              <span class="h2" style="display:block">Tasks</span>
+              <span class="muted small"><b style="color:var(--text-2)">3 in flight</b> · 1 failed today · 4 done today</span>
+            </span>
+            <span class="figs">
+              <a class="full" href="04-tasks-projects.html">Open full view &rarr;</a>
+              <svg class="icon chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+          </summary>
+          <div class="body">
+            <div class="row"><span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span><span class="grow">Refund the February deep-clean charge for the EasyClean customer billed twice</span><span class="when">9:41 am</span></div>
+            <div class="row"><span class="pill p-failed"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Failed</span><span class="grow">Check 925 Driving session bookings for duplicates <span class="muted">(tool_failed)</span></span><span class="when">8:12 am</span></div>
+            <div class="row"><span class="pill p-ok"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Done</span><span class="grow">Morning brief — what needs attention across Codely today</span><span class="when">7:00 am</span></div>
+          </div>
+        </details>
+
+        <!-- Projects -->
+        <details class="sect">
+          <summary>
+            <svg class="icon" viewBox="0 0 24 24" style="color:var(--muted)"><path d="M4 20V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v11z"/></svg>
+            <span>
+              <span class="h2" style="display:block">Projects</span>
+              <span class="muted small"><b style="color:var(--text-2)">4 tracked</b> · last activity 10:03 am (EasyClean)</span>
+            </span>
+            <span class="figs">
+              <a class="full" href="04-tasks-projects.html#projects">Open full view &rarr;</a>
+              <svg class="icon chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+          </summary>
+          <div class="body">
+            <div class="row"><span class="grow"><b style="color:var(--text-2)">EasyClean Workforce</b> <span class="mono muted small">easy_clean_workforce</span></span><span class="when">10:03 am · 1 pending</span></div>
+            <div class="row"><span class="grow"><b style="color:var(--text-2)">PDA Learning</b> <span class="mono muted small">pda_learning</span></span><span class="when">10:02 am · 1 pending</span></div>
+            <div class="row"><span class="grow"><b style="color:var(--text-2)">925 Driving</b> <span class="mono muted small">pda_925</span></span><span class="when">8:12 am</span></div>
+            <div class="row"><span class="grow"><b style="color:var(--text-2)">SUNIL</b> <span class="mono muted small">sunil</span></span><span class="when">08:55 · 1 pending</span></div>
+          </div>
+        </details>
+
+        <!-- Recent audit -->
+        <details class="sect">
+          <summary>
+            <svg class="icon" viewBox="0 0 24 24" style="color:var(--muted)"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m16 19-2.2-2.2"/></svg>
+            <span>
+              <span class="h2" style="display:block">Recent audit</span>
+              <span class="muted small">Last turn <b style="color:var(--text-2)">10:03 am</b> · 1 failed · 1 parked today</span>
+            </span>
+            <span class="figs">
+              <a class="full" href="05-audit-browser.html">Open full view &rarr;</a>
+              <svg class="icon chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+          </summary>
+          <div class="body">
+            <div class="row"><a class="mono small" href="05-audit-browser.html">01JQ8ZC2N4</a><span class="grow">"EasyClean February billing"</span><span class="pill p-parked"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10 4v16M14 4v16"/></svg>Parked</span><span class="when">9:41:02</span></div>
+            <div class="row"><a class="mono small" href="05-audit-browser.html">01JQ85MCQ1</a><span class="grow">"925 duplicate bookings"</span><span class="pill p-failed"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>tool_failed</span><span class="when">8:12:44</span></div>
+            <div class="row"><a class="mono small" href="05-audit-browser.html">01JQ82PP7K</a><span class="grow">n8n:morning-brief <span class="muted">(service lane)</span></span><span class="pill p-ok"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m20 6-11 11-5-5"/></svg>Ok</span><span class="when">7:00:02</span></div>
+          </div>
+        </details>
+
+      </div>
+
+      <!-- ══ MOCKUP ANNOTATION — the other states ══ -->
+      <section class="ann">
+        <h3 class="h2">Mockup annotation — dashboard states and rules</h3>
+        <p class="annnote">Spec §16. The dashboard composes summary tiers of the five existing views — same queries, same components, no sixth data model. It obeys the round-3 motion budget: the one gold key figure (the pending count, glowing) and the one live pulse (the activity dot, 2600ms system clock) are the only spent effects.</p>
+        <div class="states">
+
+          <div>
+            <p class="micro muted">1 · All-quiet hero — 0 pending: the gold figure is not rendered as a zero; the hero collapses to a calm line and Chat becomes the visually leading affordance</p>
+            <div class="panel" style="display:flex;align-items:center;gap:14px">
+              <svg class="icon" viewBox="0 0 24 24" style="color:var(--success)"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span><b style="color:var(--text-2)">Nothing needs your approval.</b> <span class="muted small">SUNIL parks a task here whenever a plan reaches an action it can't take on its own.</span></span>
+              <span class="grow"></span><a class="small" href="01-approvals-queue.html">View decided approvals &rarr;</a>
+            </div>
+          </div>
+
+          <div>
+            <p class="micro muted">2 · Loading (first paint) — each section box skeletons at its real summary height; no layout shift when data lands; aria-busy on the region</p>
+            <div class="panel" aria-busy="true" style="display:grid;gap:12px;padding:14px 18px">
+              <div class="sk" style="width:38%"></div><div class="sk" style="width:62%"></div><div class="sk" style="width:47%"></div>
+            </div>
+          </div>
+
+          <div>
+            <p class="micro muted">3 · Stale (§1.5) — same banner as everywhere; the hero's approval rows dim and the freshness chip goes warning. Decisions never happen on this view, so nothing needs disabling here — the detail card handles that</p>
+            <div class="panel" style="display:flex;gap:10px;align-items:flex-start;border-color:var(--warning);color:var(--warning);font-size:.8125rem">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              Can't reach SUNIL — showing data from 10:41 am.
+            </div>
+          </div>
+
+          <div>
+            <p class="micro muted">4 · Expand vs navigate — both honest, zero JS (Decision 17)</p>
+            <div class="panel small">
+              <p style="margin:0 0 8px"><b>Click the box (the <code class="mono">&lt;summary&gt;</code>)</b> → it expands in place to the section's fuller list. Native <code class="mono">&lt;details&gt;</code>: keyboard (Enter/Space) and <code class="mono">aria-expanded</code> come from the browser, nothing to get wrong.</p>
+              <p style="margin:0"><b>Click "Open full view &rarr;"</b> → routes to the section's page. It is a real <code class="mono">&lt;a&gt;</code> inside the summary — a link click follows the link and does not toggle the box. The approvals hero ships <code class="mono">open</code>; the browser remembers nothing, the server-rendered default is: hero open, everything else closed.</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Mockup 00 of 7 · the round-4 landing view, owner-requested ("all these main components in a dashboard…
+      once I click the box it expands or redirects to the page"). Composes summary tiers of mockups 01/03/04/05
+      plus a chat quick-entry; Obsidian &amp; Gold round-3 tokens unchanged, motion budget unchanged (one pulse,
+      one glowing key figure). Overrides Decision 2; answers Q6.
+    </footer>
+  </div>
+</div>
+</body>
+</html>
