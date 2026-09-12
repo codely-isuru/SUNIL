@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from hashlib import sha256
 from typing import Sequence
 
@@ -32,6 +33,7 @@ from pydantic import ValidationError
 
 from sunil.core.approvals.base import ApprovalBinding, ApprovalsService, ParkRequest
 from sunil.core.tool_framework.base import (
+    ApprovalRef,
     AuditHook,
     ParkContext,
     PermissionDecision,
@@ -138,16 +140,11 @@ class ToolManagerDouble:
                     f"parked as {parked.approval_id}", decision, canonical, started,
                     adapter=adapter, approval_id=parked.approval_id,
                 )
-                # The orchestrator needs the id and expiry to build the C5
-                # ApprovalRef; C1's ToolResult has no field for them, so they
-                # ride in `data` on this error result, which the real manager
-                # does too (C1 §4's error results may carry data).
-                return ToolResult(
-                    ok=False,
-                    data={"approval_id": parked.approval_id, "expires_at": parked.expires_at},
-                    error_kind=result.error_kind,
-                    error_message=result.error_message,
-                    meta=result.meta,
+                return replace(
+                    result,
+                    approval=ApprovalRef(
+                        approval_id=parked.approval_id, expires_at=parked.expires_at
+                    ),
                 )
             consumed = await self._approvals.consume(
                 approval,

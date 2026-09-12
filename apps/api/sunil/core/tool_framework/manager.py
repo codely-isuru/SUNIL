@@ -52,6 +52,7 @@ from sunil.core.approvals.base import (
 )
 from sunil.core.tool_framework.base import (
     AdapterKind,
+    ApprovalRef,
     AuditHook,
     ParkContext,
     PermissionDecision,
@@ -285,6 +286,14 @@ class ToolManager:
                     permission_decision=decision.decision,
                     permission_reason=decision.reason,
                     approval_id=parked.approval_id,
+                    # C1 v1.2.0 (ruling R8): the typed reference the orchestrator
+                    # surfaces into C5's `outcome=parked`, copied verbatim from
+                    # the ParkedApproval this exit is holding. It does NOT ride
+                    # in `data` — §2 freezes that to None on every error result,
+                    # and §3 labels it adapter-attributed untrusted output.
+                    approval_ref=ApprovalRef(
+                        approval_id=parked.approval_id, expires_at=parked.expires_at
+                    ),
                 )
 
             # Continuation: recompute the binding from THIS call's freshly
@@ -489,7 +498,7 @@ class ToolManager:
         ``finalise`` runs after the commit: the row exists by then, and an UPDATE
         sharing the park's transaction would hold its locks across an error path.
         """
-        _parked, audit_id = await self._transaction.park_with_attempt(
+        parked, audit_id = await self._transaction.park_with_attempt(
             request,
             lambda approval_id: self._attempt_record(
                 agent_id=agent_id,
@@ -511,6 +520,13 @@ class ToolManager:
             adapter_kind,
             server_id,
             started,
+            # The returned ParkedApproval was previously discarded (`_parked`),
+            # which is how this exit — the one the real wiring takes — surfaced
+            # no reference at all. C1 v1.2.0 (ruling R8): both park exits mint
+            # the same typed field, verbatim from C4's own value.
+            approval_ref=ApprovalRef(
+                approval_id=parked.approval_id, expires_at=parked.expires_at
+            ),
         )
         await self._audit.finalise(
             audit_id,
@@ -537,6 +553,7 @@ class ToolManager:
         permission_decision: PermissionDecision | None = None,
         permission_reason: str | None = None,
         approval_id: str | None = None,
+        approval_ref: ApprovalRef | None = None,
     ) -> ToolResult:
         """Steps 1–3's shared shape: write the attempt row AT the exit point and
         finalise it immediately with the error outcome (§2.1 step 4) — one
@@ -546,6 +563,12 @@ class ToolManager:
         never ran, and ``permission_decision``/``permission_reason`` stay None
         when the pipeline exited before step 3 (§2.2's own rules): an audit row
         must not imply a decision that was never taken.
+
+        ``approval_id`` and ``approval_ref`` are two different jobs on two
+        different records and are deliberately not one argument: the former is
+        the AUDIT row's join key (also set on the ``approval_invalid`` exit,
+        which surfaces no reference), the latter is the C1 v1.2.0 typed field the
+        park exit alone mints onto the RESULT.
         """
         audit_id = await self._audit.attempt(
             self._attempt_record(
@@ -562,7 +585,14 @@ class ToolManager:
                 approval_id=approval_id,
             )
         )
-        result = self._error(error_kind, error_message, adapter_kind, server_id, started)
+        result = self._error(
+            error_kind,
+            error_message,
+            adapter_kind,
+            server_id,
+            started,
+            approval_ref=approval_ref,
+        )
         await self._audit.finalise(
             audit_id,
             outcome="error",
@@ -588,6 +618,13 @@ class ToolManager:
         MCP server's proxy in particular — must not be able to describe itself
         onto the audit trail. ``duration_ms`` is the manager's measurement,
         which is also what ``finalise`` reports.
+
+        ``approval`` is cleared for the same reason (C1 §2.1 step 7, v1.2.0 /
+        ruling R8): without the explicit ``approval=None`` this ``replace`` would
+        PRESERVE an adapter-set value, and an adapter that could set it would
+        point the owner's decision UI at an approval its call never parked. Only
+        step 3's park exit mints the field — and park exits never pass through
+        here, so the minted value survives exactly where it was minted.
         """
         data = result.data
         if result.ok and data is not None and adapter_kind in _UNTRUSTED_KINDS:
@@ -598,6 +635,7 @@ class ToolManager:
             result,
             data=data,
             meta=self._meta(adapter_kind, server_id, started),
+            approval=None,
         )
 
     def _error(
@@ -607,13 +645,21 @@ class ToolManager:
         adapter_kind: AdapterKind | None,
         server_id: str | None,
         started: float,
+        *,
+        approval_ref: ApprovalRef | None = None,
     ) -> ToolResult:
+        """``approval_ref`` is keyword-only and defaults to None because exactly
+        one of this function's callers may pass it: the park exit (C1 v1.2.0's
+        invariant — the field is non-None IFF ``error_kind`` is
+        ``approval_required``). Positional would let any error result acquire one
+        by argument drift."""
         return ToolResult(
             ok=False,
             data=None,
             error_kind=error_kind.value,
             error_message=error_message,
             meta=self._meta(adapter_kind, server_id, started),
+            approval=approval_ref,
         )
 
     @staticmethod

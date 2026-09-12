@@ -67,6 +67,17 @@ class ToolResultMeta:
 
 
 @dataclass(frozen=True)
+class ApprovalRef:
+    """The park exit's approval reference (C1 v1.2.0, ruling R8): copied VERBATIM
+    from C4's ParkedApproval by the Tool Manager at the park exit — metadata the
+    MANAGER mints, deliberately not carried in `data` (§3's channel is
+    adapter-attributed untrusted output; this is not that)."""
+
+    approval_id: str
+    expires_at: str
+
+
+@dataclass(frozen=True)
 class ToolResult:
     """The normalised shape every adapter call collapses to. An adapter exception
     NEVER reaches the orchestrator as an exception — it is always this value."""
@@ -76,6 +87,10 @@ class ToolResult:
     error_kind: str | None  # closed set, §4 below; None when ok=True
     error_message: str | None  # human-readable, redacted; None when ok=True
     meta: ToolResultMeta
+    approval: ApprovalRef | None = None
+    # C1 v1.2.0 (ruling R8): non-None IFF error_kind == "approval_required" —
+    # the reference the orchestrator surfaces into C5's `outcome=parked`. Only
+    # the manager's park exit mints it; step 7 clears any adapter-set value.
 
 
 @dataclass(frozen=True)

@@ -151,7 +151,7 @@ async def test_a_second_turn_continues_the_same_conversation(app_client) -> None
 # The parked path — ADR-031 / L-001 legs 3 and 4
 # --------------------------------------------------------------------------- #
 async def test_an_ask_user_tool_parks_the_turn_with_an_approval_ref(
-    app_client, permissions
+    app_client, permissions, approvals
 ) -> None:
     client, app = app_client
     permissions.grants.clear()
@@ -169,6 +169,17 @@ async def test_an_ask_user_tool_parks_the_turn_with_an_approval_ref(
     assert envelope["approval"]["expires_at"]
     assert "fake_tool.write_item" in envelope["approval"]["summary"]
     assert envelope["task"]["status"] == "parked"
+
+    # Ruling R8 / C1 v1.2.0: the id in the C5 envelope is the REAL one the C4
+    # service minted, not `turn.py`'s `or ""` poison. The whole point of D9 is
+    # that the dashboard can navigate from this parked turn to its approval
+    # card, which an empty string cannot do — and a truthiness assertion alone
+    # would not have caught the wave-2 defect either, because the double filled
+    # it in from a channel the real manager never populates.
+    assert envelope["approval"]["approval_id"] != ""
+    assert envelope["approval"]["approval_id"] in approvals.parked
+    parked_row = approvals.approvals[envelope["approval"]["approval_id"]]
+    assert envelope["approval"]["expires_at"] == parked_row.expires_at
 
     async with app.state.sessionmaker() as session:
         task = (await session.execute(select(Task))).scalar_one()
