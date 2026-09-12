@@ -204,11 +204,24 @@ class Task(Base):
 
 
 class TaskStatusEvent(Base):
-    """Every transition, so a task's history is a record rather than a guess."""
+    """Every transition, so a task's history is a record rather than a guess.
+
+    `id` is a database-assigned monotonic integer, NOT the UUID every other row
+    here carries, and the difference is load-bearing: C6's `TaskDetail` promises
+    `status_events` "ascending `at`; ties keep write order", and two transitions
+    of one task can share a timestamp (same-second, or a clock with second
+    resolution). The tiebreak that promise reduces to — `ORDER BY at ASC, id
+    ASC` in `api/routes/tasks.py` — is only write order if the id increases with
+    writes. A UUID sorts by nothing, so it would make the contract sentence
+    quietly false while every test stayed green (migration 0004; integration-w1
+    §5.2). Nothing joins to this id and C6 does not put it on the wire
+    (`TaskStatusEvent.required` is `[from_status, to_status, at]`), so the
+    column is free to be the ordering key the contract needs.
+    """
 
     __tablename__ = "task_status_events"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
     from_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     to_status: Mapped[str] = mapped_column(String(20), nullable=False)

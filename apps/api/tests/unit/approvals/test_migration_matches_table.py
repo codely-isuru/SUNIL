@@ -156,15 +156,21 @@ def test_downgrade_removes_the_table(migrated) -> None:
     assert MetaData() is not None  # sanity: reflection object still usable
 
 
-def test_the_revision_is_a_documented_branch_root() -> None:
-    """The coordination decision, pinned. ``down_revision = None`` plus a branch
-    label is deliberate (the spine owns the initial revision and its id does not
-    exist on this branch); if someone linearises the graph at integration this
-    test is the reminder to update the docstring and the task file rather than
-    leaving two contradictory stories."""
+def test_the_revision_is_linearised_onto_the_spine_head() -> None:
+    """The coordination decision, pinned — now the other way round.
+
+    This test used to assert the branch root (``down_revision = None`` + the
+    ``approvals`` label), which was right while the spine's revision ids did not
+    exist on this branch, and said that whoever linearised the graph at
+    integration should update it rather than leave two contradictory stories.
+    That happened at integration-w1: two heads meant ``alembic upgrade head``
+    was ambiguous and no fresh deployment could migrate. The assertions are kept
+    strict in the new direction — a revision that drifts back to a second head
+    breaks deployment, and nothing else in the suite would notice.
+    """
     module = _load_migration()
 
     assert module.revision == "d4approvals0001"
-    assert module.down_revision is None
-    assert module.branch_labels == ("approvals",)
-    assert "branch root" in module.__doc__
+    assert module.down_revision == "0003"
+    assert module.branch_labels is None
+    assert "LINEARISED" in module.__doc__

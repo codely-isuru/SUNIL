@@ -57,9 +57,9 @@ async def create_task(
         privacy_level=privacy_level,
     )
     session.add(task)
-    session.add(
-        TaskStatusEvent(id=new_uuid(), task_id=task.id, from_status=None, to_status=task.status)
-    )
+    # No `id`: `task_status_events.id` is database-assigned and monotonic, which
+    # is what makes C6 §2.2's "ties keep write order" true (see the model).
+    session.add(TaskStatusEvent(task_id=task.id, from_status=None, to_status=task.status))
     await session.flush()
     return task
 
@@ -88,9 +88,7 @@ async def transition(
         task.failure_kind = failure_kind
 
     session.add(
-        TaskStatusEvent(
-            id=new_uuid(), task_id=task.id, from_status=from_status, to_status=to_status.value
-        )
+        TaskStatusEvent(task_id=task.id, from_status=from_status, to_status=to_status.value)
     )
     await session.flush()
     return task
