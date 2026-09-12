@@ -23,12 +23,16 @@ agents:
     github:
       list_recent_activity: allow
 
-    # MCP over stdio. `issues_close` WRITES to a third party, so it is
-    # `ask_user`: the call parks via C4 and executes only after the owner
-    # approves it (ARCHITECTURE_V2 §6's worked example).
-    github_mcp:
-      issues_list: allow
-      issues_close: ask_user
+    # github_mcp is DORMANT — ruling R16 (2026-09-12,
+    # docs/tasks/integration-w1-rulings.md): the pinned server was deprecated
+    # and served none of these names. Rows return ONLY with the w2r3
+    # verified-pin parcel, TOGETHER with the tools.yaml block (R15 atomicity —
+    # a row here without that block is a startup cross-validation refusal).
+    # To restore verbatim (`issues_close` stays `ask_user` — ARCHITECTURE_V2
+    # §6's worked example; the call parks via C4):
+    # github_mcp:
+    #   issues_list: allow
+    #   issues_close: ask_user
 
     # MCP over streamable HTTP (the n8n MCP server, Stream E).
     # `post_update` WRITES (it records something outside SUNIL), so it parks via
@@ -52,16 +56,15 @@ agents:
   # touches nothing outside its own container is not an action on the world, and
   # the chokepoint governs actions on the world. The work order is a NON-tool
   # plan step addressed to the agent.
-  developer:
-    github_mcp:
-      # The one unattended write in this file, and narrow enough to earn it: it
-      # pushes the agent's OWN work branch. Two things make it narrow, and
-      # neither is in this file — `agents/developer/agent.py` refuses a branch
-      # that is protected, is the base branch, or lacks the work order's prefix,
-      # and the params model forbids any field beyond those three. Widen either
-      # and this grant stops meaning "its own branch".
-      push_branch: allow
-      # The owner decides, every time. `main` is precisely what the branch rule
-      # above protects, so this is the row that stops an autonomous loop
-      # reaching it: the call parks via C4 and the turn ends.
-      merge_main: ask_user
+  # The developer's two ADR-030 §4 rows — `push_branch: allow` (the one
+  # unattended write; narrow because agents/developer/agent.py refuses
+  # protected/base/wrong-prefix branches and the params model forbids a fourth
+  # field) and `merge_main: ask_user` (the owner decides, every time) — are
+  # DORMANT: ruling R16 (2026-09-12). They return only with the w2r3
+  # verified-pin parcel; until then the engine's structural default-deny is
+  # the decision of record. The agent stays as an empty mapping so the
+  # whole-file pins keep their shape. To restore verbatim:
+  #   github_mcp:
+  #     push_branch: allow
+  #     merge_main: ask_user
+  developer: {}
