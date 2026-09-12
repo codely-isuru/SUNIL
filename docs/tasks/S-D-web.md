@@ -77,6 +77,10 @@ the views must tolerate one). Reads are deep-copied per the C6 §6/F1 fake rule.
 ## 5. Open / handover
 
 - **D-F3 needs a ruling** (see above) — the only user-visible consequence of the C6 freeze.
+  **RULED 2026-09-12 (wave-1 R4, `docs/tasks/integration-w1-rulings.md`): keep the raw id for v1** —
+  C6 stays 1.0.x; `conversation_label` is a v1.1.0 additive candidate for the audit-UX round (it
+  needs the task→conversation join, and `conversations.title` is nullable, so a label can only ever
+  supplement the id). No web change owed this wave.
 - Reduced motion: `prefers-reduced-motion` kills the pulse and shimmer globally in
   `globals.css`; the live dot also freezes to a static ring when the poll is stale (a glow may
   only claim liveness that is real).
