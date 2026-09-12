@@ -105,7 +105,7 @@ async def test_c4_1_park_decide_consume_is_single_use(
     assert row.decided_at is None and row.decided_by is None
     assert row.consumed_at is None
 
-    decided = approvals.decide("apr-1", "approve", None, clock.now())
+    decided = await approvals.decide("apr-1", "approve", None)
     assert isinstance(decided, type(row))
     assert decided.status == ApprovalStatus.APPROVED
     assert decided.decided_by == "owner"
@@ -131,22 +131,22 @@ async def test_c4_2_decide_on_non_pending_conflicts_with_current_status(
     with ``current_status`` correct in all four cases."""
     # approved
     await approvals.park(park_request())
-    approvals.decide("apr-1", "approve", None, clock.now())
-    conflict = approvals.decide("apr-1", "approve", None, clock.now())
+    await approvals.decide("apr-1", "approve", None)
+    conflict = await approvals.decide("apr-1", "approve", None)
     assert isinstance(conflict, StateConflict)
     assert conflict.error.kind == "state_conflict"
     assert conflict.error.current_status == ApprovalStatus.APPROVED
 
     # refused
     await approvals.park(park_request())
-    approvals.decide("apr-2", "refuse", "no thanks", clock.now())
-    conflict = approvals.decide("apr-2", "approve", None, clock.now())
+    await approvals.decide("apr-2", "refuse", "no thanks")
+    conflict = await approvals.decide("apr-2", "approve", None)
     assert isinstance(conflict, StateConflict)
     assert conflict.error.current_status == ApprovalStatus.REFUSED
 
     # consumed
     await approvals.consume("apr-1", binding=binding())
-    conflict = approvals.decide("apr-1", "refuse", None, clock.now())
+    conflict = await approvals.decide("apr-1", "refuse", None)
     assert isinstance(conflict, StateConflict)
     assert conflict.error.current_status == ApprovalStatus.CONSUMED
 
@@ -155,7 +155,7 @@ async def test_c4_2_decide_on_non_pending_conflicts_with_current_status(
     clock.advance(hours=73)
     assert approvals.sweep(clock.now()) >= 1
     assert approvals.approvals["apr-3"].status == ApprovalStatus.EXPIRED
-    conflict = approvals.decide("apr-3", "approve", None, clock.now())
+    conflict = await approvals.decide("apr-3", "approve", None)
     assert isinstance(conflict, StateConflict)
     assert conflict.error.current_status == ApprovalStatus.EXPIRED
 
@@ -180,7 +180,7 @@ async def test_c4_3_binding_mismatch_burns_nothing(
     then consumes successfully with the correct binding (§6 rule 3: a mismatch
     must not burn the approval)."""
     await approvals.park(park_request())
-    approvals.decide("apr-1", "approve", None, clock.now())
+    await approvals.decide("apr-1", "approve", None)
 
     wrong = await approvals.consume("apr-1", binding=binding(**{field: value}))
     assert (wrong.ok, wrong.reason) == (False, "binding_mismatch")
@@ -217,7 +217,7 @@ async def test_c4_4_ttl_expiry_and_sweep_counts_once(
     await approvals.park(park_request())  # apr-2 — never decided
     clock.advance(hours=73)
 
-    conflict = approvals.decide("apr-1", "approve", None, clock.now())
+    conflict = await approvals.decide("apr-1", "approve", None)
     assert isinstance(conflict, StateConflict)
     assert conflict.error.current_status == ApprovalStatus.EXPIRED
     assert approvals.approvals["apr-1"].status == ApprovalStatus.EXPIRED
@@ -238,8 +238,8 @@ async def test_c4_5_concurrent_decides_exactly_one_wins(
     the race) → exactly one wins, the second gets 409."""
     await approvals.park(park_request())
 
-    first = approvals.decide("apr-1", "approve", None, clock.now())
-    second = approvals.decide("apr-1", "refuse", None, clock.now())
+    first = await approvals.decide("apr-1", "approve", None)
+    second = await approvals.decide("apr-1", "refuse", None)
 
     assert not isinstance(first, StateConflict)
     assert first.status == ApprovalStatus.APPROVED
@@ -289,7 +289,7 @@ async def test_c4_7_stale_approved_is_not_consumable_after_grace(
     ``ok=False, reason="not_approved"`` and the row is ``expired``; a second
     park+approve consumed within grace succeeds."""
     await approvals.park(park_request())
-    approvals.decide("apr-1", "approve", None, clock.now())
+    await approvals.decide("apr-1", "approve", None)
 
     clock.advance(hours=1, seconds=1)  # past the 1 h grace
     stale = await approvals.consume("apr-1", binding=binding())
@@ -297,7 +297,7 @@ async def test_c4_7_stale_approved_is_not_consumable_after_grace(
     assert approvals.approvals["apr-1"].status == ApprovalStatus.EXPIRED
 
     await approvals.park(park_request())
-    approvals.decide("apr-2", "approve", None, clock.now())
+    await approvals.decide("apr-2", "approve", None)
     fresh = await approvals.consume("apr-2", binding=binding())
     assert (fresh.ok, fresh.reason) == (True, "consumed")
 
@@ -308,7 +308,7 @@ async def test_c4_7_sweep_expires_a_stale_approved_row(
     """C4 contract test 7, second clause — ``sweep`` also expires a stale
     ``approved`` row it reaches first (§1's approved→expired transition)."""
     await approvals.park(park_request())
-    approvals.decide("apr-1", "approve", None, clock.now())
+    await approvals.decide("apr-1", "approve", None)
 
     clock.advance(hours=1, seconds=1)
     assert approvals.sweep(clock.now()) == 1
@@ -322,14 +322,14 @@ async def test_c4_7_approved_within_grace_survives_a_sweep(
     """Guard for the other side of the grace bound: a sweep must NOT expire an
     approved row still inside its window (§1: ``decided_at + grace <= now``)."""
     await approvals.park(park_request())
-    approvals.decide("apr-1", "approve", None, clock.now())
+    await approvals.decide("apr-1", "approve", None)
 
     clock.advance(hours=1)  # exactly at the boundary is inclusive per §1
     assert approvals.sweep(clock.now()) == 1
 
     approvals2 = FakeApprovalsService(consume_grace_hours=1, clock=(c2 := FakeClock()))
     await approvals2.park(park_request())
-    approvals2.decide("apr-1", "approve", None, c2.now())
+    await approvals2.decide("apr-1", "approve", None)
     c2.advance(seconds=59 * 60)  # 59 minutes — inside grace
     assert approvals2.sweep(c2.now()) == 0
     assert approvals2.approvals["apr-1"].status == ApprovalStatus.APPROVED
@@ -346,7 +346,7 @@ async def test_c4_listing_filters_orders_and_pages(
     short."""
     for _ in range(3):
         await approvals.park(park_request())
-    approvals.decide("apr-2", "approve", None, clock.now())
+    await approvals.decide("apr-2", "approve", None)
 
     page = approvals.list_approvals(status=ApprovalStatus.PENDING)
     assert [a.id for a in page.approvals] == ["apr-3", "apr-1"]
