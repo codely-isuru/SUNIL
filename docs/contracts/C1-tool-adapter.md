@@ -1,6 +1,6 @@
 # C1 — Tool Adapter Interface
 
-**Version:** 1.1.1 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.2.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
 **Consumers:** Stream A (MCP tools), Stream E (n8n MCP server tools), Stream D (approvals — via the
 injected approvals seam, C4 §4), core orchestrator (Tool Manager caller).
 **Informed by:** M1 reference `main:apps/api/sunil/core/tool_framework/base.py` (greenfield rebuild
@@ -58,6 +58,17 @@ class ToolResultMeta:
 
 
 @dataclass(frozen=True)
+class ApprovalRef:
+    """The park exit's approval reference (v1.2.0, ruling R8 — `integration-w1-rulings.md`).
+    Copied VERBATIM from C4's `ParkedApproval` by the Tool Manager at the park
+    exit — metadata the MANAGER mints, deliberately not carried in `data`:
+    §3's channel is adapter-attributed untrusted output, and this is not that."""
+
+    approval_id: str   # C4 ParkedApproval.approval_id, verbatim
+    expires_at: str    # C4 ParkedApproval.expires_at (ISO-8601 UTC), verbatim
+
+
+@dataclass(frozen=True)
 class ToolResult:
     """The normalised shape every adapter call collapses to. An adapter exception
     NEVER reaches the orchestrator as an exception — it is always this value."""
@@ -67,6 +78,14 @@ class ToolResult:
     error_kind: str | None     # closed set, §4 below; None when ok=True
     error_message: str | None  # human-readable, redacted; None when ok=True
     meta: ToolResultMeta
+    approval: ApprovalRef | None = None
+    # v1.2.0 (ruling R8): non-None IFF error_kind == "approval_required" — the
+    # reference the orchestrator surfaces into C5's `outcome=parked`. ONLY the
+    # manager's own park exit (§2.1 step 3) mints it; step 7 clears any
+    # adapter-set value (same rule as `meta`: an adapter must not describe
+    # itself onto trusted chrome). None on `approval_invalid` — the caller
+    # already holds the id it supplied. `data` stays None on every error
+    # result; the approval reference never travels in the §3 channel.
 
 
 @dataclass(frozen=True)
@@ -168,8 +187,14 @@ the Protocol exists for typing and dependency injection at the orchestrator seam
      consumed** (policy alone authorises; the orphaned `approved` row is expired by C4 §1's
      stale-approved sweep).
    - `ASK_USER`, `approval is None` → **park** via `approvals.park(ParkRequest(...))` (C4 §4) and
-     early-exit `error_kind="approval_required"` with `data=None`; the approval id travels in
-     `ParkedApproval` and is surfaced by the orchestrator (C5 `outcome=parked`). The manager
+     early-exit `error_kind="approval_required"` with `data=None` and
+     `approval=ApprovalRef(approval_id, expires_at)` copied **verbatim** from the returned
+     `ParkedApproval` (v1.2.0, ruling R8) — the typed field the orchestrator surfaces into C5's
+     `outcome=parked` approval ref. (Until v1.2.0 this bullet said the id "travels in
+     `ParkedApproval` and is surfaced by the orchestrator" while giving the orchestrator no channel
+     to receive it — `ParkedApproval` returns to the MANAGER, and the only value the orchestrator
+     sees is this `ToolResult`, whose `data` this contract requires to be None. Ruling R8 records
+     the defect that gap produced.) The manager
      composes the `ParkRequest`: `continuation` and `summary` are copied **verbatim** from
      `park_context` (§2.2); the identity triple, `args_hash` (from step 2's freshly validated
      params), `params_redacted` and the trace ids are computed by the manager and by nothing
@@ -196,7 +221,11 @@ the Protocol exists for typing and dependency injection at the orchestrator seam
    timeout → `error_kind="timeout"`.
 6. **Audit finalise** via `AuditHook.finalise(audit_id, ...)` — outcome, `error_kind`,
    `duration_ms`.
-7. **Wrap as untrusted** (§3) and return.
+7. **Wrap as untrusted** (§3) and return: re-stamp `meta` from the REGISTRY's view of the adapter,
+   and clear any adapter-set `approval` field — only step 3's park exit mints it (v1.2.0, ruling
+   R8). An adapter that could set `approval` could point the owner's decision UI at an approval its
+   call never parked, which is the same class of self-description onto the audit/UI trail that
+   re-stamping `meta` already forbids.
 
 ### 2.2 Injected hooks (the seams streams fake)
 
@@ -457,11 +486,18 @@ attempts, not only the ones that end up parking.
    `continuation == park_ctx.continuation` and `summary == park_ctx.summary` — asserted by
    EQUALITY against the caller's non-empty fixture values, so a manager that synthesises,
    defaults or empties either field fails this test. A park that cannot resume must not pass.**
+   **REQUIRED (v1.2.0, R8): the result carries `data is None` AND
+   `approval == ApprovalRef(approval_id=<the fake's minted id>,
+   expires_at=fake_approvals.approvals[<id>].expires_at)` — asserted by equality against the
+   fake's stored row, so a manager that drops the reference (the wave-2 defect) or invents one
+   fails this test. A park the orchestrator cannot surface must not pass.**
 5. same grant; take test 4's `approval_id`, `fake_approvals.decide(approval_id, "approve", None,
    now)`, re-execute the IDENTICAL params with `approval=approval_id` and WITHOUT `park_context`
    (continuation calls never park — §2.1) → executes, `ok=True`; the
    attempt row carries `approval_id`; the approval's status is `consumed`. Re-executing a third
-   time with the same id → `approval_invalid` (single-use, C4 test 1's property seen from C1).
+   time with the same id → `approval_invalid` (single-use, C4 test 1's property seen from C1),
+   and that result carries `approval is None` (v1.2.0, R8 — the field is the park exit's, never
+   an echo of the caller's input).
 6. `sleep_forever` → `timeout` in < 1 s wall clock.
 7. every `execute` call above (test 1 makes two) produced exactly one attempt AND exactly one
    finalise (two-phase pairing).
@@ -484,11 +520,38 @@ attempts, not only the ones that end up parking.
    the fixture `park_ctx`. Pure construction probes — no manager, no fakes, no import guard (the
    §6.4 manager fixture is unused): they run and pass before `manager.py` exists, so the QA
    finding's pin lands as live coverage rather than another deferred-debt row.
+10. forged-approval probe (v1.2.0, R8): a manager whose adapter is a `FakeToolAdapter` with its
+    `echo` handler wrapped test-locally to return a `ToolResult` carrying
+    `approval=ApprovalRef(approval_id="apr-forged", expires_at="2099-01-01T00:00:00Z")` — after
+    one `ALLOW`-granted `echo` call, the returned result has `approval is None` (step 7 clears
+    it; only the park exit mints the field) while `ok`/`data` are the handler's own.
 
 `args_hash` canonicalisation (normative for C1 and C4): `sha256` hex digest of the UTF-8 JSON
 serialisation of the **validated** params model with `sort_keys=True`, separators `(",", ":")`.
 
 ## Changelog
+
+- **v1.2.0 — 2026-09-12 (wave-2 wiring defect, S2-wiring.md §7.5; ruling R8,
+  `docs/tasks/integration-w1-rulings.md`).** `ToolResult` gains the optional typed field
+  `approval: ApprovalRef | None = None` (`ApprovalRef` = `approval_id` + `expires_at`, copied
+  verbatim from C4's `ParkedApproval` by the manager's park exit and by nothing else); §2.1 step
+  3's park bullet names the copy, step 7 clears any adapter-set value, §6.4 tests 4/5 pin the
+  field and new test 10 pins the clearing. Closes the contract's own latent gap: the park bullet
+  obligated the orchestrator to surface an id ("travels in `ParkedApproval` and is surfaced by
+  the orchestrator") that no field of the one value the orchestrator receives could carry —
+  `data` is `None` on every error result by §2's own rule. The real manager conformed and dropped
+  the fact (C5 `TurnApproval.approval_id=""`, dashboard cannot link a parked turn to its card,
+  design decision D9); the integration double filled the gap by inventing
+  `data={"approval_id": …}` against §2. **MINOR, defended:** additive optional field per this
+  document's own change policy; no existing field, type, error kind or pipeline step changed; no
+  conforming consumer could observe the old behaviour except as the defect being fixed (the only
+  reader of the id read `data`, which was always `None` under the real manager). **Rejected
+  alternatives (argued in ruling R8):** surfacing the id in `data` (changes a frozen field's
+  semantics → MAJOR; puts a manager-minted fact the owner's decision UI navigates by into the §3
+  adapter-attributed untrusted channel; rewards the double's misquote of §4), and the orchestrator
+  re-reading the id from the audited attempt row (`ToolCallAttempt` carries no `expires_at`, so
+  the C5 ref is unassemblable from it; a latest-attempt scan by tool+operation links the WRONG
+  approval when a plan calls the same operation twice).
 
 - **v1.1.1 — 2026-09-11 (ParkContext-guard round; QA fakes-build finding,
   `docs/tasks/P0-fakes.md`).** `ParkContext` becomes its own guard: normative `__post_init__`
