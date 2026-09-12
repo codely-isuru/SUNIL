@@ -240,9 +240,25 @@ class Settings(BaseSettings):
     # Each names WHICH implementation of a frozen contract is wired. `fake`
     # requires an injected seam (sunil.api.wiring.Seams) — production code never
     # imports test doubles; see that module.
-    sunil_memory_provider: Literal["fake", "mem0"] = Field(default="fake")
+    # `pgvector` is the BUILT one (`memory_providers/pgvector_provider.py`);
+    # `mem0` remains selectable and remains UNBUILT, which is what keeps ADR-030's
+    # "vendor behind the seam" a live option rather than a retired one.
+    sunil_memory_provider: Literal["fake", "mem0", "pgvector"] = Field(default="fake")
     sunil_tool_manager: Literal["fake", "real"] = Field(default="real")
     sunil_approvals_service: Literal["fake", "real"] = Field(default="real")
+
+    # -- memory embeddings (C3 §2's last bullet) ------------------------------ #
+    # `hashing` is the default because it is the only embedder that needs no
+    # credential: a deployment with no embedding key still remembers, with
+    # lexical rather than semantic recall. `gateway` opts in to the real model
+    # and REFUSES to boot without a key rather than downgrading quietly — a
+    # deployment that asked for semantic recall must not silently get something
+    # else.
+    sunil_memory_embedder: Literal["hashing", "gateway"] = Field(default="hashing")
+    sunil_memory_embedding_model: str = Field(default="text-embedding-3-small")
+    # The gateway virtual key used for embedding calls. `SecretStr` so it cannot
+    # reach a log through a stray repr.
+    sunil_memory_embedding_api_key: SecretStr | None = Field(default=None)
 
     # -- Frontend (recorded so §5 has exactly one home; not read by the API) -- #
     next_public_api_base_url: str = Field(default="http://localhost:8000")
