@@ -27,6 +27,18 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**WAVE 1 BUILT + INTEGRATED (2026-09-12).** All six lanes done; merged onto `task/integration-w1`
+(two unions hand-resolved: pyproject deps, unit conftest). Integration exposed and fixed 15
+integration-only failures (win32 event-loop collision between lanes, five wiring gaps — the
+merged app served 404 on every C4/C6 route — missing tasks.priority, 403→401 bearer symmetry).
+Suite 897/2 (the 2 are QA-owned harness lines). Visual pass done: the real app ran in the
+browser against mock data, faithful to the approved mockups incl. the injection-containment
+behaviour on the approval card. IN FLIGHT: Alembic two-heads fix (fresh deploy blocker) +
+id-type reconcile · QA wave review (harness lines + author=asserter re-reviews + cross-lane
+sweep) · Security wave review (deferred-checklist verification on real code). Merge to `V2`
+after verdicts. NEXT MILESTONE after merge: Phase-2 plugging — wiring.py still refuses real
+seams by design; the app boots only with injected fakes.
+
 **▶ RESUMED — owner, 2026-09-12.** All five unfinished lanes re-dispatched, each instructed to
 reconstruct state from its own branch (task file + git log + wip diff + a ground-truth test run)
 before writing anything, and to merge origin/V2 first (brings C6). S-A-tools stays done+held.
