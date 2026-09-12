@@ -17,6 +17,8 @@ fix round.
 | R5 | QA N1 — frozen suite imports lane-owned `ops_harness.py` | **`P0-contracts.md` freeze-scope ruling** (dated append) |
 | R6 | ARCH §5 inventory gaps (QA S1) + security wave C-1/C-3 | **ARCHITECTURE_V2 §5** dated append + **THREAT_MODEL §9** (DC-20 + conditions block) |
 | R7 | integration-w1 §8.3 — `decide`'s callable shape / clock ownership (wave-2 opening, 2026-09-12, branch `task/S2-rulings`) | **C4 v1.2.0** (§6.2 + §3 + §4 + clock paragraph + changelog migration) |
+| R7.2Δ | S2-wiring §7 item 4 — engineer delta for C4 §3 rule 4 + the decide-time lazy-expiry finalisation gap (wiring round item 2, 2026-09-12) | This file (applier: backend/wiring engineer; no contract movement — C4 v1.2.0 already carries rule 4) |
+| R8 | S2-wiring §7.5 — parked turn's C5 envelope carries `approval_id=""` under real wiring (wiring round item 1, 2026-09-12) | **C1 v1.2.0** (§2 `ApprovalRef` + `ToolResult.approval`, §2.1 step-3/step-7, §6.4 tests 4/5/10, changelog) + this file's engineer delta |
 
 ---
 
@@ -399,6 +401,461 @@ R7.2.
 
 ---
 
+## R8 — the park exit's approval reference is a typed C1 field, never `data` (S2-wiring §7.5, 2026-09-12)
+
+**Defect, chain verified in the merged tree** (`origin/task/integration-w2r1`): the real
+`ToolManager` returns `data=None` on every error result (`manager.py::_error`, :603-617) —
+**conformant** with C1 §2's frozen rule (`data: dict | None — None when ok=False`) — and the minted
+approval id reaches only the attempt-audit row (`manager.py:287`, and `:492` where
+`_parked_in_one_transaction` literally discards the returned `ParkedApproval` as `_parked`). The PM
+agent reads `tool_result.data.get("approval_id"/"expires_at")` (`agents/project_manager/agent.py:174,
+182-183`) → always `None` → `AgentTurnResult.approval_id=None` (`agent.py:88-89`) → the orchestrator
+mints the poison: `approval_id=result.approval_id or ""` (`core/orchestrator/turn.py:430-431`, and
+`:422`'s `"approval": "none"` trace detail — the live evidence in §7.5). The integration double
+(`tests/integration/tool_manager_double.py:141-151`) invented `data={"approval_id": …,
+"expires_at": …}` behind a comment that is false twice over — "which the real manager does too
+(C1 §4's error results may carry data)": the real manager never does, and C1 §2 forbids it — which
+is why every integration test was green against behaviour the shipped code does not have.
+
+**Root cause is the CONTRACT's own gap, which the double papered over with a lie and the real
+manager honoured into a defect.** C1 §2.1's park bullet obligated the orchestrator to surface an id
+("the approval id travels in `ParkedApproval` and is surfaced by the orchestrator") while providing
+no channel: `ParkedApproval` returns to the *manager*, and the only value the orchestrator receives
+is a `ToolResult` whose `data` the same contract requires to be `None`. Two implementations resolved
+the contradiction in opposite directions; the tests followed the lying one.
+
+**Ruling — candidate (a): a typed field, C1 v1.2.0 (instrumented in
+`docs/contracts/C1-tool-adapter.md`, this commit).** New frozen dataclass
+`ApprovalRef(approval_id: str, expires_at: str)` in `core/tool_framework/base.py`, and
+`ToolResult.approval: ApprovalRef | None = None` with the invariant **non-None IFF
+`error_kind == "approval_required"`**, populated by both park exits by verbatim copy from
+`ParkedApproval` — the same one-composer discipline the pipeline already applies to `ParkContext` —
+and **cleared at step 7** on adapter-returned results (only the park exit mints it). MINOR by C1's
+own change policy (additive optional field); §2.1 step 3 and step 7 amended, §6.4 tests 4/5
+extended, new test 10 (forged-`approval` clearing probe), changelog entry with the MINOR defense.
+
+**Grounds.** (1) *It is metadata the manager mints, not adapter output* — the honest home is a
+manager-owned typed field, exactly like `meta`, which the manager already re-stamps because "an
+adapter must not describe itself onto the audit trail" (`manager.py::_normalise`). (2) *§3's
+untrusted-data posture weighs decisively against the `data` channel*: every `ToolResult.data` is
+contract-labelled adapter-attributed untrusted output — it is what gets rendered into the LLM's
+delimited external-tool-output block (`agent.py::_as_untrusted`) and what the MCP strip/cap treats.
+An approval id in `data` transits that pipeline as if the adapter said it, and the fact being
+transported is the one the owner's decision UI navigates by (design decision D9: the dashboard
+links a parked turn to its approval card by this id). A channel whose trust label is "whatever the
+tool said" must not carry the pointer that steers which approval the owner decides. (3) *The typed
+field turns this whole defect class into a loud failure*: `data.get("approval_id")` returned `None`
+silently for an entire wave; `result.approval.approval_id` on a result without the field is an
+`AttributeError` on first contact. (4) The step-7 clearing rule closes the field's own spoof
+channel before it opens: `dataclasses.replace` in `_normalise` would otherwise preserve an
+adapter-forged `approval`, letting a hostile adapter point the owner's decision UI at an approval
+its call never parked.
+
+**Rejected alternatives, by name:**
+
+- **(b) keep it in `data` and make the real manager populate it** (what the double faked). Changes
+  a frozen field's semantics (`data: None when ok=False`) — MAJOR by C1's change policy plus a new
+  ADR, to codify a comment that misquoted §4; puts a manager-minted, UI-load-bearing fact into the
+  §3 channel (ground 2); is unfixable against forgery, because `data` is definitionally the
+  adapter's and the manager cannot stamp provenance onto keys inside it; and forces
+  "except approval_required" carve-outs into every consumer that treats error-result `data` as
+  absent (the agent's own `"data": None if not tool_result.ok else data` line).
+- **(c) the orchestrator re-reads the reference from the audited attempt row** (§7.5's candidate
+  (b), the "from the audited record" analogy). Fails on fact: `ToolCallAttempt` carries
+  `approval_id` but **no `expires_at`**, so the C5 ref is unassemblable from the audit row alone —
+  the agent would need a second read through a C4 read-model seam it does not hold, two
+  cross-store reads to recover a value the manager held in a local variable one frame down. Fails
+  on semantics: `_decision_of`'s precedent exists so the *agent* cannot vouch for a decision the
+  *engine* made — audit outranks the agent's claim. Here the manager IS the authority and the
+  `ToolResult` is the manager's own authored record; the typed field is "from the authoritative
+  record". And fails on correctness: a latest-attempt scan keyed on tool+operation
+  (`agent.py:244-245`'s pattern) links the WRONG approval the first time a plan calls the same
+  operation twice.
+- **(d) fix nothing in C1; delete the double and let the defect surface.** The double's own header
+  says it dies when Stream A lands, and Stream A has landed — but deletion alone just moves the
+  green suite to red without ruling where the id lives, and the turn still cannot surface it.
+  Retirement is owed *in addition* (below), not instead.
+
+### R8.1 Engineer delta (applier: backend/spine engineer — ONE atomic set; each piece alone goes red or changes nothing)
+
+**1. `sunil/core/tool_framework/base.py`** — after `ToolResultMeta`, add; and append the defaulted
+field to `ToolResult` (last position — it is the only defaulted field):
+
+```python
+@dataclass(frozen=True)
+class ApprovalRef:
+    """The park exit's approval reference (C1 v1.2.0, ruling R8): copied VERBATIM
+    from C4's ParkedApproval by the Tool Manager at the park exit — metadata the
+    MANAGER mints, deliberately not carried in `data` (§3's channel is
+    adapter-attributed untrusted output; this is not that)."""
+
+    approval_id: str
+    expires_at: str
+```
+
+```python
+    approval: ApprovalRef | None = None
+    # C1 v1.2.0 (ruling R8): non-None IFF error_kind == "approval_required" —
+    # the reference the orchestrator surfaces into C5's `outcome=parked`. Only
+    # the manager's park exit mints it; step 7 clears any adapter-set value.
+```
+
+**2. `sunil/core/tool_framework/manager.py`** — four touches:
+
+- `_error` (:603) gains keyword-only `approval_ref: ApprovalRef | None = None`, passed through as
+  `approval=approval_ref` in the `ToolResult(...)` constructor.
+- `_early_exit` (:523) gains keyword-only `approval_ref: ApprovalRef | None = None`, forwarded to
+  its `_error` call (:565).
+- The plain park exit (:273-288): add to the existing `_early_exit` call
+  `approval_ref=ApprovalRef(approval_id=parked.approval_id, expires_at=parked.expires_at)`
+  (alongside the existing `approval_id=parked.approval_id` audit-row argument).
+- `_parked_in_one_transaction` (:492): rename the discarded `_parked` to `parked` and build the
+  result as
+  `self._error(..., approval_ref=ApprovalRef(approval_id=parked.approval_id, expires_at=parked.expires_at))`.
+- `_normalise` (:597-601): the `replace(...)` gains `approval=None` — step 7's clearing rule
+  (v1.2.0). Park exits never pass through `_normalise`, so the field survives exactly where it was
+  minted.
+
+**3. `sunil/agents/project_manager/agent.py:174-186`** — read the typed field, stop mining `data`:
+
+```python
+        ref = tool_result.approval
+        return {
+            "step_id": step.id,
+            "tool": step.tool,
+            "operation": step.operation,
+            "ok": tool_result.ok,
+            "error_kind": tool_result.error_kind,
+            "permission_decision": _decision_of(ctx, step),
+            "approval_id": ref.approval_id if ref is not None else None,
+            "expires_at": ref.expires_at if ref is not None else None,
+            "summary": park_context.summary,
+            "data": tool_result.data if tool_result.ok else None,
+        }
+```
+
+(`agent.py:88-89` and `turn.py:430-431` need no edit: the dict keys keep their names, now
+truthfully populated. `turn.py`'s `or ""` becomes unreachable-by-contract — the §6.4 test-4 pin
+plus the conformance test below are what make it so; leave it as type narrowing.)
+
+**4. `tests/integration/tool_manager_double.py`** — the double stops lying: delete lines 141-151
+(the wrapping `ToolResult(...)` and the false comment) and replace the park exit with
+
+```python
+                result = await self._exit(
+                    agent_id, tool, operation, ToolErrorKind.APPROVAL_REQUIRED,
+                    f"parked as {parked.approval_id}", decision, canonical, started,
+                    adapter=adapter, approval_id=parked.approval_id,
+                )
+                return replace(
+                    result,
+                    approval=ApprovalRef(
+                        approval_id=parked.approval_id, expires_at=parked.expires_at
+                    ),
+                )
+```
+
+with `from dataclasses import replace` and `ApprovalRef` added to the imports. Every
+`test_governed_turn.py` assertion (:168, :179, :195-201) keeps passing — now against the shape the
+real manager actually has.
+
+**5. Conformance assertion (the anti-drift device) — new `tests/integration/test_double_conformance.py`.**
+The double may exist only while it matches the real chokepoint field-for-field; if this test goes
+red, fix the DOUBLE (or retire it), never the expectation:
+
+```python
+"""Ruling R8: the integration double must match the real ToolManager on every
+C1-observable field a consumer may branch on. The wave-2 defect existed because
+the double asserted a park shape the real manager never had — this file makes
+that drift a red test instead of a green lie."""
+
+from tests.fakes.fake_tool_adapter import FakeToolAdapter
+from tests.fakes.fake_hooks import FakePermissionHook, RecordingAuditHook
+from tests.fakes.fake_approvals import FakeApprovalsService
+from tests.integration.tool_manager_double import ToolManagerDouble
+from sunil.core.tool_framework.base import ParkContext, TraceContext
+from sunil.core.tool_framework.manager import ToolManager
+
+
+async def _park_result(manager_cls):
+    hook = FakePermissionHook()
+    hook.grant("agent-1", "fake_tool", "write_item", "ask_user")
+    approvals = FakeApprovalsService()
+    manager = manager_cls([FakeToolAdapter()], hook, approvals, RecordingAuditHook())
+    result = await manager.execute(
+        "agent-1", "fake_tool", "write_item", {"key": "demo", "value": "v"},
+        trace=TraceContext(request_id="req-1", task_id="task-1", conversation_id="conv-1"),
+        park_context=ParkContext(
+            continuation={"plan_id": "plan-1", "cursor": 0},
+            summary="fake_tool.write_item requires approval",
+        ),
+    )
+    return result, approvals
+
+
+async def test_double_park_result_matches_the_real_manager() -> None:
+    real, real_approvals = await _park_result(ToolManager)
+    double, double_approvals = await _park_result(ToolManagerDouble)
+
+    # Fields consumers branch on: identical values (duration_ms is measured,
+    # error_message is prose — both contract-excluded from branching, §4).
+    assert double.ok == real.ok
+    assert double.data == real.data == None  # noqa: E711 - the frozen §2 rule, asserted literally
+    assert double.error_kind == real.error_kind == "approval_required"
+    assert double.meta.adapter_kind == real.meta.adapter_kind
+    assert double.meta.server_id == real.meta.server_id
+
+    # The approval ref: same SHAPE, and each links to a row its own store parked.
+    for result, approvals in ((real, real_approvals), (double, double_approvals)):
+        assert result.approval is not None
+        assert result.approval.approval_id in approvals.parked
+        row = approvals.approvals[result.approval.approval_id]
+        assert result.approval.expires_at == row.expires_at
+```
+
+**6. Contract-test transcription (applier: QA — frozen-suite diff, lands immediately after the
+atomic set):** `tests/contracts/test_c1_tool_adapter.py` — test 4 gains the two REQUIRED v1.2.0
+equality assertions (`data is None`; `approval ==` the fake's stored id/expiry), test 5 gains
+`approval is None` on the `approval_invalid` result, and new test 10 transcribes §6.4's
+forged-approval clearing probe verbatim.
+
+**Landing order (why atomic):** correcting the double without the field reds
+`test_governed_turn.py:168`; adding the field without the agent read changes nothing observable;
+the agent read without the manager populating it re-mints `""`. Pieces 1-5 are one commit; piece 6
+follows it.
+
+**Same-wave follow-up owed (spine/QA lanes, named — not this atomic set):** retire the double per
+its own charter ("When Stream A lands, this file is deleted") — `conftest.py:95-101` swaps
+`ToolManagerDouble(...)` for the real `ToolManager(...)` (same constructor shape, the swap the
+docstring promised) and `test_double_conformance.py` dies with the double. Deferred out of the
+atomic set only because the integration suite is under two concurrent reviews this round;
+correction-plus-conformance makes the interim state honest.
+
+**R8 boundaries:** files touched by THIS ruling — `docs/contracts/C1-tool-adapter.md` (v1.2.0) and
+this file, branch `task/S2-rulings`. No code; appliers named per parcel above.
+
+---
+
+## R7.2Δ — engineer delta: reconciliation rule 4 + the decide-time lazy-expiry finalisation (wiring round item 2, 2026-09-12)
+
+Completes the R7.2 bullet above and S2-wiring §7 item 4. **No contract movement** — C4 v1.2.0 §3
+already carries rule 4 verbatim; this is the implementation order for
+`sunil/core/approvals/service.py` plus the tests that pin it. Applier: backend/wiring engineer.
+The gap, restated from the verification that produced rule 4: the decide-time lazy
+`pending → expired` (`service.py:509-520`, audit cause `decide_past_ttl`) audits but never
+finalises the task, and only `sweep()` calls `_finalise_expired_tasks` (`service.py:577`) — an
+`expired` row can never again match the sweep's `status=pending` / `status=approved` WHERE clauses,
+so without these two deltas that task stays unfinalised forever.
+
+**Delta 1 — `ReconciliationReport` gains the rule-4 bucket** (`service.py:146-165`):
+`__slots__ = ("rescheduled", "expired", "interrupted", "finalised")`; `__init__` gains
+`self.finalised: list[str] = []`; `total` adds `+ len(self.finalised)`; `__repr__` includes it;
+docstring "three rules" → "four rules".
+
+**Delta 2 — a rule-4 audit kind** (`service.py`, beside :90-92):
+`AUDIT_TASK_RECONCILED = "task_finalisation_reconciled"`. Deliberately NOT `AUDIT_RECONCILED`
+(`continuation_reconciled`) — nothing about a refused/expired row is a continuation event, and C4
+§3 rule 3 names that kind for the consumed case specifically.
+
+**Delta 3 — rule 4 in `reconcile_on_startup`** (`service.py:670-757`): docstring gains the rule-4
+line; the existing `engine.connect()` read block (:716-731) gains a third select; a fourth loop
+lands after rule 3's:
+
+```python
+            terminal = (
+                await conn.execute(
+                    select(T.c.id, T.c.task_id, T.c.status).where(
+                        T.c.status.in_(
+                            [
+                                ApprovalStatus.REFUSED.value,
+                                ApprovalStatus.EXPIRED.value,
+                            ]
+                        )
+                    )
+                )
+            ).fetchall()
+```
+
+```python
+        # Rule 4 — refused/expired + unfinalised task → finalise with the
+        # matching kind (C4 §3 rule 4, v1.2.0 ruling R7). Closes the two windows
+        # the post-decision hooks leave open: a crash (or absent task gateway)
+        # after a refuse CAS, and the decide-time lazy `pending → expired`,
+        # whose row leaves the sweeper's WHERE clauses before the sweep's
+        # finalisation pass can ever see it. Rows rule 2 expired THIS pass are
+        # re-seen here with their tasks already finalised, so the is_finalised
+        # guard skips them — and a rule-2 finalisation that FAILED last boot is
+        # retried, which rules 1-3 never did for anything.
+        for row in terminal:
+            if self.tasks is None or await self.tasks.is_finalised(row.task_id):
+                continue
+            kind = (
+                FAILURE_APPROVAL_REFUSED
+                if row.status == ApprovalStatus.REFUSED.value
+                else FAILURE_APPROVAL_EXPIRED
+            )
+            report.finalised.append(row.id)
+            await self._finalise(row.task_id, kind)
+            await self._audit(
+                AUDIT_TASK_RECONCILED,
+                row.id,
+                {"task_id": row.task_id, "failure_kind": kind},
+            )
+```
+
+Scan posture, recorded: `terminal` reads every refused/expired row ever, exactly as rule 3 already
+reads every consumed row — acceptable at this system's approval volumes (every row cost a human
+decision), and if it ever hurts, the fix is one bulk `unfinalised_task_ids()` question on
+`TaskGateway` serving all four rules, never a rule-4 special case.
+
+**Delta 4 — `decide`'s lazy expiry finalises after commit** (`service.py:498-526`): condition the
+audit on the CAS actually transitioning (`.returning` — today a raced-away UPDATE still writes a
+`decide_past_ttl` audit row for a transition that never happened), move the conflict return out of
+the transaction, finalise through the same door the sweep uses:
+
+```python
+        lazily_expired = False
+        async with self.engine.begin() as conn:
+            # ... the decided-CAS branch is unchanged ...
+            current = (
+                await conn.execute(
+                    select(T.c.id, T.c.status).where(T.c.id == approval_id)
+                )
+            ).first()
+            if current is None:
+                return None
+            if current.status == ApprovalStatus.PENDING.value:
+                expired_row = (
+                    await conn.execute(
+                        update(T)
+                        .where(
+                            T.c.id == approval_id,
+                            T.c.status == ApprovalStatus.PENDING.value,
+                            T.c.expires_at <= now,
+                        )
+                        .values(status=ApprovalStatus.EXPIRED.value)
+                        .returning(T.c.id)
+                    )
+                ).first()
+                if expired_row is not None:
+                    lazily_expired = True
+                    await self._audit(
+                        AUDIT_EXPIRED, approval_id, {"cause": "decide_past_ttl"}, conn
+                    )
+                current = (
+                    await conn.execute(
+                        select(T.c.id, T.c.status).where(T.c.id == approval_id)
+                    )
+                ).first()
+            conflict = self._conflict(current)
+        if lazily_expired:
+            # This call is the LAST actor guaranteed to see the transition (the
+            # row just left the sweeper's WHERE clauses for good), so it owns
+            # the finalisation exactly as sweep() owns its own at :577 — after
+            # commit, is_finalised-guarded, failure logged-not-raised (the 409
+            # must stand; rule 4 retries on the next boot).
+            await self._finalise_expired_tasks([approval_id])
+        return conflict
+```
+
+`decide`'s docstring gains one line naming the finalisation and its after-commit posture. If the
+CAS raced away to a concurrent sweep/decide, `lazily_expired` stays False and the winner owns the
+finalisation — no double writer, and no more phantom audit row.
+
+**Tests (pin in `tests/unit/approvals/test_reconciliation.py` — the `wired` fixture, `_park`,
+`RecordingTasks`, `RecordingAudit` all exist there):**
+
+```python
+# --------------------------------------------------------------------------- #
+# Rule 4 — refused/expired + unfinalised task → finalised with the matching kind
+# --------------------------------------------------------------------------- #
+async def test_rule_4_finalises_a_refused_row_whose_hook_never_ran(wired) -> None:
+    """park → refuse → crash before finalise_refusal → startup reconciles.
+    The decide CAS committed REFUSED; the process died before the post-decision
+    hook ran (C4 §3 "Post-decision hooks"). Without rule 4 this task stays open
+    for ever — no sweep clause and no other rule can ever see it."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-refused-crash")
+    await service.decide(approval_id, "refuse", "no")
+    # deliberately NO finalise_refusal(): the crash window under test
+
+    report = await service.reconcile_on_startup()
+
+    assert report.finalised == [approval_id]
+    assert tasks.calls == [("task-refused-crash", FAILURE_APPROVAL_REFUSED)]
+    assert scheduler.scheduled == []
+    assert AUDIT_TASK_RECONCILED in audit.kinds_for(approval_id)
+
+
+async def test_rule_4_leaves_a_hook_finalised_refusal_alone(wired) -> None:
+    """The non-crash case: the hook ran, the task is closed. Rule 4 must be a
+    no-op or every clean boot re-finalises history."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-refused-ok")
+    await service.decide(approval_id, "refuse")
+    await service.finalise_refusal(approval_id)
+
+    report = await service.reconcile_on_startup()
+
+    assert report.finalised == []
+    assert len(tasks.calls) == 1
+    assert AUDIT_TASK_RECONCILED not in audit.kinds_for(approval_id)
+
+
+async def test_rule_4_retries_a_finalisation_the_gateway_failed(wired) -> None:
+    """expired + unfinalised at boot — the lazy-expiry crash window: the CAS
+    committed, the gateway call failed (logged, 409 stood), the process moved
+    on. Rule 4 is the retry."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-lazy-crash")
+    clock.advance(hours=73)  # past the 72 h TTL
+    tasks.fail_next = 1  # see the RecordingTasks delta below
+    outcome = await service.decide(approval_id, "approve")
+
+    assert isinstance(outcome, StateConflict)
+    assert tasks.calls == []  # the one attempt failed and was swallowed
+
+    report = await service.reconcile_on_startup()
+
+    assert report.finalised == [approval_id]
+    assert tasks.calls == [("task-lazy-crash", FAILURE_APPROVAL_EXPIRED)]
+
+
+# --------------------------------------------------------------------------- #
+# The decide-time lazy expiry finalises (sweep parity)
+# --------------------------------------------------------------------------- #
+async def test_lazy_expiry_at_decide_time_finalises_the_task(wired) -> None:
+    """decide's `pending → expired` CAS (cause `decide_past_ttl`) takes the row
+    out of the sweeper's pending/approved WHERE clauses for good, so decide owns
+    the finalisation exactly as sweep owns its own — no restart required."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-lazy")
+    clock.advance(hours=73)  # past the 72 h TTL
+
+    outcome = await service.decide(approval_id, "approve")
+
+    assert isinstance(outcome, StateConflict)
+    assert outcome.error.current_status == ApprovalStatus.EXPIRED
+    assert tasks.calls == [("task-lazy", FAILURE_APPROVAL_EXPIRED)]
+    assert await service.sweep() == 0  # nothing left for the sweep to notice
+```
+
+Support deltas in the same test module: import `FAILURE_APPROVAL_REFUSED` and
+`AUDIT_TASK_RECONCILED` from `sunil.core.approvals.service`, `StateConflict` from
+`sunil.core.approvals.base`; `RecordingTasks` gains the failure valve —
+`self.fail_next = 0` in `__init__`, and at the top of `finalise_failed`:
+`if self.fail_next: self.fail_next -= 1; raise RuntimeError("task gateway down")`.
+The existing suite stays green as-is — verified against each test: rule 2's freshly expired rows
+reach rule 4 with tasks already finalised (guard skips; `test_reconciliation_is_idempotent`'s
+totals hold at 2/0), and `test_refusal_finalises_the_task_as_refused` runs the hook so rule 4
+never fires there.
+
+**R7.2Δ boundaries:** this file only, branch `task/S2-rulings`. Code deltas above are the backend
+lane's to land (service.py + one lane-owned test module); no frozen suite, no contract file, no
+route moves.
+
+---
+
 ## Boundaries observed
 
 Files touched: `docs/decisions/ADR-008-*.md`, `docs/ARCHITECTURE_V2.md`, `docs/THREAT_MODEL.md`,
@@ -406,3 +863,8 @@ Files touched: `docs/decisions/ADR-008-*.md`, `docs/ARCHITECTURE_V2.md`, `docs/T
 ruling comment in `config/agents.yaml`. No application code, no tests, and none of the backend
 lane's concurrent files (`api/routes/approvals.py`, `.env.example`, tests). Rulings that require
 code (R2 steps 1–3, R3's lane move, R1's startup warning) name wave-2's wiring round as applier.
+
+**2026-09-12 wiring-round append (R8 + R7.2Δ, after merging `origin/task/integration-w2r1`):**
+files touched — `docs/contracts/C1-tool-adapter.md` (→ v1.2.0) and this file, on
+`task/S2-rulings`. Still no application code and no tests; appliers are named per parcel inside
+each ruling.
