@@ -118,3 +118,57 @@ becomes "**rebuilds those seams fresh on `V2`**":
 
 Risk accepted by the owner: the rebuild forgoes the shortcut of reusing verified code in place;
 mitigation is that `main` remains runnable and diffable throughout.
+
+---
+
+## Amendment 2 — memory engine: first-party pgvector provider; Mem0 demoted to selectable-unbuilt (Architect ratification, 2026-09-12)
+
+Ruling **R9** (`docs/tasks/integration-w1-rulings.md`) ratifies Stream C's wave-2 engine choice:
+the C3 memory seam is served by the first-party **`PgVectorMemoryProvider`**
+(`apps/api/sunil/memory_providers/pgvector_provider.py` — direct SQL on the Postgres/pgvector this
+stack already runs), **not** by Mem0-the-library. Decision item 3 above is amended to read:
+
+> 3. **Memory: first-party engine on existing Postgres/pgvector behind `core/memory` (C3).** The
+>    entity schema (clients/projects/people) remains custom. **Mem0 (Apache-2.0) remains an
+>    admitted, swappable vendor for this seam — selectable (`SUNIL_MEMORY_PROVIDER=mem0`) and
+>    deliberately unbuilt**, resolving to a loud `SeamUnavailable` naming
+>    `memory_providers/mem0_provider.py`, never a silent fallback: an operator who configured Mem0
+>    must not quietly get different retrieval.
+
+**Grounds — conformance, not taste** (the lane's S2-C §1 rationale, verified against C3's frozen
+text):
+
+1. **Mem0's write path is an LLM.** `mem0.add()` routes stored content through a model that
+   decides ADD/UPDATE/DELETE and rewrites the stored fact. C3 §2 forbids the provider
+   re-classifying already-scrubbed content in as many words, and §4a is exact arithmetic on a
+   four-value privacy lattice — a rule a probabilistic rewrite cannot satisfy, let alone satisfy
+   repeatably in a contract test.
+2. **Schema and dependency posture.** Mem0's store has no `privacy` column — the field the whole
+   of §4a turns on — and it drags an LLM + embedder dependency chain whose parity proof is
+   unrunnable on a machine holding no provider key.
+3. **The vendor's audit buys nothing.** C3 already places the audit row outside the vendor
+   (`audit_event_id` echo), so behind Mem0 that discipline is adapter code anyway.
+
+**What survives unchanged is this ADR's principle.** The seam is the decision: C3 stays frozen,
+the engine behind it is swappable, and keeping the unselected vendor *selectable and loud* is the
+principle honoured, not abandoned. ADR-013's premise also lands intact: pgvector on the
+already-provisioned image, `CREATE EXTENSION vector` plus one additive migration (`0005`) — exactly
+the shape that ADR reserved.
+
+**Rejected alternatives:**
+
+- **Order Mem0 built anyway.** Requires either violating C3 (vendor re-classification of stored
+  facts) or wrapping Mem0 so thickly (shadow privacy store, write-path bypass, §4a re-implemented
+  in the adapter) that the vendor contributes only its bug surface. Building the same guarantees
+  directly on the database we run is the smaller system.
+- **A standalone ADR-037.** Fragments the component register: item 3 lives in this file, Amendment
+  1 already set the in-file amendment pattern, and a reader of the decision list must meet the
+  correction in the same document that states the decision.
+- **Removing `mem0` from the selectable set.** Erases the replaceability evidence; the loud
+  `SeamUnavailable` is the documented, tested seam posture for the alternative engine.
+
+**Consequences:** C3 moves to v1.1.1 (descriptive vendor prose corrected; changelog there);
+`ARCHITECTURE_V2.md` §5's `SUNIL_MEMORY_PROVIDER` row corrected the same day. The
+privacy-relevant embedding path is ruled separately: routing and budgets ride the LiteLLM gateway
+today; the `llm_calls` audit half is a registered **C2 v2.0.0 candidate** (`embed()` on the frozen
+protocol — ruling R10).

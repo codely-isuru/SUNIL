@@ -61,3 +61,28 @@ valid(url) ⇔ url == canonical(field)            # ADR-017, unchanged (direct-p
 - QA's loopback doubles keep working unchanged in both lanes.
 - The n8n MCP server and webhook URLs inherit the guard for free — Stream E cannot accidentally
   point approvals notifications at the public internet.
+
+---
+
+## Amendment 1 — `openhands` joins the named-host set; the n8n MCP default gains its workflow path (2026-09-12, rulings R14/R15, round-2 ratification batch)
+
+1. **Named-host set: + `"openhands"`** — exactly the addition the Decision anticipated
+   ("`openhands` joins it in Phase V2-D"). Governed field: **`SUNIL_OPENHANDS_BASE_URL`**, default
+   `http://localhost:3400` (the ADR-032 port pair the commented Compose block already carries,
+   `127.0.0.1:3400 → 3000`; the in-network value is `http://openhands:3000`), validator
+   `loopback ∨ openhands`, read only by `agents/developer`'s client wiring
+   (`openhands_http.py` transport construction). Mechanism, for the applier: `settings.py`'s
+   `_NAMED_HOSTS` gains `"sunil_openhands_base_url": ("openhands",)`, plus the field and its
+   `field_validator` — the same three-line pattern as `sunil_n8n_mcp_base_url`. **Applier:** the
+   integration engineer (this branch or the next wiring round). The field may land before the
+   Compose block is uncommented — an unread validated setting is inert, and the engine-enablement
+   prerequisite remains the separate runtime-isolation ADR (S2-F §4), which this amendment does
+   not pre-empt.
+2. **`SUNIL_N8N_MCP_BASE_URL` default path corrected:** `http://localhost:5680/mcp` →
+   `http://localhost:5680/mcp/sunil` (S2-E §7 item 1: `/mcp` is a prefix and answers 404 — n8n
+   serves an MCP trigger only at its workflow path; the live endpoint was proven at `/mcp/sunil`).
+   The **rule is unchanged**: the validator constrains the *host*, never the path, so both the old
+   and new values pass it — this is a default-value correction, not a validator change.
+   **Appliers:** `.env.example:193` and the `infra/docker-compose.yml` api-stub line
+   (`http://n8n:5678/mcp` → `http://n8n:5678/mcp/sunil`) — integration engineer.
+3. `ARCHITECTURE_V2.md` §5 rows updated the same day (dated inventory append there).

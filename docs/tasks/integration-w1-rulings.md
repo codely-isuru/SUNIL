@@ -19,6 +19,13 @@ fix round.
 | R7 | integration-w1 §8.3 — `decide`'s callable shape / clock ownership (wave-2 opening, 2026-09-12, branch `task/S2-rulings`) | **C4 v1.2.0** (§6.2 + §3 + §4 + clock paragraph + changelog migration) |
 | R7.2Δ | S2-wiring §7 item 4 — engineer delta for C4 §3 rule 4 + the decide-time lazy-expiry finalisation gap (wiring round item 2, 2026-09-12) | This file (applier: backend/wiring engineer; no contract movement — C4 v1.2.0 already carries rule 4) |
 | R8 | S2-wiring §7.5 — parked turn's C5 envelope carries `approval_id=""` under real wiring (wiring round item 1, 2026-09-12) | **C1 v1.2.0** (§2 `ApprovalRef` + `ToolResult.approval`, §2.1 step-3/step-7, §6.4 tests 4/5/10, changelog) + this file's engineer delta |
+| R9 | S2-C §1 — direct pgvector over Mem0 (round-2 ratification batch, 2026-09-12, branch `task/integration-w2r2`) | **ADR-030 Amendment 2** (ratified) + **C3 v1.1.1** descriptive prose |
+| R10 | S2-C §7.3 — embedding calls bypass `llm_calls`; C3 §2 promised audit frozen C2 cannot provide | **C3 v1.1.1** (§2 bullet truth-fix + changelog) + this file (C2 v2.0.0 candidate register — C2 untouched until it moves, R4 precedent) |
+| R11 | S2-F §5.5 — `AgentResult.kind` has no `engine_failed`; new members are silent success in `turn.py` | This file (folding blessed; the future parcel specified; exhaustiveness-guard follow-up named) |
+| R12 | S2-C §7.5 — `projects` TABLE vs `config/projects.yaml` name collision | This file (document-and-keep + the one-namespace bridge rule) |
+| R13 | S2-C §7.6 — `EntityResolver` built-but-unwired | This file (wiring delta + owning round) |
+| R14 | S2-F §5.3 + S2-E §7.1 — `SUNIL_OPENHANDS_BASE_URL`, `openhands` named host, n8n MCP path | **ADR-033 Amendment 1** + **ARCHITECTURE_V2 §5/§4** dated corrections |
+| R15 | Round-2 owed-sections sweep (S2-C §7, S2-E §7 + §4 follow-up, S2-F §5) | This file (disposition table) + **THREAT_MODEL §9** (DC-21 + dated closure block) |
 
 ---
 
@@ -853,6 +860,233 @@ never fires there.
 **R7.2Δ boundaries:** this file only, branch `task/S2-rulings`. Code deltas above are the backend
 lane's to land (service.py + one lane-owned test module); no frozen suite, no contract file, no
 route moves.
+
+---
+
+## R9 — direct pgvector over Mem0: RATIFIED (round-2 ratification batch, 2026-09-12)
+
+**Ruling: ratified as ADR-030 Amendment 2** (the normative instrument — see
+`docs/decisions/ADR-030-integrate-open-source-components.md`), with C3's descriptive vendor prose
+corrected in the same batch (v1.1.1). The component decision moves; the principle — a replaceable
+engine behind the frozen C3 seam — is what survives, and Stream C's implementation *strengthens*
+it: `SUNIL_MEMORY_PROVIDER=mem0` stays selectable and resolves to a loud `SeamUnavailable` naming
+the unbuilt module, never a silent fallback.
+
+**Why ratify rather than order Mem0:** the lane's grounds are conformance facts about C3's own
+frozen text, not preference — (1) Mem0's LLM write path re-classifies and rewrites stored facts,
+which §2 forbids verbatim and which cannot satisfy §4a's exact lattice arithmetic repeatably in a
+contract test; (2) no `privacy` column in its schema — the field §4a turns on; (3) keyless machine
+⇒ the parity proof would be unrunnable, i.e. an ordered Mem0 build would land unverifiable.
+Ordering Mem0 would therefore have bought a vendor whose contract-relevant behaviour must all be
+re-implemented in the adapter around it. **Rejected alternatives** (argued in the Amendment): order
+Mem0 anyway; a standalone ADR-037 (fragments the component register); deleting `mem0` from the
+selectable set (erases the replaceability evidence).
+
+**Instrument:** ADR-030 Amendment 2 + C3 v1.1.1 + the `ARCHITECTURE_V2.md` §5
+`SUNIL_MEMORY_PROVIDER` row (all this commit). No code moves; the code already implements the
+ratified state.
+
+---
+
+## R10 — the embedding audit gap: C3 §2 corrected to the truth; `embed()` registered as the C2 v2.0.0 candidate
+
+**The gap, verified:** C3 §2's embeddings bullet promised "routing, budgets and audit" from the C2
+gateway. Routing and budgets hold (the `GatewayEmbedder` posts to the LiteLLM gateway on a virtual
+key; the gateway logs spend). Audit does **not**: SUNIL's `llm_calls` rows are written by the C2
+provider path, and the frozen `LLMProvider` protocol (`C2-model-provider.md` §2, v1.0.1) has
+exactly `complete()` and `stream()` — no `embed()`. A contract may not promise what no conforming
+implementation can do, and a memory lane may not widen C2 on its way past (protocol changes are
+MAJOR + ADR by C2's own change policy).
+
+**Ruling, two halves:**
+
+1. **C3 v1.1.1 (this commit)** — §2's bullet now states what is true: embeddings inherit routing
+   and budgets via the gateway transport; they do not appear in `llm_calls`; the gateway spend log
+   is the only per-call record of embedding egress until the candidate lands. PATCH defended in
+   the C3 changelog (no signature/semantics movement; the promise was unimplementable).
+2. **C2 v2.0.0 candidate, registered here** (R4 precedent: the contract file moves only when the
+   change moves): `async def embed(self, request: EmbeddingRequest) -> EmbeddingResult` on
+   `LLMProvider`, closed models, `agent_id`/`request_id`/`privacy_class` carried exactly as
+   `CompletionRequest` does, `llm_calls` row written by the same audited path as `complete()`.
+   MAJOR by C2's change policy (protocol change) ⇒ **needs its own ADR** at landing time.
+   **Owning round: Stream B's next gateway round** (first round that holds an embedding
+   credential, so the live leg is provable — the same reason Stream C could not prove
+   `GatewayEmbedder` live).
+
+**Coupling rule (architect direction):** the `SUNIL_MEMORY_EMBEDDER` default stays `hashing` until
+**both** an embedding key exists **and** the C2 v2 audit lands. Semantic recall by default must not
+precede embedding egress appearing on the audit spine — flipping the default is the moment memory
+content routinely leaves the process, and "the gateway's spend log" is a billing record, not
+SUNIL's audit trail.
+
+**Rejected alternative:** leave C3 §2 as written and treat the gap as an implementation TODO.
+Rejected because a frozen contract stating false behaviour is exactly the drift class R8 just
+closed (the double that "papered over the contract's gap with a lie"); the register-and-correct
+pattern keeps every frozen document true at every commit.
+
+---
+
+## R11 — engine failures keep folding to `kind="tool_failed"`; `engine_failed` is specified-but-unscheduled
+
+**Facts, verified in the tree:** `core/agent_framework/base.py:80` pins
+`AgentResult.kind: Literal["ok", "parked", "tool_failed", "provider_error"]`;
+`core/orchestrator/turn.py:275-280` dispatches `parked`/`tool_failed`/`provider_error` and treats
+anything else as success — so a new enum member added without a `turn.py` change is **silent
+success**, exactly as Stream F reported. C5's `failure.kind` is likewise a closed enumerated set
+(`provider_error`, `tool_failed`, `plan_rejected`, `unknown_project`, plus the v1.1 approval
+kinds), so a distinct `engine_failed` is not a two-file change: it is base.py + turn.py + a C5
+MINOR (failure kind + fake behaviour + frozen-suite diff) + whatever renders failures in the web
+app. Four surfaces, one atomic parcel.
+
+**Ruling: BLESS the current folding.** It is honest at every layer that matters:
+
+- the C5 surface says "a governed step failed", which is true at the granularity its consumers act
+  on today (no consumer exists that must *branch* engine-vs-tool at the envelope);
+- `tool_error_kind` carries the honest C1 §4 kind (`upstream_error`/`transport_error`/`timeout`/
+  `invalid_params`) — the folding never launders the cause;
+- the engine's own `failure_kind` string is preserved unmapped in `tool_details` — full forensic
+  recovery from the audit trail.
+
+**The trigger that reopens this** (recorded so it is inherited, not rediscovered): the first
+consumer that must branch on engine-vs-tool at the C5 surface — e.g. a dashboard "developer engine
+down" banner, or a retry policy treating engine failures differently. At that trigger,
+`engine_failed` lands as ONE atomic parcel (base.py Literal + turn.py mapping + C5 MINOR with
+changelog + fake + frozen-suite diff), owned by the round that owns the consumer. Not scheduled
+now — a kind nobody branches on is taxonomy, not information.
+
+**Hardening owed (spine owner, next spine-touching round, no contract movement):** `turn.py`'s
+kind dispatch gains an exhaustiveness guard (narrow the literal per branch, `typing.assert_never`
+in the final else) so any future `AgentResult.kind` member is a type-check failure AND a loud
+runtime error — never silent success. This retires the hazard class Stream F discovered, rather
+than just this instance of it.
+
+**Rejected alternative:** add `engine_failed` now. Rejected as YAGNI with real cost: a C5 contract
+movement + frozen-suite diff for a distinction no consumer reads, on an agent whose engine is not
+yet live (S2-F: vendor mapping `unverified-until-first-live-boot`).
+
+---
+
+## R12 — `projects` the TABLE and `projects.yaml` the REGISTRY: document-and-keep, one key namespace (normative)
+
+**Ruling: no rename.** The entity table stays `projects`; the ADR-016 registry stays
+`config/projects.yaml`. Grounds: C3 §3 names the entity trio (`clients`, `projects`, `people`) in
+a frozen contract; the trio is symmetric and a rename to `project_entities` breaks the symmetry or
+forces two more renames nothing motivates; migration `0005` has landed and a rename buys a
+migration + code churn for what is a *prose* ambiguity. The two things are genuinely different
+kinds: the registry is **operator-mounted configuration** (which repositories SUNIL may reach —
+`owner/repo` deliberately lives in config so no plan and no runtime write can choose a repository,
+M1 T-16), the table is **runtime data** (entities SUNIL remembers facts about).
+
+**The bridge rule (normative — this is what actually prevents cross-queries going wrong):**
+
+1. **One key namespace.** `projects.key` (the entity table's unique human key) and the registry's
+   `project_key` denote the same engagement when equal: `MemoryScope(kind="project", id="pda")`
+   and a plan's `project_key: "pda"` MUST refer to the same project. No lane may mint a table
+   `key` that collides with a registry key while meaning something else.
+2. **Prose discipline.** Docs and code comments say "the `projects` **entity table**" vs "the
+   **project registry** (`config/projects.yaml`)" — never bare "projects" where both are in scope.
+3. **Materialisation direction:** registry → table, lazily, on first **write**. When the memory
+   service resolves a `kind="project"` scope whose id is unknown to the table but IS a registry
+   key, a project entity row is upserted from the registry entry (`upsert_entity` exists and is
+   idempotent on `key`) and resolution proceeds; **recall never creates rows** (a read must not
+   mutate — the same posture as the TTL filter). An id in neither place stays `MemoryScopeError`.
+   This is the R13 wiring round's to implement, spec'd here so the two rulings compose.
+
+**Rejected alternatives:** rename to `project_entities` (lexical fix for a semantic question;
+breaks C3 §3 naming and trio symmetry; migration churn); merge the registry into the table
+(reverses ADR-016's mounted-config law and would make tool reach — `owner/repo` — runtime-mutable
+data, a governance regression the config placement exists to prevent).
+
+---
+
+## R13 — `EntityResolver` wiring delta (applier: backend/integration lane, next wiring round — w2r3)
+
+Stream C built and tested `EntityResolver` (`core/memory/entities.py:52` —
+`__init__(engine)`, idempotent `resolve(scope) -> MemoryScope`) but did not wire it:
+`MemoryService.__init__` was pinned "unchanged in shape" by their brief. This ruling IS the
+shape-change authorisation. The delta, exact:
+
+1. **`core/memory/service.py`** — `MemoryService.__init__` gains keyword-only
+   `resolver: EntityResolver | None = None` (default preserves every existing call site and the
+   fake-wired app).
+2. **`recall`**: resolution runs FIRST, **inside** the existing `asyncio.timeout(self._budget_s)`
+   block (the 800 ms budget covers resolve + vendor — two sequential DB round-trips must not
+   stack two budgets). Error mapping is already designed into the resolver:
+   `MemoryUnavailableError` (entity schema unreadable) → the existing `degraded=True,
+   reason="unavailable"` path; `TimeoutError` → `reason="budget_exceeded"`;
+   **`MemoryScopeError` propagates** — a caller bug surfaces, it never degrades (C3 §3/§4).
+3. **`write`**: resolve BEFORE the audit row is minted — the audit sink then records the
+   **resolved** scope (the id the provider actually files under; lineage must name the real
+   filing), and a write that cannot resolve writes no audit row for a memory that never happened.
+   `MemoryScopeError` and `MemoryUnavailableError` both surface on write (a lost write must be
+   visible — C3 §4).
+4. **`api/wiring.py`** — the `MemoryService` construction site passes
+   `resolver=EntityResolver(engine)` whenever the provider resolution had an engine (the
+   `pgvector` branch already holds it); fake-wired composition passes none, keeping the frozen C3
+   contract suite untouched.
+5. **R12 rule 3** (registry → table lazy upsert on write-path resolution) lands in the same
+   parcel, in the service — not in the resolver, whose single job stays "key → row id".
+6. **Tests owed with the parcel** (lane-owned, not the frozen suite): project-scope recall
+   resolves a `key` to its row id and filters correctly; unknown key raises `MemoryScopeError`
+   through `write` and through `recall`; entity-schema outage degrades recall
+   (`reason="unavailable"`) and surfaces on write; the write-path audit row carries the resolved
+   scope; registry-key write-path upsert creates the entity once (idempotent on `key`).
+
+**Rejected alternative:** wire the resolver inside `PgVectorMemoryProvider`. Rejected by C3 §3's
+own text — resolution belongs to the *service*, before any vendor call, so the provider only ever
+sees resolved ids and `MemoryScopeError` can never depend on which engine is selected.
+
+---
+
+## R14 — `SUNIL_OPENHANDS_BASE_URL`, the `openhands` named host, and the n8n MCP workflow path
+
+**Instrument: ADR-033 Amendment 1** (dated, in the ADR — the addition its Decision paragraph
+anticipated by name) **+ the `ARCHITECTURE_V2.md` §5/§4 dated corrections** (this commit). One-line
+summary: named-host set + `"openhands"`; governed field `SUNIL_OPENHANDS_BASE_URL` default
+`http://localhost:3400` (ADR-032 pair `127.0.0.1:3400→3000`; in-network `http://openhands:3000`),
+validator loopback ∨ `openhands`, mechanism `_NAMED_HOSTS` + field + validator in `settings.py`;
+and `SUNIL_N8N_MCP_BASE_URL`'s default gains the workflow path `/mcp/sunil` (S2-E §7.1 — `/mcp` is
+a prefix, answers 404; the validator constrains host, never path, so no rule moves). **Appliers
+(code/config half):** integration engineer — `settings.py`, `.env.example:193`, the compose stub's
+`http://n8n:5678/mcp` line. The settings field may land ahead of the engine: an unread validated
+setting is inert, and enabling the engine itself stays gated on the S2-F §4 runtime ADR (see R15).
+
+---
+
+## R15 — round-2 owed-sections sweep: dispositions
+
+Everything in the three task files' owed/residual sections not already ruled above, each with its
+instrument-or-code disposition:
+
+| Source | Item | Disposition |
+|---|---|---|
+| S2-C §7.1–7.2 | `GatewayEmbedder` live-unproven; `hashing` recall is lexical, not semantic | Recorded, no instrument. Live proof + default flip belong to the first round holding an embedding key, and the flip is **gated by R10's coupling rule** (audit lands first) |
+| S2-C §7.4 | `memories` has no reaper — expired rows filtered, never deleted | Code follow-up registered: an expired-row sweep beside the approvals sweeper (same lifespan hook, own cadence), delete-where-`expires_at < now`; never on the recall path (reads must not mutate). No contract movement — C3 binds recall visibility, not storage hygiene. **Owning round: next wiring/housekeeping round (w2r3)** |
+| S2-C §7.5 | `projects` table vs registry | **R12** |
+| S2-C §7.6 | `EntityResolver` unwired | **R13** |
+| S2-C §7.3 | embedding audit gap | **R10** |
+| S2-C §7.7 | three out-of-list file touches (autogenerate fence, `main.py` engine pass, `.env.example`) | Accepted scope excursions — each is load-bearing for the migration's safety or the seam's wiring, flagged to the DM in-file. No instrument |
+| S2-E §7.1 | MCP base URL must carry `/mcp/sunil` | **R14** (ADR-033 Amendment 1) |
+| S2-E §7.2 | `PostUpdateParams` added outside the file list | Accepted excursion — `params_ref` must point at a real `extra="forbid"` model, and the approval card reads these params; reusing the free-form `payload` model would have degraded owner consent. No instrument |
+| S2-E §7.3 | stale Compose volumes / `COMPOSE_PROJECT_NAME` | Ops note; recorded in the task file, sufficient. No instrument |
+| S2-E §3 | `run_workflow` removed from both config files (never implemented; drift check took the whole tool down); `RunWorkflowParams` left for a proper build | Endorsed — the removal implements ADR-034's drift posture, and the "named actions, not meta-tools" ground is the right consent shape. A future `run_workflow` needs its own named-operation design; no reservation made |
+| S2-E §4 follow-up | the `authentication` dropdown is the single ungoverned setting | **THREAT_MODEL §9: DC-21 + dated closure block** (this commit). The "treat as unauthenticated" posture is CLOSED against n8n 2.38.5 as shipped; the audit obligation is registered with an owner and an exposure pre-condition |
+| S2-F §5.1 + §5.2 | `permissions.yaml` developer grants; `tools.yaml` `github_mcp.push_branch`/`merge_main` + params models `{project_key, branch, base_branch}` (`extra="forbid"`) | Registered to **the round that wires github_mcp write operations** (w2r3+/V2-D). **Atomicity rule, from S2-E §3's defect class:** operations + adapters/params and the permission rows land TOGETHER — a config row without an adapter is a startup refusal that takes the whole tool down; a grant without an operation is dead config. Today's fail-closed state (layer-4 rejection) is correct and stays |
+| S2-F §5.4 | CI port-gate second pass with `--profile dev-agents` | Registered to DevOps; **MUST land before** the compose `openhands` block is uncommented (compose config omits profiled services — verified v5.5.1, S2-F §4) |
+| S2-F §5.5 | `AgentResult.kind` | **R11** |
+| S2-F §5.6 | `plan_schema.py`: `"fix_and_pr"` joins `NON_TOOL_ACTIONS` | One-line, layer-1 grammar only (layer 4 already accepts the step); no contract movement. **Owning round: next spine/orchestrator round**, so a constrained-decode planner can emit the work order SUNIL code can already build |
+| S2-F §4 | enabling the OpenHands engine needs a runtime decision | Confirmed **an ADR, not an edit** — reserved as the next decision number at drafting time (runtime isolation: remote-runtime vs alternatives; third-party-hosted runtime ships client repo contents off-machine ⇒ privacy-class, owner-level, ADR-030's OmniRoute reasoning verbatim). Until then the commented block with `profiles: [dev-agents]` is the ruled end-state, not an unfinished edit |
+| S2-F §1 | vendor constants block `unverified-until-first-live-boot` | Recorded; the first-live-boot round owns correcting the constants + their pin test. The two mapping invariants (unmapped lifecycle string raises; report parse fails closed to zero git ops) survive any correction — they are the governed part |
+
+---
+
+**Round-2 ratification batch boundaries (2026-09-12, branch `task/integration-w2r2`):** files
+touched — `docs/decisions/ADR-030-*.md` (Amendment 2), `docs/decisions/ADR-033-*.md` (Amendment 1),
+`docs/contracts/C3-memory-provider.md` (v1.1.1), `docs/ARCHITECTURE_V2.md` (§4 TB5 row + §5 rows +
+dated append), `docs/THREAT_MODEL.md` (§9 DC-21 + dated block), and this file. **No application
+code, no tests, no config** — the concurrent integration engineer owns those files this round;
+every code/config delta above names its applier and owning round. C2 deliberately untouched (R10
+registers the candidate; the contract moves only when `embed()` moves — R4 precedent).
 
 ---
 
