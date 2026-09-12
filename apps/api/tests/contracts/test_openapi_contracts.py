@@ -1,13 +1,18 @@
-"""OpenAPI contract tests — the two frozen YAML surfaces.
+"""OpenAPI contract tests — the three frozen YAML surfaces.
 
-Sources of truth: ``docs/contracts/C4-approvals-openapi.yaml`` and
-``docs/contracts/C5-chat-openapi.yaml`` (both v1.0.0, FROZEN 2026-09-10).
+Sources of truth: ``docs/contracts/C4-approvals-openapi.yaml``,
+``docs/contracts/C5-chat-openapi.yaml`` (both v1.0.0, FROZEN 2026-09-10) and
+``docs/contracts/C6-ops-reads-openapi.yaml`` (v1.0.0, FROZEN 2026-09-11).
 
-These tests guard the machine-readable half of the contracts: both documents
-parse, every local ``$ref`` resolves, the enums agree with each other and with
-the Python transcription, and the specific defects the 2026-09-10 fix round
-closed stay closed (``HeartbeatFrame``'s stray ``description`` property; the
-deliberate absence of ``POST /api/v1/approvals``).
+These tests guard the machine-readable half of the contracts: all three
+documents parse, every local ``$ref`` resolves, the enums agree with each other
+and with the Python transcription, and the specific defects the 2026-09-10 fix
+round closed stay closed (``HeartbeatFrame``'s stray ``description`` property;
+the deliberate absence of ``POST /api/v1/approvals``).
+
+C6 is the read-only surface, so its assertions are mostly about what must NOT be
+there: no mutating verb, no bearer lane, no 409 — plus the shapes the QA fake
+transcribes into Python, checked against the YAML in both directions.
 """
 
 from __future__ import annotations
@@ -18,6 +23,14 @@ import pytest
 import yaml
 
 from sunil.core.approvals.base import ApprovalStatus
+from tests.fakes.fake_ops_store import (
+    DEFAULT_LIMIT,
+    LIMIT_MAX,
+    LIMIT_MIN,
+    PROJECTION_KEYS,
+    RECENT_CAP,
+    TASK_STATUSES,
+)
 
 pytestmark = pytest.mark.contract
 
@@ -38,6 +51,7 @@ def contracts_dir() -> Path:
 CONTRACTS = contracts_dir()
 C4_YAML = CONTRACTS / "C4-approvals-openapi.yaml"
 C5_YAML = CONTRACTS / "C5-chat-openapi.yaml"
+C6_YAML = CONTRACTS / "C6-ops-reads-openapi.yaml"
 
 
 def load(path: Path) -> dict:
@@ -52,6 +66,11 @@ def c4() -> dict:
 @pytest.fixture(scope="module")
 def c5() -> dict:
     return load(C5_YAML)
+
+
+@pytest.fixture(scope="module")
+def c6() -> dict:
+    return load(C6_YAML)
 
 
 def iter_refs(node, trail: str = "$"):
@@ -80,7 +99,7 @@ def resolve(document: dict, ref: str):
 # --------------------------------------------------------------------------- #
 # Parsing and reference integrity
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("path", [C4_YAML, C5_YAML])
+@pytest.mark.parametrize("path", [C4_YAML, C5_YAML, C6_YAML])
 def test_both_contracts_exist_and_parse(path: Path) -> None:
     """Both YAML surfaces parse as a single OpenAPI 3.1.0 document."""
     document = load(path)
@@ -90,7 +109,7 @@ def test_both_contracts_exist_and_parse(path: Path) -> None:
     assert document["components"]["schemas"]
 
 
-@pytest.mark.parametrize("path", [C4_YAML, C5_YAML])
+@pytest.mark.parametrize("path", [C4_YAML, C5_YAML, C6_YAML])
 def test_every_ref_resolves(path: Path) -> None:
     """Every ``$ref`` points at a node that exists — a dangling ref is a broken
     contract for every generator downstream."""
@@ -102,7 +121,7 @@ def test_every_ref_resolves(path: Path) -> None:
         assert resolve(document, ref) is not None, f"{trail} → {ref} does not resolve"
 
 
-@pytest.mark.parametrize("path", [C4_YAML, C5_YAML])
+@pytest.mark.parametrize("path", [C4_YAML, C5_YAML, C6_YAML])
 def test_no_component_schema_is_orphaned(path: Path) -> None:
     """Every declared schema is reachable from a path, a webhook or another
     schema — an unreferenced schema means a rename went half-done."""
@@ -313,3 +332,159 @@ def test_bearer_scheme_exists_only_on_the_chat_contract(c4: dict, c5: dict) -> N
     assert "serviceToken" not in c4["components"]["securitySchemes"]
     assert c4["security"] == [{"sessionCookie": [], "clientHeader": []}]
     assert "bearer" not in yaml.dump(c4["components"]["securitySchemes"]).lower()
+
+
+# --------------------------------------------------------------------------- #
+# C6 — the read-only ops surface (C6-ops-reads.md §1, §2, §3)
+# --------------------------------------------------------------------------- #
+def test_c6_error_kinds_are_the_same_vocabulary_with_no_conflict_kind(
+    c4: dict, c6: dict
+) -> None:
+    """C6 §1 — the envelope is C4's ``ErrorResponse``, and there is deliberately
+    NO 409/``state_conflict``: nothing on a read-only surface has state to
+    conflict with."""
+    kinds = c6["components"]["schemas"]["ErrorResponse"]["properties"]["error"][
+        "properties"
+    ]["kind"]["enum"]
+
+    assert kinds == c4["components"]["schemas"]["ErrorResponse"]["properties"]["error"][
+        "properties"
+    ]["kind"]["enum"]
+    assert "state_conflict" not in kinds
+    assert "StateConflict" not in c6["components"]["schemas"]
+    responses = {
+        code
+        for operation in c6["paths"].values()
+        for method in operation.values()
+        for code in method["responses"]
+    }
+    assert "409" not in responses
+
+
+def test_c6_has_no_mutating_operation(c6: dict) -> None:
+    """C6 §1 — "No mutating verb exists on this surface". Asserted on the
+    document, so a POST added to the YAML fails here before any route exists."""
+    methods = {
+        (path, method) for path, operation in c6["paths"].items() for method in operation
+    }
+
+    assert {method for _, method in methods} == {"get"}
+    assert {path for path, _ in methods} == {
+        "/api/v1/tasks",
+        "/api/v1/tasks/{task_id}",
+        "/api/v1/activity",
+        "/api/v1/audit",
+        "/api/v1/audit/{request_id}",
+    }
+
+
+def test_c6_declares_no_bearer_lane(c5: dict, c6: dict) -> None:
+    """C6 §1 / ADR-035 — the service-token lane is registered on
+    ``POST /api/v1/chat`` alone. C6 offers cookie + client-header only, so no
+    token value is even describable against it (the structural companion to C6
+    contract test 9's route-table walk)."""
+    assert "serviceToken" in c5["components"]["securitySchemes"]
+
+    assert "serviceToken" not in c6["components"]["securitySchemes"]
+    assert c6["security"] == [{"sessionCookie": [], "clientHeader": []}]
+    assert "bearer" not in yaml.dump(c6["components"]["securitySchemes"]).lower()
+    for operation in c6["paths"].values():
+        for method in operation.values():
+            # No per-operation override re-opens the lane C6 closed globally.
+            assert "security" not in method
+
+
+def test_c6_pagination_bounds_match_the_python_transcription(c6: dict) -> None:
+    """C6 §2.1(5) — ``limit`` is 1..200 default 50 (C4's bounds), and the QA
+    fake's constants are the same numbers. A drift in either direction is a
+    fake that no longer pins the law the contract states."""
+    limit = c6["components"]["parameters"]["Limit"]["schema"]
+
+    assert (limit["minimum"], limit["maximum"], limit["default"]) == (
+        LIMIT_MIN,
+        LIMIT_MAX,
+        DEFAULT_LIMIT,
+    )
+    assert (LIMIT_MIN, LIMIT_MAX, DEFAULT_LIMIT) == (1, 200, 50)
+    # The cursor is opaque and unknown values are 422, never a silent page one.
+    assert "422" in c6["paths"]["/api/v1/tasks"]["get"]["responses"]
+    assert "422" in c6["paths"]["/api/v1/audit"]["get"]["responses"]
+    # getTask/getAuditTurn have no query surface to be invalid, but do have 404.
+    assert "404" in c6["paths"]["/api/v1/tasks/{task_id}"]["get"]["responses"]
+    assert "404" in c6["paths"]["/api/v1/audit/{request_id}"]["get"]["responses"]
+
+
+def test_c6_task_status_enum_matches_the_python_transcription(c6: dict) -> None:
+    """C6 §2.2 / ADR-031 — the M1 four plus ``parked``, in the frozen order."""
+    yaml_enum = c6["components"]["schemas"]["TaskStatus"]["enum"]
+
+    assert yaml_enum == list(TASK_STATUSES)
+    assert yaml_enum == ["pending", "in_progress", "completed", "failed", "parked"]
+
+
+def test_c6_failure_kinds_do_not_fork_from_c5(c5: dict, c6: dict) -> None:
+    """C6 §2.2 — ``failure_kind`` "is C5's ``ChatFailure.kind`` set and does not
+    fork here"; C6 adds only the null that expresses "did not fail"."""
+    c5_kinds = c5["components"]["schemas"]["ChatFailure"]["properties"]["kind"]["enum"]
+    c6_kinds = c6["components"]["schemas"]["FailureKind"]["enum"]
+
+    assert c6_kinds == [*c5_kinds, None]
+    assert None in c6_kinds
+
+
+def test_c6_activity_projection_is_a_closed_three_key_object(c6: dict) -> None:
+    """C6 §2.3 — ``latest_detail`` is the projection onto exactly
+    ``{project_display_name?, tool?, operation?}``, and the schema is CLOSED
+    (``additionalProperties: false``): other ``detail`` keys must not leak, and
+    the shape says so rather than relying on the handler remembering."""
+    item = c6["components"]["schemas"]["ActivityItem"]
+    latest = next(
+        member for member in item["allOf"] if "properties" in member
+    )["properties"]["latest_detail"]
+
+    assert latest["additionalProperties"] is False
+    assert set(latest["properties"]) == set(PROJECTION_KEYS)
+    assert set(latest["properties"]) == {"project_display_name", "tool", "operation"}
+    # Every key optional: the projection of a detail carrying none of them is {}.
+    assert "required" not in latest
+
+
+def test_c6_only_recent_is_capped(c6: dict) -> None:
+    """C6 §2.3 / spec §7.1 — ``maxItems: 20`` sits on ``recent`` ALONE; running
+    and parked are complete lists."""
+    activity = c6["components"]["schemas"]["ActivityResponse"]["properties"]
+
+    assert activity["recent"]["maxItems"] == RECENT_CAP == 20
+    assert "maxItems" not in activity["running"]
+    assert "maxItems" not in activity["parked"]
+
+
+def test_c6_task_detail_and_activity_item_compose_on_task(c6: dict) -> None:
+    """C6 §2.2/§2.3 — both are ``allOf: [Task, …]``, so the thirteen
+    always-present Task keys cannot drift apart between the three views."""
+    schemas = c6["components"]["schemas"]
+
+    assert len(schemas["Task"]["required"]) == 13
+    for name, added in (
+        ("TaskDetail", {"status_events"}),
+        ("ActivityItem", {"latest_stage", "latest_stage_at", "latest_detail"}),
+    ):
+        members = schemas[name]["allOf"]
+        assert members[0]["$ref"] == "#/components/schemas/Task"
+        assert set(members[1]["required"]) == added
+
+
+def test_c6_audit_turn_detail_allows_a_null_approval_events(c6: dict) -> None:
+    """C6 §2.4 — ``approval_events`` is NULL (not an empty array) when the turn
+    had no approval episode; the view renders its second segment only when the
+    key is non-null, so the null must be expressible."""
+    schema = c6["components"]["schemas"]["AuditTurnDetail"]["properties"][
+        "approval_events"
+    ]
+
+    assert {"type": "null"} in schema["oneOf"]
+    assert set(c6["components"]["schemas"]["AuditTurnDetail"]["required"]) == {
+        "events",
+        "approval_events",
+    }
+    assert len(c6["components"]["schemas"]["AuditEvent"]["required"]) == 7

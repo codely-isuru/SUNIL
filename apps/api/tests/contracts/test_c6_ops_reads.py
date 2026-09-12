@@ -625,9 +625,15 @@ async def test_c6_5_the_projection_passes_all_three_contracted_keys(
 ) -> None:
     """The complement of the leak probe: a row carrying all three contracted
     keys (plus an untrusted excerpt) projects all three and drops the
-    excerpt — the filter is a key allow-list, not a "first key wins"."""
+    excerpt — the filter is a key allow-list, not a "first key wins".
+
+    Probed on the PARKED row: its latest audit row is the continuation's
+    ``tool_result``, which carries all three contracted keys beside the lineage
+    key and an untrusted excerpt. (It cannot be probed on ``task-12``: the
+    fixture seeds 21 newer terminal tasks, so the §2.3 cap of 20 removes
+    ``task-12`` from ``recent`` — as the cap test above proves.)"""
     snapshot = await store.activity()
-    row = {item["id"]: item for item in snapshot["recent"]}["task-12"]
+    row = {item["id"]: item for item in snapshot["parked"]}["task-5"]
 
     assert row["latest_detail"] == {
         "project_display_name": "SUNIL",
@@ -1282,9 +1288,14 @@ async def test_c6_10_no_surface_escapes_encodes_or_strips_anything(
     (HTML entity encoding, backslash escaping, tag stripping) has happened."""
     blob = json.dumps(await surfaces(store), ensure_ascii=False, sort_keys=True)
 
-    assert UNTRUSTED_OBJECTIVE in blob
-    assert UNTRUSTED_SUMMARY in blob
-    assert UNTRUSTED_EXCERPT in blob
+    # Compared in their JSON-ENCODED form. A `"` inside a JSON string is escaped
+    # by the SYNTAX of JSON — every conformant encoder does it and every parser
+    # undoes it, so it is not a transform of the value. The transforms this test
+    # exists to catch are not syntax: HTML entity encoding, \uXXXX escaping of
+    # printable characters (ruled out by ensure_ascii=False), and tag stripping.
+    # None of them survives either the comparison here or the sweep below.
+    for raw in (UNTRUSTED_OBJECTIVE, UNTRUSTED_SUMMARY, UNTRUSTED_EXCERPT):
+        assert json.dumps(raw, ensure_ascii=False)[1:-1] in blob
     for forbidden in ("&lt;", "&gt;", "&amp;", "&quot;", "&#", "\\u003c", "[removed]"):
         assert forbidden not in blob, f"a surface encoded the payload ({forbidden})"
 
