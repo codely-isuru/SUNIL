@@ -109,14 +109,27 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
             turn_deadline_s=settings.sunil_turn_deadline_s,
         )
 
+    sweeper = _build_sweeper(approvals, settings, logger)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for adapter in seams.tool_adapters:
             await adapter.start()
+        if sweeper is not None:
+            # Before the first request is served: `start()` awaits C4 §3 /
+            # ADR-031's one-shot reconciliation, and a failure there is NOT
+            # swallowed (see sweeper.py) — an API that booted having silently
+            # skipped it would leave interrupted continuations looking runnable.
+            await sweeper.start()
         logger.info("app_started", lane=settings.sunil_llm_provider_lane)
         try:
             yield
         finally:
+            # Stopped FIRST, and before the engine is disposed: a sweep tick
+            # holding a connection into `engine.dispose()` is a shutdown that
+            # logs an error on every restart.
+            if sweeper is not None:
+                await sweeper.stop()
             for adapter in seams.tool_adapters:
                 await adapter.stop()
             if engine is not None:
@@ -142,6 +155,7 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     app.state.catalogue = catalogue
     app.state.conversation_resolver = conversation_resolver
     app.state.turn_executor = turn_executor
+    app.state.approvals_sweeper = sweeper
     app.state.logger = logger
 
     # The three names Stream D's routers read off app state. They are set here,
@@ -182,6 +196,42 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
         _mount(app, factory())
 
     return app
+
+
+def _build_sweeper(approvals: Any, settings: Settings, logger: Any) -> ApprovalSweeper | None:
+    """C4 §1's schedule, or `None` with a reason.
+
+    Stream D built the runner and left the wiring as the seam
+    (`docs/tasks/S-D-approvals.md` §5); this is that seam, closed.
+
+    Two ways to get `None`, and they are not the same thing, so they are not
+    logged the same way:
+
+    * the operator turned it off — an informational line, the switch worked;
+    * the resolved C4 seam has no schedule (C4 §6's fake has `sweep(now)` and no
+      `reconcile_on_startup`) — a WARNING, because "no sweeper" is a real
+      degradation of C4 §1 whenever the service could have had one, and a silent
+      `None` is how a deployment discovers it from an expired approval that was
+      still spendable.
+
+    Not a boot failure: refusing to start would make every test and every
+    in-memory deployment that legitimately has nothing to sweep unbootable, and
+    `wiring.py` already fails closed on the seam that actually matters (an
+    unbuilt implementation). This is a schedule over a wired service, not a
+    missing contract.
+    """
+    if not settings.sunil_approvals_sweeper_enabled:
+        logger.info("approvals_sweeper_disabled", reason="SUNIL_APPROVALS_SWEEPER_ENABLED")
+        return None
+    if not hasattr(approvals, "reconcile_on_startup"):
+        logger.warning(
+            "approvals_sweeper_unavailable",
+            reason="the resolved C4 service has no reconcile_on_startup()",
+            service=type(approvals).__name__,
+            consequence="C4 §1's startup + 60 s schedule does not run in this process",
+        )
+        return None
+    return ApprovalSweeper(approvals)
 
 
 def _mount(app: FastAPI, router: Any) -> None:

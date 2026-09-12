@@ -219,6 +219,17 @@ class Settings(BaseSettings):
     sunil_approval_notify_webhook_url: str | None = Field(
         default=None, description="Unset = webhook off; dashboard polling is the notify path."
     )
+    # Defaults ON, and deliberately: the safe posture is the one an operator gets
+    # by doing nothing. ARCHITECTURE_V2 §8 says a missed sweep is covered by lazy
+    # expiry at read/decide — but lazy expiry only reaches rows somebody reads, so
+    # an `approved` row past its grace window that nobody touches again stays
+    # spendable (the hole the 2026-09-10 security review's item 1 closed). The
+    # switch exists for the operator cases that are real — a second process owning
+    # the schedule, or a sweep implicated in an incident — not as a default.
+    sunil_approvals_sweeper_enabled: bool = Field(
+        default=True,
+        description="Run C4 §1's approvals sweep (startup + every 60 s) in this process.",
+    )
 
     # -- machine lane (§5, ADR-035) ------------------------------------------- #
     # Unset = the machine lane is OFF. That is the fail-closed application

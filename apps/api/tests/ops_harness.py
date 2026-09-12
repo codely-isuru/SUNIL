@@ -54,10 +54,12 @@ C6_PATHS = [
 ]
 
 
-def build_ops_app(*, service_token: str | None = None, **overrides):
+def build_ops_app(*, service_token: str | None = None, approvals=None, **overrides):
     """The real `create_app` with the frozen fakes wired. Returns `(app, sessionmaker)`.
 
     Synchronous, so the request-free route-table walks can use it too.
+    `approvals` replaces C4 §6's fake for the tests that need a service with a
+    schedule; every other keyword is a `Settings` field.
     """
     from sunil.api.wiring import Seams
     from sunil.db.base import Base
@@ -92,7 +94,7 @@ def build_ops_app(*, service_token: str | None = None, **overrides):
             sessionmaker=sessionmaker,
             provider=FakeProvider(),
             memory_provider=FakeMemoryProvider(),
-            approvals=FakeApprovalsService(),
+            approvals=approvals if approvals is not None else FakeApprovalsService(),
             # Never reached by an ops read; present because a `fake` seam
             # selection must be injected rather than defaulted (wiring.py rule 1).
             tool_manager=lambda audit_hook: None,
