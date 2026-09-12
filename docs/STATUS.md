@@ -27,6 +27,15 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**⏸ PAUSED BY OWNER — 2026-09-11.** All five running wave-1 lanes stopped mid-task; every
+worktree wip-committed and pushed (nothing lost, nothing merged, nothing reviewed). Resume map:
+S-A-tools ✅ DONE (held for wave review) · S-spine ~60% (3 commits + wip: conversations/tasks/
+memory-service/audit-hooks were in progress) · S-B-gateway wip only (was on the live LiteLLM
+401 probe) · S-D-approvals wip only (C6 landed after its start; sweeper module in progress) ·
+S-D-web 3 commits + wip (render smoke tests pending) · S-C6-fakes wip (mid-TDD red phase).
+To resume: re-dispatch each unfinished lane with "continue from the wip commit on your branch —
+read your task file and git log first." Portal Team 21 session stays live (heartbeat only).
+
 **GATE 2 APPROVED — owner, 2026-09-11. Designs approved (round 4). PHASE 1 STREAMS LAUNCHED.**
 Owner rulings recorded: Q1 = FREEZE spec (13)'s three read-only ops endpoints (dashboard consumes
 them; SA formalising as contract addendum); Q4 risk labels = deferred to Phase 2 backlog; Q8 =
