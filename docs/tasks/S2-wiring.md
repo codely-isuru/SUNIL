@@ -166,3 +166,19 @@ live-gateway checks. No lint/type tooling is declared in `apps/api/pyproject.tom
 4. **Owed, same wave (R7.2):** reconciliation rule 4 in `DatabaseApprovalsService.reconcile_on_startup`
    (`refused`/`expired` + unfinalised task → finalise, + report bucket + test). Named by the ruling as
    a same-wave follow-up; not landed in this round.
+5. **DEFECT the evidence run surfaced — a parked turn's envelope carries NO approval id under real
+   wiring.** `agents/project_manager/agent.py:182` reads `approval_id` / `expires_at` out of
+   `tool_result.data`, and the REAL `ToolManager` returns `data=None` on every error result
+   (`manager.py::_error`) — `approval_required` included. The integration double disagrees:
+   `tests/integration/tool_manager_double.py:147` returns
+   `data={"approval_id": …, "expires_at": …}` on its park path, which is why every integration test
+   is green while the shipped behaviour is not. Observed live in this round's run: the
+   `final_response` stage detail read `{"outcome": "parked", "approval": "none"}` and C5's
+   `TurnApproval.approval_id` is therefore `""` — the dashboard cannot link a parked turn to the
+   approval the owner must decide. **Not fixed here**, because the two candidate fixes are not both
+   this lane's to choose: (a) the chokepoint returns `data` on an `approval_required` result — a
+   change to C1's observable result shape, needing a contract reading of "data is null on an error
+   result"; (b) the turn takes the approval ref from the **audited attempt row**, the mechanism the
+   spine already uses for the permission decision ("from the audited record rather than from a value
+   the agent passed around" — `core/audit/hooks.py`), which needs no contract movement and looks
+   right. Raised for the architect + spine lane with the evidence above.
