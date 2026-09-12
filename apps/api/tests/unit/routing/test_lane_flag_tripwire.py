@@ -134,7 +134,19 @@ def test_no_routing_module_imports_a_lane_reader() -> None:
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
+                # The MODULE plus each imported name (security residual R-6a).
+                # Matching `node.module` alone is dodged by `from sunil import
+                # settings`: the module is `sunil`, which is on nobody's
+                # forbidden list, while the bound name is the lane-carrying
+                # module itself — `settings.sunil_llm_provider_lane` from there,
+                # layer 2 clean, tripwire green. Both forms are checked because
+                # `from sunil.providers import registry` needs the join and
+                # `from sunil.settings import Settings` needs the module.
                 names = [node.module or ""]
+                names += [
+                    f"{node.module}.{alias.name}" if node.module else alias.name
+                    for alias in node.names
+                ]
             else:
                 continue
             for name in names:

@@ -27,7 +27,17 @@ Wave 1 shipped every implementation and wired none of them: `resolve_*('real')` 
 every skip is a startup **WARNING** naming the tool and the reason. A missing `GITHUB_TOKEN` must
 not take the assistant down — it takes the GitHub tools out of the catalogue, which is the honest
 consequence and the safe one (unplannable at layer 4, `unknown_operation` at the chokepoint).
-A failed `start()` in the lifespan is the same class of event and gets the same treatment.
+
+A failed `start()` in the **lifespan** is a different outcome, and this section previously
+overstated it (security residual D-1, corrected 2026-09-12 — the doc moves, the behaviour stays).
+A BUILD failure happens before the registry exists, so the tool is genuinely absent. A lifespan
+`start()` failure happens after it: the adapter is already in `registry.adapters` and in the
+catalogue the planner reads, so the tool stays **present with a dead transport** — plannable, and
+failing at the chokepoint as `transport_error`, not `unknown_operation`. `main.py`'s own warning
+says exactly that (`consequence="the tool is present in the catalogue but its transport is down;
+calls will fail as transport_error"`). What the two cases genuinely share is the property that
+mattered: neither takes the app down. An MCP server that is not running must not stop the owner
+talking to SUNIL.
 
 `config/projects.yaml` gained `repo: owner/name` (and `ProjectDefinition.repo`): the native GitHub
 tool's project→repository mapping. It is config and never a plan parameter — `list_recent_activity`'s

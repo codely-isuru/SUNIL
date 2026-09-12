@@ -143,11 +143,15 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         started_adapters: list[Any] = []
         for adapter in adapters:
-            # C1 §5 / S-A-tools §4: a failed start leaves the tool OUT of the
-            # registry rather than taking the app down — an MCP server that is
-            # not running must not stop the owner talking to SUNIL. The tool is
-            # already unreachable through the chokepoint (its handler cannot
-            # complete a call it never connected for); this line is what says so.
+            # C1 §5 / S-A-tools §4: a failed start does not take the app down —
+            # an MCP server that is not running must not stop the owner talking
+            # to SUNIL.
+            #
+            # Precisely (security residual D-1): this is NOT the build-time
+            # "absent from the registry" case. The registry already exists by
+            # now, so the tool remains PRESENT and plannable and its calls fail
+            # at the chokepoint as `transport_error` — which is what the warning
+            # below states, and what this comment used to contradict.
             try:
                 await adapter.start()
                 started_adapters.append(adapter)
