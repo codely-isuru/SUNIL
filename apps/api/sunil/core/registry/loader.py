@@ -46,6 +46,12 @@ class ProjectDefinition:
     key: str
     display_name: str
     description: str = ""
+    #: `owner/name` of the repository this project's GitHub tool reads, or None.
+    #: Configuration, never a plan parameter: the native tool's ONLY parameter is
+    #: `project_key` precisely so a plan cannot choose which repository SUNIL
+    #: touches (M1's T-16 rule, ported with the adapter). A project without one
+    #: simply has no GitHub reach.
+    repo: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,9 +126,15 @@ def _load_projects(path: Path) -> dict[str, ProjectDefinition]:
         body = body or {}
         if not isinstance(body, dict):
             raise RegistryError(f"{path.name}: project {key!r} must be a mapping")
+        repo = body.get("repo")
+        if repo is not None and (not isinstance(repo, str) or "/" not in repo):
+            raise RegistryError(
+                f"{path.name}: project {key!r} `repo:` must be 'owner/name' — got {repo!r}"
+            )
         projects[key] = ProjectDefinition(
             key=key,
             display_name=str(body.get("display_name", key)),
             description=str(body.get("description", "")),
+            repo=repo,
         )
     return projects

@@ -79,12 +79,40 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
         engine = get_engine(settings)
         sessionmaker = get_sessionmaker(engine)
 
+    # The engine the C4 service, the ops reads and the chokepoint's audit hook
+    # must all share. Derived from an injected sessionmaker when a test supplied
+    # one, so "the queue reads what the chokepoint wrote" holds in both shapes.
+    read_engine = engine if engine is not None else sessionmaker.kw.get("bind")
+
     provider = wiring.resolve_provider(settings, seams)
     memory_provider = wiring.resolve_memory_provider(settings, seams)
-    approvals = wiring.resolve_approvals(settings, seams)
-    tool_manager = wiring.resolve_tool_manager(settings, seams)
+    approvals = wiring.resolve_approvals(settings, seams, engine=read_engine)
 
-    catalogue = ToolCatalogue.from_adapters(seams.tool_adapters)
+    # The tool registry is built ONCE, here: the plan catalogue the model is
+    # offered and the adapters the chokepoint can reach must be the same set, or
+    # the model is offered a tool that cannot execute (or the reverse — a tool
+    # nothing can plan). An injected `tool_adapters` wins, because a test that
+    # injects adapters is describing the whole registry.
+    tool_registry = None
+    adapters: tuple[Any, ...] = seams.tool_adapters
+    if settings.sunil_tool_manager != "fake" and seams.tool_manager is None:
+        tool_registry = wiring.build_tool_registry(settings)
+        if not adapters:
+            adapters = tool_registry.adapters
+    tool_manager = wiring.resolve_tool_manager(
+        settings,
+        seams,
+        approvals=approvals,
+        sessionmaker=sessionmaker,
+        registry=tool_registry,
+    )
+
+    catalogue = ToolCatalogue.from_adapters(adapters)
+    # Wave-1 ruling R1's follow-up: a grant naming a tool this process did not
+    # wire can never be planned, and says so at boot rather than at request time.
+    wiring.warn_on_ungrantable_catalogue(
+        registries, catalogue_tools={adapter.name for adapter in adapters}
+    )
 
     conversation_resolver = (
         seams.conversation_resolver
@@ -113,8 +141,29 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        for adapter in seams.tool_adapters:
-            await adapter.start()
+        started_adapters: list[Any] = []
+        for adapter in adapters:
+            # C1 §5 / S-A-tools §4: a failed start leaves the tool OUT of the
+            # registry rather than taking the app down — an MCP server that is
+            # not running must not stop the owner talking to SUNIL. The tool is
+            # already unreachable through the chokepoint (its handler cannot
+            # complete a call it never connected for); this line is what says so.
+            try:
+                await adapter.start()
+                started_adapters.append(adapter)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "tool_start_failed",
+                    tool=getattr(adapter, "name", "?"),
+                    error=type(exc).__name__,
+                    consequence="the tool is present in the catalogue but its "
+                    "transport is down; calls will fail as transport_error",
+                )
+        # C2 §3's model-parity check, when the wired provider has one: a drifted
+        # gateway alias namespace is a boot failure, never a 400 mid-turn.
+        provider_start = getattr(provider, "start", None)
+        if callable(provider_start):
+            await provider_start()
         if sweeper is not None:
             # Before the first request is served: `start()` awaits C4 §3 /
             # ADR-031's one-shot reconciliation, and a failure there is NOT
@@ -130,8 +179,11 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
             # logs an error on every restart.
             if sweeper is not None:
                 await sweeper.stop()
-            for adapter in seams.tool_adapters:
+            for adapter in started_adapters:
                 await adapter.stop()
+            provider_close = getattr(provider, "aclose", None)
+            if callable(provider_close):
+                await provider_close()
             if engine is not None:
                 await engine.dispose()
 
@@ -153,6 +205,7 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     app.state.approvals = approvals
     app.state.tool_manager = tool_manager
     app.state.catalogue = catalogue
+    app.state.tool_adapters = adapters
     app.state.conversation_resolver = conversation_resolver
     app.state.turn_executor = turn_executor
     app.state.approvals_sweeper = sweeper
@@ -171,7 +224,7 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     #     comparison when this is unset. Unset is not lenient, it is absent: the
     #     ADR-008 CSRF pair would silently be down to one header.
     app.state.approvals_service = approvals
-    app.state.ops_engine = engine if engine is not None else sessionmaker.kw.get("bind")
+    app.state.ops_engine = read_engine
     app.state.web_origin = settings.web_origin
 
     install_middleware(app, settings)

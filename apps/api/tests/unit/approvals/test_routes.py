@@ -347,8 +347,11 @@ async def test_an_unknown_cursor_is_422_not_page_one(client, app_and_service) ->
         ({}, 403),  # no client header at all
         ({CLIENT_HEADER: "curl"}, 403),  # wrong value
         ({CLIENT_HEADER: CLIENT_VALUE, "Origin": "http://evil.example"}, 403),
+        # ADR-008 Amendment 1 (wave-1 ruling R3): an ABSENT `Origin` is a
+        # mismatch, not a tolerated omission.
+        ({CLIENT_HEADER: CLIENT_VALUE}, 403),
     ],
-    ids=["no-header", "wrong-header", "wrong-origin"],
+    ids=["no-header", "wrong-header", "wrong-origin", "absent-origin"],
 )
 async def test_the_client_header_and_origin_gate_every_route(
     client, headers: dict, expected: int
@@ -361,6 +364,27 @@ async def test_the_client_header_and_origin_gate_every_route(
         response = await client.get(path, headers=headers)
         assert response.status_code == expected
         assert response.json()["error"]["kind"] == "forbidden_client"
+
+
+async def test_an_unset_web_origin_refuses_rather_than_waiving_the_comparison(
+    client, app_and_service
+) -> None:
+    """ADR-008 Amendment 1 rule 2 — the comparison must not soft-skip on unset
+    state. `web_origin` is required wiring, not an optional attribute: an app
+    that never set it serves a locked door, not the CSRF pair with one control
+    silently removed (integration-w1 §2.2 gap 3, demonstrated once already).
+
+    Driven through the route rather than the function, because the failure this
+    prevents is a deployment one: the `getattr(..., None)` default made a wiring
+    omission indistinguishable from a policy decision.
+    """
+    app = app_and_service[0]
+    del app.state.web_origin
+
+    response = await client.get("/api/v1/approvals", headers=AUTH)
+
+    assert response.status_code == 403
+    assert response.json()["error"]["kind"] == "forbidden_client"
 
 
 async def test_no_owner_session_is_401(client, app_and_service) -> None:
