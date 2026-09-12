@@ -398,7 +398,10 @@ services:
   #     # A per-agent VIRTUAL key, never LITELLM_MASTER_KEY: the master key is
   #     # the proxy's admin credential (it can mint keys and read all spend).
   #     LITELLM_VIRTUAL_KEY_DEFAULT: ${LITELLM_VIRTUAL_KEY_DEFAULT:?set in .env}
-  #     SUNIL_N8N_MCP_BASE_URL: http://n8n:5678/mcp
+  #     # `/mcp/sunil`, not `/mcp`: the trailing segment is the MCP Server
+  #     # Trigger workflow's own path. `/mcp` is n8n's prefix and answers 404
+  #     # (docs/tasks/S2-E-n8n.md §3, verified against the live 2.38.5 server).
+  #     SUNIL_N8N_MCP_BASE_URL: http://n8n:5678/mcp/sunil
   #     SUNIL_N8N_MCP_AUTH_TOKEN: ${SUNIL_N8N_MCP_AUTH_TOKEN:?set in .env}
   #     SUNIL_APPROVAL_TTL_HOURS: ${SUNIL_APPROVAL_TTL_HOURS:-72}
   #     SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL: ${SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL:-}
