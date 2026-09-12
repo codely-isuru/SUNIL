@@ -33,12 +33,12 @@ adds the attempt row to that transaction.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import asyncio
+import sys
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from sunil.core.approvals.table import approvals_table
 from sunil.core.audit.hooks import DbToolAuditHook
@@ -60,6 +60,24 @@ from tests.unit.approvals import factory
 TRACE = TraceContext(request_id="req-1", task_id="task-1", conversation_id="conv-1")
 PARK = ParkContext(summary="fake_tool.write_item requires approval", continuation={"cursor": 1})
 AGENT = "project_manager"
+
+
+@pytest.fixture(scope="session")
+def event_loop_policy():
+    """The same Windows policy `tests/unit/approvals/conftest.py` explains at
+    length: psycopg 3's async mode refuses the default `ProactorEventLoop`, so
+    the Postgres leg of an engine-parametrised test errors out without it — and a
+    suite that is green on SQLite alone is green against nothing for a property
+    about transactions.
+
+    Declared on this MODULE rather than in a package conftest because the
+    neighbouring `tests/unit/tools/` suites spawn MCP stdio children, and a
+    selector loop cannot `subprocess_exec` on Windows. Same trade-off, same
+    scoping rule, one directory deeper.
+    """
+    if sys.platform == "win32":
+        return asyncio.WindowsSelectorEventLoopPolicy()
+    return asyncio.get_event_loop_policy()
 
 
 class AuditWriteFailed(RuntimeError):
