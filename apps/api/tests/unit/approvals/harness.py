@@ -60,7 +60,8 @@ class FakeHarness:
         decision: Literal["approve", "refuse"],
         reason: str | None = None,
     ) -> Approval | StateConflict | None:
-        return self.service.decide(approval_id, decision, reason, self.clock.now())
+        # R7.1 atomic set (C4 v1.2.0): the service owns time; decide is awaitable.
+        return await self.service.decide(approval_id, decision, reason)
 
     async def consume(
         self, approval_id: str, *, binding: ApprovalBinding
