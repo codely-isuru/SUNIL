@@ -1,9 +1,10 @@
 """``FakeApprovalsService`` — C4 §6's fake specification, verbatim.
 
-Source of truth: ``docs/contracts/C4-approvals.md`` §6 (**v1.1.0**, FROZEN
-2026-09-10). This module is THE approvals fake for every stream: C1 §6's table
-points at it ("C4 §6's spec verbatim, no C1-specific variant") and Stream D
-builds the dashboard against it (§6: "provides the HTTP layer's store").
+Source of truth: ``docs/contracts/C4-approvals.md`` §6 (**v1.2.0**, FROZEN
+2026-09-10, last ruling 2026-09-12). This module is THE approvals fake for every
+stream: C1 §6's table points at it ("C4 §6's spec verbatim, no C1-specific
+variant") and Stream D builds the dashboard against it (§6: "provides the HTTP
+layer's store").
 
 It implements the ``ApprovalsService`` protocol (``park`` / ``consume``, C4 §4)
 and adds the three fake-only helpers the HTTP layer and the sweeper need
@@ -12,16 +13,22 @@ and adds the three fake-only helpers the HTTP layer and the sweeper need
 Deliberate design notes where the contract is silent (each recorded as a finding
 in ``docs/tasks/P0-fakes.md``):
 
-* ``decide`` and ``sweep`` are declared in §6 with positional signatures and no
-  ``async`` marker (C1 §6.4 test 5 calls ``fake_approvals.decide(approval_id,
-  "approve", None, now)``), so they are synchronous. Only the two protocol
-  methods are ``async``.
-* ``decide`` returns ``Approval | StateConflict | None``. This was a QA
-  judgment call in the fakes-build round; **C4 v1.0.1 §6.2 blessed it as
-  normative for the real service layer too**, so it is no longer an assumption:
-  unknown id → ``None`` → the HTTP layer's 404 (§5), ``StateConflict`` → 409,
-  and ``decide`` never raises for absence or conflict — status-code mapping
-  lives in the HTTP layer and nowhere else.
+* ``sweep`` is declared in §6 with a positional signature and no ``async``
+  marker, so it is synchronous, and its ``now`` stays a parameter: C4 §6's
+  clock-ownership paragraph names ``sweep(now)`` as the deliberate non-exception
+  — a scheduling/test affordance supplied by an in-process actor (the sweeper
+  loop, a test), never by an HTTP caller.
+* ``decide`` is ``async def decide(approval_id, decision, reason=None)`` and
+  reads this service's OWN injected clock — C4 §6.2 as ruled in **v1.2.0**
+  (ruling R7, ``docs/tasks/integration-w1-rulings.md``), which supersedes
+  v1.0.1's blessing of the synchronous caller-supplied-``now`` shape; see §6's
+  clock-ownership paragraph (one clock per service, injected at construction; no
+  HTTP caller supplies time, and one it invented would re-author the very
+  ``expires_at > now`` guard the decide CAS exists to enforce). The return shape
+  is unchanged and normative for the real service layer too: unknown id →
+  ``None`` → the HTTP layer's 404 (§5), ``StateConflict`` → 409, and ``decide``
+  never raises for absence or conflict — status-code mapping lives in the HTTP
+  layer and nowhere else.
 * ``consume`` reads the injected clock, because C4 §4's frozen signature carries
   no ``now`` parameter — the real service reads the database clock in the same
   place.
@@ -147,23 +154,25 @@ class FakeApprovalsService:
         return ConsumeResult(ok=True, reason="consumed")
 
     # -- C4 §6 fake-only helpers (the HTTP layer + sweeper) ---------------- #
-    def decide(
+    async def decide(
         self,
         approval_id: str,
         decision: Literal["approve", "refuse"],
-        reason: str | None,
-        now,
+        reason: str | None = None,
     ) -> Approval | StateConflict | None:
-        """C4 §6.2 — ``pending`` + ``now < expires_at`` → transition, set
-        ``decided_at=now``, ``decided_by="owner"``, return the row. ``pending`` +
-        ``now >= expires_at`` → transition to ``expired`` first, then return
-        ``state_conflict(current_status="expired")``. Any other status →
+        """C4 §6.2 (v1.2.0, ruling R7) — awaitable; the service reads its OWN
+        injected clock, so ``now`` is no longer a parameter (clock ownership,
+        C4 §6). ``pending`` + clock < ``expires_at`` → transition, set
+        ``decided_at`` from the clock, ``decided_by="owner"``, return the row.
+        ``pending`` + clock >= ``expires_at`` → transition to ``expired`` first,
+        then ``state_conflict(current_status="expired")``. Any other status →
         ``state_conflict`` with it. Unknown id → ``None`` (HTTP 404)."""
         row = self.approvals.get(approval_id)
         if row is None:
             return None
 
         if row.status == ApprovalStatus.PENDING:
+            now = self.clock.now()
             if now >= from_iso(row.expires_at):
                 row.status = ApprovalStatus.EXPIRED
                 return self._conflict(row)
