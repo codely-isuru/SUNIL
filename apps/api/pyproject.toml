@@ -10,7 +10,9 @@ description = "SUNIL V2 API — Phase 0 frozen contract interfaces (C1–C4) and
 # The Phase 0 toolchain and CI both run 3.13 (see .github/workflows/tests.yml);
 # the floor is left at the contract's value so no stream is blocked by QA.
 requires-python = ">=3.12"
-# Runtime dependencies. Phase 0 carried only pydantic (the frozen contract
+# Runtime dependencies. (integration-w1 union: spine list + Stream B's httpx —
+# pyyaml was declared by both; test_runtime_dependencies.py enforces closure.)
+# Original spine rationale: Phase 0 carried only pydantic (the frozen contract
 # models); Phase 2's spine adds exactly what ARCHITECTURE_V2 §1/§5 name:
 #   fastapi/uvicorn      — the app and its dev server (§1)
 #   pydantic-settings    — settings.py, the single env seam (§2)
@@ -30,6 +32,7 @@ requires-python = ">=3.12"
 dependencies = [
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.5,<3",
+  "httpx>=0.27,<1",
   "fastapi>=0.115",
   "uvicorn>=0.30",
   "sqlalchemy[asyncio]>=2.0.36,<3",
