@@ -1,0 +1,35 @@
+---
+# The permission matrix: agent x tool x operation -> allow | ask_user | deny.
+#
+# `apps/api/sunil/core/permissions/engine.py` is the decision function; this
+# file is only the data it reads. A missing entry is DENY *structurally* —
+# enforced by the engine's control flow, never by anything in this file, so no
+# edit here can turn an absent grant into an allow (C1 §2.2).
+#
+# ADR-034: one MCP **server** is one **tool** here (its `config/tools.yaml`
+# key); one MCP **tool** is one **operation** under it. A server advertising a
+# new tool does NOT gain a grant — new operations arrive by a reviewed change to
+# this file. Server self-description (`readOnlyHint` and friends) never
+# participates in the decision.
+#
+# Startup cross-validates every agent named here against config/agents.yaml and
+# every tool/operation against config/tools.yaml, and refuses to boot on a
+# mismatch.
+version: 1
+
+agents:
+  project_manager:
+    # Native read-only tool (the M1-proven GitHub tool, ported).
+    github:
+      list_recent_activity: allow
+
+    # MCP over stdio. `issues_close` WRITES to a third party, so it is
+    # `ask_user`: the call parks via C4 and executes only after the owner
+    # approves it (ARCHITECTURE_V2 §6's worked example).
+    github_mcp:
+      issues_list: allow
+      issues_close: ask_user
+
+    # MCP over streamable HTTP (the n8n MCP server, Stream E).
+    n8n_mcp:
+      run_workflow: ask_user
