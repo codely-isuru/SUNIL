@@ -1,11 +1,20 @@
 """ORM models — the V2 spine's tables, Alembic revision `0001_spine`.
 
 `users, conversations, messages, tasks, task_status_events, plans, llm_calls,
-tool_calls, approvals, audit_events`. Ten tables: everything a governed turn
-writes and nothing a stream has not started yet (Stream C's entity/memory tables
-and Stream E's workflow tables arrive with their own migrations).
+tool_calls, audit_events`. Nine tables: everything a governed turn writes and
+nothing a stream has not started yet (Stream C's entity/memory tables and Stream
+E's workflow tables arrive with their own migrations).
 
-Shapes are taken from three frozen sources, not invented:
+**`approvals` is deliberately not here** (wave-1 ruling R2, applied in the wave-2
+wiring round). Its one true declaration is `core/approvals/table.py` on the
+private `APPROVALS_METADATA`, created and altered by Stream D's hand-written
+revisions. The ORM class this module used to carry declared VARCHAR timestamps
+and one index while the deployed table has TIMESTAMPTZ and four — so it was the
+only `approvals` autogenerate could see, and it disagreed with every deployment.
+`db/autogenerate.py` fences the name out of the comparison on both sides, which
+is what makes this absence safe rather than a pending `op.drop_table`.
+
+Shapes are taken from two frozen sources, not invented:
 
 * `audit_events` — the spine ROADMAP §28 is graded against, with
   `UniqueConstraint(request_id, seq)` and a CHECK over `TraceStage`. It carries
@@ -15,11 +24,6 @@ Shapes are taken from three frozen sources, not invented:
   two-phase finalise fields. `adapter_kind`/`server_id` are nullable exactly
   where C1 says they may be `None` (step 1 exited before an adapter was
   resolved).
-* `approvals` — C4's persisted `Approval`, plus `continuation` (ADR-031's plan
-  cursor, persisted WITH the approval so a resume survives a restart) and the
-  `decision_reason`/`consumed_at` decision trail. `status` has **no default at
-  all**: rows are inserted with an explicit `pending`, so a creation path that
-  forgets the status fails loudly instead of minting a decided row.
 
 Every rule in `sunil.db.base` applies throughout: text ids, portable JSON, UTC
 timestamps, `String` + `StrEnum` + `CheckConstraint`, no server-side defaults, no
@@ -94,16 +98,11 @@ class ToolCallOutcome(StrEnum):
     NOT_EXECUTED = "not_executed"  # the pipeline exited before the adapter ran
 
 
-class ApprovalStatusValue(StrEnum):
-    """C4's five lifecycle values, mirrored by value (same import-law reason as
-    `PermissionDecisionValue`). `tests/contracts/test_openapi_contracts.py`
-    pins these against `core.approvals.base.ApprovalStatus`."""
-
-    PENDING = "pending"
-    APPROVED = "approved"
-    REFUSED = "refused"
-    EXPIRED = "expired"
-    CONSUMED = "consumed"
+# `ApprovalStatusValue` lived here as the CHECK-constraint vocabulary of the
+# deleted ORM `Approval` (wave-1 ruling R2). It went with it: the deployed
+# table's constraint is written in `core/approvals/table.py`, and a second copy
+# of a lifecycle enum in a module that no longer declares the table is the drift
+# generator R2 removed, one layer down.
 
 
 class LLMPurpose(StrEnum):
@@ -321,47 +320,6 @@ class ToolCall(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_TIMESTAMP, nullable=False, default=utc_now)
     finalised_at: Mapped[datetime | None] = mapped_column(_TZ_TIMESTAMP, nullable=True)
-
-
-class Approval(Base):
-    """C4's persisted approval. Timestamps are ISO-8601 STRINGS here, not
-    `DateTime`, because C4's wire model types them as strings and this row is
-    returned nearly verbatim by Stream D's read routes — one representation, no
-    format drift between the CAS bound (`decided_at` + grace) and the payload.
-
-    `status` deliberately has no default (see the module docstring)."""
-
-    __tablename__ = "approvals"
-    __table_args__ = (
-        enum_check_constraint("status", ApprovalStatusValue, name="ck_approvals_status"),
-        Index("ix_approvals_status_expires", "status", "expires_at"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)
-    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
-    expires_at: Mapped[str] = mapped_column(String(40), nullable=False)
-    agent_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    tool: Mapped[str] = mapped_column(String(100), nullable=False)
-    operation: Mapped[str] = mapped_column(String(100), nullable=False)
-    # sha256 hex of the canonical JSON of the VALIDATED params — the binding an
-    # approval authorises exactly one execution of (C4 §1).
-    args_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    params_redacted: Mapped[dict] = mapped_column(PortableJSON, nullable=False)
-    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    conversation_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    task_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    # Built by SUNIL code, never LLM output — but it EMBEDS attacker-influenceable
-    # values (repo names, issue titles), so the dashboard must render it as plain
-    # text only (C4 §4, Security review item 8).
-    summary: Mapped[str] = mapped_column(String(500), nullable=False)
-    # ADR-031: the opaque plan-cursor state the continuation resumes from. Never
-    # empty — C4 §4 enforces that at the model, C1's ParkContext at the caller.
-    continuation: Mapped[dict] = mapped_column(PortableJSON, nullable=False)
-    decided_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    decided_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    decision_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    consumed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class AuditEvent(Base):

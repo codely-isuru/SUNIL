@@ -1,10 +1,10 @@
 """``sunil.db`` — the schema rules that carry a security property.
 
 Not an ORM smoke test: every assertion below is a rule from ARCHITECTURE_V2 §1
-(one portable schema, Postgres deployed / SQLite for unit tests), C4's persisted
-`Approval` shape, or C1's `tool_calls` provenance requirement. The audit spine's
-uniqueness constraint and the approvals status column's *absent* default are the
-two that actually stop a class of bug.
+(one portable schema, Postgres deployed / SQLite for unit tests), C1's `tool_calls`
+provenance requirement, or the R2 rule that this module declares NO `approvals`
+table. The audit spine's uniqueness constraint is the one that actually stops a
+class of bug.
 """
 
 from __future__ import annotations
@@ -14,7 +14,8 @@ from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 
 from sunil.core.trace.stages import ALL_STAGES_IN_ORDER, TraceStage
-from sunil.db.models import Approval, AuditEvent, Conversation, ToolCall
+from sunil.db import models
+from sunil.db.models import AuditEvent, Conversation, ToolCall
 
 
 async def test_audit_events_cannot_hold_two_rows_at_the_same_seq(session_factory) -> None:
@@ -68,38 +69,23 @@ async def test_audit_events_carry_no_capture_policy_columns(session_factory) -> 
     assert not columns & {"capture_policy", "training_eligible", "retention_class"}
 
 
-async def test_approvals_status_has_no_default_so_a_forgetful_insert_fails(
-    session_factory,
-) -> None:
-    """C4: rows are INSERTed with an EXPLICIT `pending`. A column default would
-    let a creation path that forgets the status mint a row that reads like a
-    decision nobody made (central-memory lesson 2026-08-17)."""
-    status = Approval.__table__.columns["status"]
+async def test_the_spine_declares_no_approvals_table_of_its_own(session_factory) -> None:
+    """Wave-1 ruling R2, re-pointed. This module used to assert C4's persisted
+    shape off `db/models.py::Approval` — a class whose VARCHAR timestamps and
+    single index contradicted every deployed database, so the tests passed
+    against a table no deployment has.
 
-    assert status.default is None and status.server_default is None
-    assert status.nullable is False
+    The true shape is pinned where the true declaration lives:
+    `tests/unit/approvals/test_migration_matches_table.py` (declaration vs
+    migration) and `tests/unit/approvals/test_real_service_contract.py` (C4 §6's
+    behaviours, including the explicit-`pending` insert and the status
+    transitions). What remains for THIS module is the absence itself, and the
+    fence that makes it safe — `tests/unit/test_alembic_autogenerate_fence.py`.
+    """
+    from sunil.db.base import Base
 
-
-async def test_approvals_status_is_constrained_to_c4s_five_values(session_factory) -> None:
-    async with session_factory() as session:
-        session.add(_approval(status="probably_fine"))
-        with pytest.raises(IntegrityError):
-            await session.commit()
-
-
-async def test_an_approval_round_trips_with_its_continuation_state(session_factory) -> None:
-    """C4 §1's restart safety: the continuation is persisted WITH the approval,
-    so a resume after a process restart has the plan cursor it needs."""
-    async with session_factory() as session:
-        session.add(_approval(status="pending"))
-        await session.commit()
-
-    async with session_factory() as session:
-        row = (await session.execute(select(Approval))).scalar_one()
-
-        assert row.status == "pending"
-        assert row.continuation == {"cursor": 1, "plan": {"steps": []}}
-        assert row.params_redacted == {"key": "demo"}
+    assert "approvals" not in Base.metadata.tables
+    assert not hasattr(models, "Approval")
 
 
 async def test_tool_calls_record_adapter_provenance_per_c1(session_factory) -> None:
@@ -126,22 +112,3 @@ async def test_conversations_record_the_creating_lanes_channel(session_factory) 
         session.add(Conversation(id="c-3", channel="telepathy", user_id=None))
         with pytest.raises(IntegrityError):
             await session.commit()
-
-
-def _approval(*, status: str) -> Approval:
-    return Approval(
-        id=f"apr-{status}",
-        status=status,
-        created_at="2026-09-11T00:00:00+00:00",
-        expires_at="2026-09-14T00:00:00+00:00",
-        agent_id="project_manager",
-        tool="fake_tool",
-        operation="write_item",
-        args_hash="deadbeef",
-        params_redacted={"key": "demo"},
-        request_id="req-1",
-        conversation_id="conv-1",
-        task_id="task-1",
-        summary="fake_tool.write_item requires approval",
-        continuation={"cursor": 1, "plan": {"steps": []}},
-    )

@@ -20,13 +20,15 @@ they answer identically under C4 §6's fake and under the real service; only the
 decision route — the one operation C4 §6.2 puts on the service layer
 normatively — talks to the seam.
 
-**Schema note (recorded as a finding in `docs/tasks/integration-w1.md` §8).**
-`db/models.py::Approval` still declares an `approvals` table with STRING
-timestamps while `core/approvals/table.py` — the only declaration any code
-writes through, and the one the migration chain creates — declares
-`TIMESTAMP WITH TIME ZONE`. A `Base.metadata.create_all` therefore builds a
-table no deployment has. This module creates the spine's tables MINUS
-`approvals`, plus Stream D's, which is the schema a migrated deployment runs.
+**Schema note — the workaround is gone (wave-1 ruling R2, applied in the wave-2
+wiring round).** This module used to create the spine's tables MINUS `approvals`
+because `db/models.py::Approval` declared the same table with STRING timestamps,
+so a plain `Base.metadata.create_all` built a table no deployment has. That false
+declaration has been deleted and `db/autogenerate.py` fences the name out of
+Alembic's comparison, so the spine's metadata and Stream D's
+`APPROVALS_METADATA` are now disjoint by construction: the full schema is built
+here, exactly as a migrated deployment runs it, and a filter that once hid a real
+disagreement no longer hides anything.
 """
 
 from __future__ import annotations
@@ -78,9 +80,11 @@ async def mounted(*, approvals_factory=None) -> AsyncIterator[tuple]:
 
     app, sessionmaker = build_ops_app(approvals_factory=approvals_factory)
     engine = sessionmaker.kw["bind"]
-    spine_tables = [t for t in Base.metadata.sorted_tables if t.name != "approvals"]
     async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all, tables=spine_tables)
+        # The whole deployed schema: the spine's metadata (which no longer
+        # declares `approvals` — R2) plus Stream D's, whose `approvals` is the
+        # one the migration chain creates.
+        await connection.run_sync(Base.metadata.create_all)
         await connection.run_sync(APPROVALS_METADATA.create_all)
 
     async with sessionmaker() as session:
