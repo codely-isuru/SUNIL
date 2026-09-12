@@ -231,3 +231,18 @@ unfinalised attempt row left behind.
 3. Deliberately untouched: C1 test 8 (missing/`None` → `TypeError` remains a distinct probe); C4
    contract test 8 (service-side model rejection remains); the `park_ctx` fixture (already valid,
    so no existing test breaks — consistent with the PATCH classification).
+
+## S0 ops-reads round (2026-09-11, branch `task/S0-ops-contracts`)
+
+Gate 2 approved; the owner ruled **Q1 = freeze** the three ops-read endpoints
+(`V2_DASHBOARD_SPEC.md` §14). Disposition:
+
+| Item | Disposition |
+|---|---|
+| Q1 — tasks/activity/audit HTTP contract | **Frozen — C6 v1.0.0** (`docs/contracts/C6-ops-reads.md` + `C6-ops-reads-openapi.yaml`, OpenAPI 3.1, yamllint clean vs `.yamllint.yml`, PyYAML parse clean, 43/43 `$ref`s resolve). Exactly the spec §13.1–13.3 shapes: `GET /api/v1/tasks` (+`/{task_id}` with `status_events`), `GET /api/v1/activity` (running/parked/recent≤20, latest-stage fold-in), `GET /api/v1/audit` (+`/{request_id}` with the events/approval_events partition). Owner-session lane = C4's; no bearer; read-only. Pagination = C4 §6.5's QA-pinned literal reading (F8: id desc lexicographic; `next_cursor` non-null on an exactly-full final page; unknown cursor 422) so Stream D writes ONE pager |
+| Q2 — `tasks` has no `project_key` | **Ruled: add the column** (nullable, write-once at task creation from the `ValidatedPlan`; ADR-036). The frozen §13.1 shape already carries the field and filter, and per-row derivation from `audit_events.detail` is the N+1 §13.2 exists to kill. §9/§16 counts ride `GET /api/v1/tasks?project_key=…` — no counts endpoint |
+| Route table | `ARCHITECTURE_V2.md` §2 Amendment 1 (dated, appended — no silent edit): `routes/{activity,tasks,audit}.py` + auth posture + the Q2 schema delta |
+| Decision record | `ADR-036-ops-read-endpoints.md` (Accepted; rejected: cut-the-views, GraphQL/composite dashboard endpoint, raw `audit_events` reuse, filterless-v1 Q2 arm) + README row 036 |
+| QA delta (owner: qa_engineer) | NEW `tests/fakes/fake_ops_store.py` (`FakeOpsStore` per C6 §6 — F2 no-inherit witness rule, F1 deep-copy rule, shared `FakeClock`, `ops_fixture()` incl. the deliberate `task-9`/`task-10` equal-timestamp lexicographic tie and 21 terminal tasks for the recent-cap probe) + NEW suite `tests/contracts/test_c6_ops_reads.py`, ten tests (C6 §6 list: order/cursor laws, filters, activity partition + detail-projection probe, audit derivations incl. spine-only `stage_count`, episode partition, per-route auth incl. bearer-401, byte-fidelity containment probe). No existing fake or suite changes |
+| Untrusted content | Plain-text containment notes carried on `objective`, audit `summary`, audit `detail` (C4 §4 / spec §6.3 / T-32) in both C6 files; server byte-fidelity made normative + tested (C6 test 10) |
+| Open questions untouched | Q3/Q4/Q5/Q8 unchanged; Q9 (parked-turn stage count) changes observed counts only — C6 shapes are count-agnostic |
