@@ -27,6 +27,18 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**✅ WAVE 2 COMPLETE — MERGED TO `V2` 2026-09-12 (290642b).** V1 feature scope is built:
+governed turns on real seams, approvals end-to-end (typed ApprovalRef in the envelope), memory
+(pgvector provider + entity schema, ratified ADR-030 Am.2), n8n scheduled workflows + governed
+MCP mount with LIVE bearer-enforcement proof, the OpenHands developer seam (merge parks, zero
+unattended writes in the live matrix — machine-enforced), github_mcp dormant pending the
+capture-gated official-server parcel (R16). Suite: 1085/47 SQLite · 1177/4 Postgres. Reviews:
+QA PASS + Security APPROVE, all conditions ledgered with owners
+([`tasks/w2r3-conditions.md`](tasks/w2r3-conditions.md), DC-21a/22/23 registered).
+**NEXT (w2r3 + staging):** owner provider keys → live-model turn + GatewayEmbedder proof; the
+w2r3 parcel (github re-landing, EntityResolver, reaper, F-1/F-2 coverage); then staging boot +
+V1 acceptance test (ROADMAP §15) → **Gate 3 (production, human-only)**.
+
 **✅ WAVE 2 ROUND 1 (WIRING) COMPLETE — 2026-09-12.** SUNIL boots with REAL seams. Delivered and
 merged: real ToolManager/permissions/approvals/providers wiring; security conditions C-1 + C-3
 CLOSED (adversarially re-verified); C4 v1.2.0 (service owns time) and C1 v1.2.0 (typed
