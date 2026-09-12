@@ -250,6 +250,18 @@ list may be described as present until its milestone ships.
 | DC-17 | **Approval before a spoken instruction executes a write.** M9's auto-send is safe *only* while every reachable tool operation is read-only. When write-capable tools land, a misheard command becomes an executed command | **M5** | ADR-020. The answer is the `ASK_USER` path (DC-2), not a voice-specific control. `SUNIL_VOICE_AUTO_SEND` exists so the default can be flipped in one config edit on that day |
 | ~~DC-18~~ | ~~Purge of `var/voice/`~~ — **WITHDRAWN 2026-08-19.** ADR-021 Amendment 1: `local_file` is not built, the setting does not exist, and nothing is retained | — | Kept struck through rather than deleted, so the register shows a control that was removed by *removing the feature*, not by lowering a claim |
 | DC-19 | **Rate limiting on the voice endpoints** | M11 | M1/M9 have one user and no limiter anywhere in the system. The speak endpoint's bounded cache caps the common case, not a determined loop |
+| DC-20 | **Per-username and per-IP login throttling with lockout on `POST /api/v1/auth/login`.** Accepted absent for the current single-owner, loopback-bound deployment — the scrypt cost (`n=2**14`) is the only brake, adequate while the only reachable client is the owner's machine | **Deployment/exposure gate** — the moment the API is exposed beyond loopback this is a **pre-condition, not an improvement** (Security wave-1; disposition recorded in `docs/tasks/integration-w1.md` §7.2) | Registered 2026-09-12 so the gate inherits the decision instead of rediscovering it |
+
+### Security wave-1 review conditions (appended 2026-09-12, wave-1 rulings batch)
+
+The wave-1 security verdict (portal trail; the DM commits its mirror to `docs/reviews/`) attached
+conditions **C-1 / C-2 / C-3**. C-2 — the login dummy-hash timing oracle — was **fixed in-wave**
+(commit `76d41e3`; disposition `docs/tasks/integration-w1.md` §7.1) and is not deferred. C-1 and C-3
+are inherited by **wave-2's wiring round as named requirements, not chat history**:
+
+| # | Condition | Owner / due |
+|---|---|---|
+| Security wave-1 **C-1** and **C-3** | The rate-limit-at-exposure condition is registered above as **DC-20** on the strength of the repo trail (integration-w1 §7.2), whichever of the two numbers it carries in the verdict. The **verbatim text of both conditions** must be transcribed into this section from the DM's `docs/reviews/` mirror when it lands — and each then closed here or given a DC row and an owning gate | **wave-2 wiring round** — transcription and disposition of C-1/C-3 is step 0 of its security checklist; the round's review is not complete while either is untranscribed |
 
 ---
 
