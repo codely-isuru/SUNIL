@@ -554,7 +554,7 @@ async def test_c1_5_approved_id_executes_once_then_is_spent(
         "agent-1", "fake_tool", "write_item", params, trace=TRACE, park_context=park_ctx
     )
     approval_id = next(iter(approvals.approvals))
-    approvals.decide(approval_id, "approve", None, approvals.clock.now())
+    await approvals.decide(approval_id, "approve", None)
 
     ok = await manager.execute(
         "agent-1", "fake_tool", "write_item", params, trace=TRACE, approval=approval_id
@@ -794,7 +794,7 @@ async def test_c1_allow_grant_ignores_an_approval_id_without_burning_it(
         "agent-1", "fake_tool", "write_item", params, trace=TRACE, park_context=park_ctx
     )
     approval_id = next(iter(approvals.approvals))
-    approvals.decide(approval_id, "approve", None, approvals.clock.now())
+    await approvals.decide(approval_id, "approve", None)
 
     # The owner widens the grant (or the matrix reloads) before the resume.
     hook.grant("agent-1", "fake_tool", "write_item", "allow")

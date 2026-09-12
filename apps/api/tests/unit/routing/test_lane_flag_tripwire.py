@@ -45,7 +45,22 @@ LANE_FLAG = "SUNIL_LLM_PROVIDER_LANE"
 #: registration). Anything else reading it is the regression.
 LANE_READERS = ("sunil/providers/registry.py",)
 
-ENV_READ_MARKERS = ("os.environ", "os.getenv", "getenv(", "dotenv", "environb")
+#: Source markers for "this module can read the process environment".
+#:
+#: ``from os import environ`` is here because of the Security wave-1 LOW
+#: hardening: every other marker in this tuple is dodged by that one import line
+#: (``environ["SUNIL_LLM_PROVIDER_LANE"]`` contains none of "os.environ",
+#: "getenv(", "dotenv" or "environb"), and the dodge is the kind a refactor makes
+#: by accident rather than by design. A guard with a known hole is a guard that
+#: reports success for the case it was written to catch.
+ENV_READ_MARKERS = (
+    "os.environ",
+    "os.getenv",
+    "getenv(",
+    "dotenv",
+    "environb",
+    "from os import environ",
+)
 
 
 def routing_dir() -> Path:
@@ -105,7 +120,12 @@ def test_no_routing_module_imports_a_lane_reader() -> None:
     """Layer 3 — the import GRAPH. Parsed with ``ast`` so a
     ``from sunil.providers.registry import ...`` inside a function body (the
     lazy-import dodge) is caught too."""
-    forbidden = {"sunil.providers.registry", "sunil.providers.gateway"}
+    # `sunil.settings` joins the two provider modules here (Security wave-1 LOW
+    # hardening). It is the M1 law's single env seam and it carries
+    # `sunil_llm_provider_lane` as a typed field, so a routing module importing
+    # it reaches the lane flag by attribute access — no `os.environ` anywhere in
+    # the source, layer 2 clean, and policy taking transport as an input again.
+    forbidden = {"sunil.providers.registry", "sunil.providers.gateway", "sunil.settings"}
     offenders: list[str] = []
 
     for source in routing_sources():

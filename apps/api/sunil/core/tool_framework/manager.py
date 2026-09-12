@@ -41,6 +41,7 @@ import logging
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -96,11 +97,21 @@ class ToolManager:
         permission_hook: PermissionHook,
         approvals: ApprovalsService,
         audit_hook: AuditHook,
+        transaction: Any | None = None,
     ) -> None:
         self._adapters: dict[str, ToolAdapter] = {adapter.name: adapter for adapter in adapters}
         self._permission_hook = permission_hook
         self._approvals = approvals
         self._audit = audit_hook
+        #: C1 §2.1 step 4's transactional rule, when the wired seams can honour
+        #: it (`core/tool_framework/transaction.py`). `None` means they cannot —
+        #: an in-memory C4 fake has no transaction to share — and the two
+        #: approval paths then fall back to separate writes, which is the ONLY
+        #: posture the fakes can express and the reason C1 §6 says they "assert
+        #: ordering, not atomicity". Production wiring always passes one;
+        #: `api/wiring.py` decides that once, at boot, so this pipeline never
+        #: sniffs a seam for capabilities on the request path.
+        self._transaction = transaction
 
     # -- the pipeline ------------------------------------------------------- #
     async def execute(
@@ -213,26 +224,48 @@ class ToolManager:
             )
 
         approval_id_for_row = approval
+        #: Set by the transactional continuation path below, where the attempt
+        #: row is written INSIDE the consume transaction; `None` everywhere else,
+        #: which is what makes step 4 the single writer on every other path.
+        audit_id: str | None = None
         if decision.decision is PermissionDecision.ASK_USER:
             if approval is None:
                 # Park. The manager composes the ParkRequest: continuation and
                 # summary VERBATIM from the caller's ParkContext, everything
                 # else computed here and nowhere else.
                 assert park_context is not None  # guaranteed by the precondition
-                parked = await self._approvals.park(
-                    ParkRequest(
+                request = ParkRequest(
+                    agent_id=agent_id,
+                    tool=tool,
+                    operation=operation,
+                    args_hash=hashed,
+                    params_redacted=redacted,
+                    request_id=trace.request_id,
+                    conversation_id=trace.conversation_id,
+                    task_id=trace.task_id,
+                    summary=park_context.summary,
+                    continuation=park_context.continuation,
+                )
+                if self._transaction is not None:
+                    # C1 §2.1 step 4's park clause (condition C-1): the approval
+                    # INSERT — continuation and all — and the attempt row commit
+                    # together. A parked approval whose attempt row was lost is
+                    # one the owner can approve for a call `tool_calls` has no
+                    # record of anybody making.
+                    return await self._parked_in_one_transaction(
+                        request,
                         agent_id=agent_id,
                         tool=tool,
                         operation=operation,
-                        args_hash=hashed,
-                        params_redacted=redacted,
-                        request_id=trace.request_id,
-                        conversation_id=trace.conversation_id,
-                        task_id=trace.task_id,
-                        summary=park_context.summary,
-                        continuation=park_context.continuation,
+                        trace=trace,
+                        adapter_kind=adapter_kind,
+                        server_id=server_id,
+                        started=started,
+                        hashed=hashed,
+                        redacted=redacted,
+                        decision=decision,
                     )
-                )
+                parked = await self._approvals.park(request)
                 # The park INSERT commits before the turn returns `parked`
                 # (C4 §1 restart safety), so it precedes this exit's audit row;
                 # the row carries the minted id so the trail joins to the
@@ -258,15 +291,45 @@ class ToolManager:
             # validated params and consume. The manager is the single consume
             # owner (QA B3) — a caller cannot vouch for a binding it did not
             # compute, so the supplied value is an opaque id and nothing more.
-            consumed = await self._approvals.consume(
-                approval,
-                binding=ApprovalBinding(
-                    agent_id=agent_id,
-                    tool=tool,
-                    operation=operation,
-                    args_hash=hashed,
-                ),
+            binding = ApprovalBinding(
+                agent_id=agent_id,
+                tool=tool,
+                operation=operation,
+                args_hash=hashed,
             )
+            if self._transaction is not None:
+                # C1 §2.1 step 4, the continuation clause (condition C-1): the
+                # attempt row is written by the CAS's own transaction. `audit_id`
+                # comes back set exactly when the consume won, and step 4 below
+                # then skips its duplicate write — one attempt row per execute
+                # call, on this path as on every other.
+                #
+                # A failure inside that transaction is NOT converted into a
+                # ToolResult: it rolls the consume back, so the approval is
+                # unspent, and the pipeline cannot honestly record an outcome
+                # through the audit sink that just failed.
+                consumed, audit_id = await self._transaction.consume_with_attempt(
+                    approval,
+                    binding=binding,
+                    record=self._attempt_record(
+                        agent_id=agent_id,
+                        tool=tool,
+                        operation=operation,
+                        trace=trace,
+                        adapter_kind=adapter_kind,
+                        server_id=server_id,
+                        args_hash_=hashed,
+                        params_redacted=redacted,
+                        permission_decision=decision.decision,
+                        permission_reason=decision.reason,
+                        approval_id=approval_id_for_row,
+                    ),
+                )
+            else:
+                consumed, audit_id = (
+                    await self._approvals.consume(approval, binding=binding),
+                    None,
+                )
             if not consumed.ok:
                 # A binding mismatch does NOT burn the approval (C4 §6 rule 3)
                 # and a consume failure never re-parks (§2.1).
@@ -300,23 +363,26 @@ class ToolManager:
             )
 
         # --- step 4: audit attempt BEFORE the handler runs -------------------
-        audit_id = await self._audit.attempt(
-            ToolCallAttempt(
-                request_id=trace.request_id,
-                task_id=trace.task_id,
-                agent_id=agent_id,
-                tool=tool,
-                operation=operation,
-                adapter_kind=adapter_kind,
-                server_id=server_id,
-                args_hash=hashed,
-                params_redacted=redacted,
-                permission_decision=decision.decision,
-                permission_reason=decision.reason,
-                approval_id=approval_id_for_row,
-                created_at=_now_iso(),
+        # Skipped only when the consume transaction already wrote this call's
+        # row (C1 §2.1 step 4's own rule — the transactional write REPLACES this
+        # one rather than adding to it; two rows would double-count the call on
+        # the `tool_calls` trail).
+        if audit_id is None:
+            audit_id = await self._audit.attempt(
+                self._attempt_record(
+                    agent_id=agent_id,
+                    tool=tool,
+                    operation=operation,
+                    trace=trace,
+                    adapter_kind=adapter_kind,
+                    server_id=server_id,
+                    args_hash_=hashed,
+                    params_redacted=redacted,
+                    permission_decision=decision.decision,
+                    permission_reason=decision.reason,
+                    approval_id=approval_id_for_row,
+                )
             )
-        )
 
         # --- step 5: execute under the operation's own timeout ---------------
         try:
@@ -358,6 +424,102 @@ class ToolManager:
         return result
 
     # -- helpers ------------------------------------------------------------- #
+    @staticmethod
+    def _attempt_record(
+        *,
+        agent_id: str,
+        tool: str,
+        operation: str,
+        trace: TraceContext,
+        adapter_kind: AdapterKind | None,
+        server_id: str | None,
+        args_hash_: str | None = None,
+        params_redacted: dict | None = None,
+        permission_decision: PermissionDecision | None = None,
+        permission_reason: str | None = None,
+        approval_id: str | None = None,
+    ) -> ToolCallAttempt:
+        """C1 §2.2's ``ToolCallAttempt``, composed in ONE place.
+
+        Three writers now exist — step 4, ``_early_exit`` and the two
+        transactional paths — and a row composed differently on any of them would
+        make the ``tool_calls`` trail describe the same call in two shapes
+        depending on which door it came through.
+        """
+        return ToolCallAttempt(
+            request_id=trace.request_id,
+            task_id=trace.task_id,
+            agent_id=agent_id,
+            tool=tool,
+            operation=operation,
+            adapter_kind=adapter_kind,
+            server_id=server_id,
+            args_hash=args_hash_,
+            params_redacted=params_redacted,
+            permission_decision=permission_decision,
+            permission_reason=permission_reason,
+            approval_id=approval_id,
+            created_at=_now_iso(),
+        )
+
+    async def _parked_in_one_transaction(
+        self,
+        request: ParkRequest,
+        *,
+        agent_id: str,
+        tool: str,
+        operation: str,
+        trace: TraceContext,
+        adapter_kind: AdapterKind | None,
+        server_id: str | None,
+        started: float,
+        hashed: str,
+        redacted: dict,
+        decision: Any,
+    ) -> ToolResult:
+        """The park exit, with the approval row and the attempt row in one
+        transaction (C1 §2.1 step 4's park clause).
+
+        The record is passed as a FUNCTION of the approval id, because the row
+        must name an id that does not exist until the INSERT has run — and an
+        attempt row that did not name it would not join to the approval a later
+        continuation presents, which is the only reason the row is on this path
+        at all.
+
+        ``finalise`` runs after the commit: the row exists by then, and an UPDATE
+        sharing the park's transaction would hold its locks across an error path.
+        """
+        _parked, audit_id = await self._transaction.park_with_attempt(
+            request,
+            lambda approval_id: self._attempt_record(
+                agent_id=agent_id,
+                tool=tool,
+                operation=operation,
+                trace=trace,
+                adapter_kind=adapter_kind,
+                server_id=server_id,
+                args_hash_=hashed,
+                params_redacted=redacted,
+                permission_decision=decision.decision,
+                permission_reason=decision.reason,
+                approval_id=approval_id,
+            ),
+        )
+        result = self._error(
+            ToolErrorKind.APPROVAL_REQUIRED,
+            f"{tool}.{operation} requires the owner's approval",
+            adapter_kind,
+            server_id,
+            started,
+        )
+        await self._audit.finalise(
+            audit_id,
+            outcome="error",
+            error_kind=result.error_kind,
+            duration_ms=result.meta.duration_ms,
+        )
+        return result
+
     async def _early_exit(
         self,
         *,
@@ -386,20 +548,18 @@ class ToolManager:
         must not imply a decision that was never taken.
         """
         audit_id = await self._audit.attempt(
-            ToolCallAttempt(
-                request_id=trace.request_id,
-                task_id=trace.task_id,
+            self._attempt_record(
                 agent_id=agent_id,
                 tool=tool,
                 operation=operation,
+                trace=trace,
                 adapter_kind=adapter_kind,
                 server_id=server_id,
-                args_hash=args_hash_,
+                args_hash_=args_hash_,
                 params_redacted=params_redacted,
                 permission_decision=permission_decision,
                 permission_reason=permission_reason,
                 approval_id=approval_id,
-                created_at=_now_iso(),
             )
         )
         result = self._error(error_kind, error_message, adapter_kind, server_id, started)

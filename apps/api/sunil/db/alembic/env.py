@@ -10,6 +10,11 @@ Two rules worth stating, because both are security- or correctness-relevant:
    engine and this sync path — that is exactly why §5's driver ruling picked it
    over `+asyncpg`. The `+aiosqlite` unit-test URL is downgraded to plain
    `sqlite://` here for the same reason.
+3. **`approvals` is fenced out of the comparison, both sides** (`db/autogenerate.py`,
+   wave-1 ruling R2). The table is owned by `core/approvals/table.py` and Stream
+   D's hand-written revisions; it is absent from `Base.metadata` and present in
+   every deployed database, so without the fence the next autogenerate would
+   emit `op.drop_table("approvals")` — a silent DROP of an audit-bearing table.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from sunil.db.autogenerate import include_name, include_object
 from sunil.db.base import Base
 from sunil.db.models import *  # noqa: F401,F403 — import for metadata registration
 from sunil.settings import Settings
@@ -43,6 +49,8 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_name=include_name,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -58,6 +66,8 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_name=include_name,
+            include_object=include_object,
             # SQLite cannot ALTER most things in place; batch mode is what keeps
             # ONE history portable across both engines (ADR-001).
             render_as_batch=connection.dialect.name == "sqlite",

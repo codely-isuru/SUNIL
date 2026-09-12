@@ -32,10 +32,14 @@ from sqlalchemy.pool import StaticPool
 
 from sunil.api.routes import tasks as tasks_routes
 from sunil.api.routes.approvals import CLIENT_HEADER, CLIENT_VALUE, install_error_handlers
+from sunil.core.approvals.table import APPROVALS_METADATA
 from sunil.db.base import Base
 from sunil.db.models import Conversation, Task, TaskStatusEvent
 
-AUTH = {CLIENT_HEADER: CLIENT_VALUE}
+#: ADR-008 Amendment 1 (wave-1 ruling R3): the CSRF pair is two controls, and an
+#: absent `Origin` is now a mismatch on every route that applies it — so an
+#: authorised request in this suite sends the full browser sentence.
+AUTH = {CLIENT_HEADER: CLIENT_VALUE, "Origin": "http://localhost:3001"}
 
 #: One instant, shared by every event — so `at` cannot break any tie and the
 #: id is the only thing left that can.
@@ -47,7 +51,14 @@ WRITE_ORDER = ["pending", "in_progress", "parked", "in_progress", "failed", "com
 
 
 async def _spine_engine():
-    """The spine's OWN tables — `db/models.py`, not the read model."""
+    """The deployed schema — `db/models.py` plus Stream D's `approvals`.
+
+    Both metadatas, because the C6 turn detail reads the approval episode: since
+    wave-1 ruling R2 the spine's metadata no longer declares `approvals` (its ORM
+    class was a false second definition of a hand-written table), so a
+    `Base.metadata.create_all` alone now builds a database the read model cannot
+    query — which is the honest state of a deployment that skipped a migration.
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         future=True,
@@ -56,6 +67,7 @@ async def _spine_engine():
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(APPROVALS_METADATA.create_all)
     return engine
 
 
