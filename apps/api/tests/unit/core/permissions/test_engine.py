@@ -170,9 +170,10 @@ def test_the_shipped_repo_config_loads_and_grants_only_reviewed_triples() -> Non
     longer true — ``developer.github_mcp.push_branch`` is an unattended WRITE,
     deliberately. The rule now has a home that ENFORCES it:
     ``tests/unit/agents/test_developer_mount.py::
-    test_the_only_unattended_write_in_the_matrix_is_the_developers_branch_push``
+    test_no_unattended_write_exists_while_github_mcp_is_dormant``
     checks every ``allow`` row in this file against ``read_only`` in
-    ``config/tools.yaml`` and admits exactly one named exception.
+    ``config/tools.yaml``. While ``github_mcp`` is dormant that set is empty;
+    the one named exception returns with the w2r3 parcel.
     """
     from pathlib import Path
 
@@ -181,10 +182,15 @@ def test_the_shipped_repo_config_loads_and_grants_only_reviewed_triples() -> Non
 
     assert registry.agent_ids() == ["project_manager", "developer"]
     assert registry.grant_for("project_manager", "github", "list_recent_activity") == "allow"
-    assert registry.grant_for("project_manager", "github_mcp", "issues_close") == "ask_user"
+    # Every ``github_mcp`` row is commented out — ruling R16 (2026-09-12): the
+    # pinned server was deprecated and advertised none of these names, so the
+    # rows return only with the w2r3 verified-pin parcel, together with the
+    # ``config/tools.yaml`` block. ``developer`` stays in the agent list above
+    # as an explicit empty mapping.
+    assert registry.grant_for("project_manager", "github_mcp", "issues_close") is None
     assert registry.grant_for("project_manager", "github_mcp", "repos_delete") is None
-    assert registry.grant_for("developer", "github_mcp", "push_branch") == "allow"
-    assert registry.grant_for("developer", "github_mcp", "merge_main") == "ask_user"
+    assert registry.grant_for("developer", "github_mcp", "push_branch") is None
+    assert registry.grant_for("developer", "github_mcp", "merge_main") is None
     # The delegation to the execution engine is not a tool call, so it has no
     # row here and none in config/tools.yaml (S2-F-openhands.md §2).
     assert registry.grant_for("developer", "github_mcp", "fix_and_pr") is None
