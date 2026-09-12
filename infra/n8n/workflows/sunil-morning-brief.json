@@ -1,0 +1,102 @@
+{
+  "name": "SUNIL - morning brief",
+  "meta": {
+    "sunil": {
+      "role": "trigger",
+      "lane": "service",
+      "instruction_owner": "infra/n8n/workflows (Stream E)",
+      "note": "ADR-030 §5 role 1 — n8n is the SCHEDULER. It supplies the clock and the instruction text; every decision is SUNIL's, made inside the turn this POST starts. Nothing here reads or writes SUNIL's database."
+    }
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "sunil-morning-brief-cron",
+      "name": "07:00 weekdays (Australia/Melbourne)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "notes": "The workflow's timezone is pinned in settings.timezone, not inherited: a brief that silently moves an hour on a DST boundary is worse than one that does not run."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/v1/chat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-SUNIL-Channel-Label",
+              "value": "n8n:morning-brief"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: \"Good morning. Prepare Isuru's brief for today across the active Codely engagements. For each one: what moved in the last 24 hours, which pull requests are waiting on a review, and anything that slipped. Finish with the single most important thing to do today. Ten lines at most, no preamble.\", channel_label: \"n8n:morning-brief\" }) }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "sunil-morning-brief-post",
+      "name": "POST /api/v1/chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "__SUNIL_SERVICE_TOKEN_CREDENTIAL_ID__",
+          "name": "SUNIL service token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "The bearer is an n8n CREDENTIAL, never a literal in this file (scripts/n8n-setup.* creates it from SUNIL_SERVICE_TOKEN and substitutes the id). neverError + onError:continueRegularOutput because the API may legitimately be down: a scheduled brief that cannot reach SUNIL must record that and stop, not retry itself into a red execution list."
+    },
+    {
+      "parameters": {
+        "jsCode": "// The only thing this workflow decides: whether the trigger landed.\n// No business logic lives in n8n (ADR-030 §5) — the answer is produced by the\n// turn the POST above started, and is read in SUNIL, not here.\nconst r = $input.first().json;\nconst status = r.statusCode ?? 0;\nconst body = r.body ?? {};\nreturn [{ json: {\n  workflow: 'sunil-morning-brief',\n  delivered: status === 200,\n  status,\n  request_id: body.request_id ?? null,\n  conversation_id: body.conversation_id ?? null,\n  outcome: body.outcome ?? 'unreachable',\n} }];"
+      },
+      "id": "sunil-morning-brief-outcome",
+      "name": "Record trigger outcome",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    }
+  ],
+  "connections": {
+    "07:00 weekdays (Australia/Melbourne)": {
+      "main": [[{ "node": "POST /api/v1/chat", "type": "main", "index": 0 }]]
+    },
+    "POST /api/v1/chat": {
+      "main": [[{ "node": "Record trigger outcome", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Australia/Melbourne",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300
+  }
+}

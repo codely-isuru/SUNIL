@@ -1,0 +1,29 @@
+{
+  "recorded_from": "n8nio/n8n:2.38.5, MCP Server Trigger v2.1, workflow infra/n8n/workflows/sunil-mcp-server.json",
+  "recorded_at": "2026-09-12",
+  "endpoint_path": "/mcp/sunil",
+  "initialize": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "mcp_session_id": "RECORDED-SESSION-ID",
+    "body": "event: message\ndata: {\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"MCP_Server_Trigger\",\"version\":\"0.1.0\"},\"instructions\":\"SUNIL's own governed action surface. Only the tools declared in SUNIL's config/tools.yaml are callable; anything else advertised here is ignored by the client.\"},\"jsonrpc\":\"2.0\",\"id\":1}\n\n"
+  },
+  "tools_list": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "mcp_session_id": "RECORDED-SESSION-ID",
+    "body": "event: message\ndata: {\"result\":{\"tools\":[{\"name\":\"post_update\",\"description\":\"Record a short status update against a Codely project. Returns the stored update as structured data.\",\"inputSchema\":{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"project_key\":{\"type\":\"string\",\"description\":\"The Codely project key, as it appears in SUNIL's config/projects.yaml.\"},\"summary\":{\"type\":\"string\",\"description\":\"One or two sentences describing what changed.\"}},\"required\":[\"project_key\",\"summary\"],\"additionalProperties\":false}}]},\"jsonrpc\":\"2.0\",\"id\":2}\n\n"
+  },
+  "tools_call_post_update": {
+    "status": 200,
+    "content_type": "text/event-stream",
+    "mcp_session_id": "RECORDED-SESSION-ID",
+    "body": "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"ok\\\":true,\\\"project_key\\\":\\\"sunil\\\",\\\"summary\\\":\\\"Recorded for the CI fixture.\\\",\\\"recorded_at\\\":\\\"2026-09-12T11:43:53.146Z\\\",\\\"recorded_by\\\":\\\"n8n:sunil-mcp-server\\\"}\"}]},\"jsonrpc\":\"2.0\",\"id\":3}\n\n"
+  },
+  "unauthenticated_initialize": {
+    "status": 403,
+    "content_type": "",
+    "mcp_session_id": null,
+    "body": "Authorization data is wrong!"
+  }
+}

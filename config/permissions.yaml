@@ -31,5 +31,14 @@ agents:
       issues_close: ask_user
 
     # MCP over streamable HTTP (the n8n MCP server, Stream E).
+    # `post_update` WRITES (it records something outside SUNIL), so it parks via
+    # C4 rather than executing on the agent's say-so. There is no `allow` row on
+    # this server by design: n8n is the one tool whose own workflows can be
+    # edited in a browser, so an unattended grant here would widen with an edit
+    # nobody reviews (docs/tasks/S2-E-n8n.md §3).
+    #
+    # `run_workflow` is gone with the tools.yaml row it needed — see the comment
+    # there. A grant for an operation no tool declares fails startup's
+    # cross-validation, so this file cannot be left behind on its own.
     n8n_mcp:
-      run_workflow: ask_user
+      post_update: ask_user
