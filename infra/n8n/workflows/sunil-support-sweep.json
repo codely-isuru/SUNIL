@@ -1,0 +1,100 @@
+{
+  "name": "SUNIL - support sweep",
+  "meta": {
+    "sunil": {
+      "role": "trigger",
+      "lane": "service",
+      "instruction_owner": "infra/n8n/workflows (Stream E)",
+      "note": "ADR-030 §5 role 1. The instruction asks for a DRAFT, never a send: anything that leaves SUNIL for a client goes through C4's approval, and a schedule must not be a way around that."
+    }
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 16 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "sunil-support-sweep-cron",
+      "name": "16:30 weekdays (Australia/Melbourne)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/v1/chat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-SUNIL-Channel-Label",
+              "value": "n8n:support-sweep"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: \"End-of-day support sweep. Find everything raised by a Codely client today that has had no reply — support inbox and the client issue trackers. One line each: client, what they asked, how long it has waited. For anything older than four hours, DRAFT a holding reply and leave it for me to approve; do not send anything.\", channel_label: \"n8n:support-sweep\" }) }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "sunil-support-sweep-post",
+      "name": "POST /api/v1/chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "__SUNIL_SERVICE_TOKEN_CREDENTIAL_ID__",
+          "name": "SUNIL service token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst status = r.statusCode ?? 0;\nconst body = r.body ?? {};\nreturn [{ json: {\n  workflow: 'sunil-support-sweep',\n  delivered: status === 200,\n  status,\n  request_id: body.request_id ?? null,\n  conversation_id: body.conversation_id ?? null,\n  outcome: body.outcome ?? 'unreachable',\n} }];"
+      },
+      "id": "sunil-support-sweep-outcome",
+      "name": "Record trigger outcome",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    }
+  ],
+  "connections": {
+    "16:30 weekdays (Australia/Melbourne)": {
+      "main": [[{ "node": "POST /api/v1/chat", "type": "main", "index": 0 }]]
+    },
+    "POST /api/v1/chat": {
+      "main": [[{ "node": "Record trigger outcome", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Australia/Melbourne",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300
+  }
+}

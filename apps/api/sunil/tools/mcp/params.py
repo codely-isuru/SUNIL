@@ -52,3 +52,21 @@ class RunWorkflowParams(BaseModel, extra="forbid"):
 
     workflow_id: str = Field(min_length=1, max_length=128)
     payload: dict = Field(default_factory=dict)
+
+
+class PostUpdateParams(BaseModel, extra="forbid"):
+    """``n8n_mcp.post_update`` — the one governed action the Stream E MCP Server
+    Trigger workflow exposes (``infra/n8n/workflows/mcp-server.json``).
+
+    Tight where ``run_workflow`` is loose, and deliberately so: this operation's
+    arguments are what an owner reads on the approval card before deciding, so
+    they are two named, bounded fields rather than a free-form ``payload``. The
+    ``args_hash`` covers exactly this shape — "the owner approved posting THAT
+    summary against THAT project" — and ``extra="forbid"`` is what stops a plan
+    smuggling a third key past the value the approval binds to.
+    """
+
+    #: The same key space as ``config/projects.yaml`` (M1's T-16 rule: a plan
+    #: names a project, never a repository or a URL).
+    project_key: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    summary: str = Field(min_length=1, max_length=2000)
