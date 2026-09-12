@@ -104,6 +104,28 @@ function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
     Set-Content -Path $Path -Value $out -Encoding ascii
 }
 
+# Rewrite the password inside DATABASE_URL's userinfo, in place.
+#
+# The app reads DATABASE_URL; Postgres reads POSTGRES_PASSWORD. Generating the
+# second without the first left a freshly created .env that boots the stack and
+# then refuses every application connection - and the old code only WARNED about
+# it, so the failure surfaced later as an authentication error with no
+# connection to the message that had scrolled past. Values are hex
+# (New-RandomSecret), so nothing needs URL-encoding and no regex metacharacter
+# can appear in the replacement. Returns $true only if the rewrite is VERIFIED.
+function Sync-DatabaseUrlPassword([string]$Path, [string]$Password) {
+    $pattern = '^(\s*DATABASE_URL\s*=[^:]*://[^:@/]*:)[^@]*@'
+    $lines = @(Get-Content $Path)
+    $out = foreach ($line in $lines) {
+        if ($line -match $pattern) { $line -replace $pattern, "`${1}$Password@" } else { $line }
+    }
+    Set-Content -Path $Path -Value $out -Encoding ascii
+    # Verified, not assumed: if the template ever stops matching the shape
+    # above, this must fail LOUDLY rather than leave a stale password behind a
+    # tick.
+    return (Get-EnvFileValue $Path 'DATABASE_URL').Contains(":$Password@")
+}
+
 function Get-EnvFileValue([string]$Path, [string]$Key) {
     if (-not (Test-Path $Path)) { return '' }
     $match = @(Get-Content $Path | Where-Object { $_ -match "^\s*$Key\s*=" })
@@ -136,10 +158,23 @@ if (-not (Test-Path $EnvFile)) {
         if ($k -eq 'LITELLM_MASTER_KEY') { $v = "sk-$v" }
         Set-EnvValue $EnvFile $k $v
         $generated++
+        # DATABASE_URL embeds this same password; the app would otherwise be
+        # handed the template one and fail to authenticate.
+        if ($k -eq 'POSTGRES_PASSWORD') {
+            if (-not (Sync-DatabaseUrlPassword $EnvFile $v)) {
+                Remove-Item $EnvFile -Force
+                Write-Err2 "Could not rewrite DATABASE_URL's password in $EnvFile, so it"
+                Write-Err2 'would still carry the template value while Postgres used a'
+                Write-Err2 "generated one - every app connection would fail. $EnvFile was"
+                Write-Err2 'NOT created.'
+                Write-Err2 "Do this instead:  Copy-Item .env.example $EnvFile  and set"
+                Write-Err2 'DATABASE_URL and POSTGRES_PASSWORD to the same password by hand.'
+                exit 1
+            }
+        }
     }
     Write-Ok "Generated $generated random secret(s) into $EnvFile."
-    Write-Warn2 'DATABASE_URL still carries the template password - update it by hand'
-    Write-Warn2 'to match POSTGRES_PASSWORD before running the app against this stack.'
+    Write-Ok "DATABASE_URL's password was synced to the generated POSTGRES_PASSWORD."
 }
 
 if (-not (Test-Path $LitellmEnvFile)) {
@@ -291,11 +326,18 @@ while ((Get-Date) -lt $deadline) {
             Write-Step 'Status'
             docker @ComposeArgs ps
             Write-Host ''
-            Write-Host ("  Postgres  localhost:{0}  (databases: {1}, {2}, {3})" -f `
+            # 127.0.0.1, never `localhost`. ADR-032 binds every published port
+            # to host_ip 127.0.0.1 (the CI port gate asserts it), so nothing is
+            # listening on ::1 - and `localhost` resolves to ::1 first on a
+            # modern dual-stack host. A client that honours that order (psql,
+            # curl, the browser) waits out a connection timeout on the v6
+            # address before falling back, which reads as "the stack is up but
+            # hangs".
+            Write-Host ("  Postgres  127.0.0.1:{0}  (databases: {1}, {2}, {3})" -f `
                 (Get-EnvVal 'POSTGRES_HOST_PORT' '5433'), (Get-EnvVal 'POSTGRES_DB' 'sunil'), `
                 (Get-EnvVal 'LITELLM_DB_NAME' 'litellm'), (Get-EnvVal 'N8N_DB_NAME' 'n8n'))
-            Write-Host ("  LiteLLM   http://localhost:{0}   (UI /ui, health /health/liveliness)" -f (Get-EnvVal 'LITELLM_HOST_PORT' '4000'))
-            Write-Host ("  n8n       http://localhost:{0}   (health /healthz)" -f (Get-EnvVal 'N8N_HOST_PORT' '5680'))
+            Write-Host ("  LiteLLM   http://127.0.0.1:{0}   (UI /ui, health /health/liveliness)" -f (Get-EnvVal 'LITELLM_HOST_PORT' '4000'))
+            Write-Host ("  n8n       http://127.0.0.1:{0}   (health /healthz)" -f (Get-EnvVal 'N8N_HOST_PORT' '5680'))
             Write-Host ''
             Write-Host '  No app container yet - clean-slate rebuild (ADR-030 Amendment 1).'
             Write-Host '  Teardown: ./scripts/dev-down.ps1'

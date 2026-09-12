@@ -102,6 +102,28 @@ set_env_value() {
 	fi
 }
 
+# Rewrite the password inside DATABASE_URL's userinfo, in place.
+#
+# The app reads DATABASE_URL; Postgres reads POSTGRES_PASSWORD. Generating the
+# second without the first left a freshly created .env that boots the stack and
+# then refuses every application connection - and the old code only WARNED about
+# it, so the failure surfaced later as an authentication error with no
+# connection to the message that had scrolled past. Values are hex (rand_secret),
+# so nothing needs URL-encoding and no sed metacharacter can appear.
+sync_database_url_password() {
+	local file="$1" password="$2"
+	sed -i.bak -E \
+		"s|^([[:space:]]*DATABASE_URL[[:space:]]*=[^:]*://[^:@/]*:)[^@]*@|\\1${password}@|" \
+		"$file"
+	rm -f "${file}.bak"
+	# Verified, not assumed: if the template ever stops matching the shape above,
+	# this must fail LOUDLY rather than leave a stale password behind a tick.
+	case "$(env_val DATABASE_URL '' "$file")" in
+		*":${password}@"*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
 env_val() {
 	local v file="${3:-$ENV_FILE}"
 	[ -f "$file" ] || { printf '%s' "$2"; return 0; }
@@ -130,6 +152,18 @@ if [ ! -f "$ENV_FILE" ]; then
 			case "$k" in LITELLM_MASTER_KEY) v="sk-${v}" ;; esac
 			set_env_value "$ENV_FILE" "$k" "$v"
 			generated=$((generated + 1))
+			# DATABASE_URL embeds this same password; the app would otherwise
+			# be handed the template one and fail to authenticate.
+			if [ "$k" = 'POSTGRES_PASSWORD' ] && ! sync_database_url_password "$ENV_FILE" "$v"; then
+				rm -f "$ENV_FILE"
+				err "Could not rewrite DATABASE_URL's password in ${ENV_FILE}, so it"
+				err 'would still carry the template value while Postgres used a'
+				err "generated one - every app connection would fail. ${ENV_FILE} was"
+				err 'NOT created.'
+				err "Do this instead:  cp .env.example ${ENV_FILE}  and set DATABASE_URL"
+				err 'and POSTGRES_PASSWORD to the same password by hand.'
+				exit 1
+			fi
 		else
 			rm -f "$ENV_FILE"
 			err 'No source of randomness available (tried openssl, /dev/urandom, python),'
@@ -141,8 +175,7 @@ if [ ! -f "$ENV_FILE" ]; then
 		fi
 	done
 	ok "Generated ${generated} random secret(s) into ${ENV_FILE}."
-	warn 'DATABASE_URL still carries the template password - update it by hand'
-	warn 'to match POSTGRES_PASSWORD before running the app against this stack.'
+	ok "DATABASE_URL's password was synced to the generated POSTGRES_PASSWORD."
 fi
 
 if [ ! -f "$LITELLM_ENV_FILE" ]; then
@@ -292,9 +325,15 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 		step 'Status'
 		compose ps
 		echo
-		echo "  Postgres  localhost:${PG_PORT}  (databases: $(env_val POSTGRES_DB sunil), $(env_val LITELLM_DB_NAME litellm), $(env_val N8N_DB_NAME n8n))"
-		echo "  LiteLLM   http://localhost:${LL_PORT}   (UI /ui, health /health/liveliness)"
-		echo "  n8n       http://localhost:${N8_PORT}   (health /healthz)"
+		# 127.0.0.1, never `localhost`. ADR-032 binds every published port to
+		# host_ip 127.0.0.1 (the CI port gate asserts it), so nothing is
+		# listening on ::1 - and `localhost` resolves to ::1 first on a modern
+		# dual-stack host. A client that honours that order (psql, curl, the
+		# browser) waits out a connection timeout on the v6 address before
+		# falling back, which reads as "the stack is up but hangs".
+		echo "  Postgres  127.0.0.1:${PG_PORT}  (databases: $(env_val POSTGRES_DB sunil), $(env_val LITELLM_DB_NAME litellm), $(env_val N8N_DB_NAME n8n))"
+		echo "  LiteLLM   http://127.0.0.1:${LL_PORT}   (UI /ui, health /health/liveliness)"
+		echo "  n8n       http://127.0.0.1:${N8_PORT}   (health /healthz)"
 		echo
 		echo '  No app container yet - clean-slate rebuild (ADR-030 Amendment 1).'
 		echo '  Teardown: ./scripts/dev-down.sh'
