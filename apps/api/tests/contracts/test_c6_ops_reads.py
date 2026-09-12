@@ -1120,7 +1120,24 @@ def test_c6_9_no_c6_route_accepts_the_adr_035_service_bearer() -> None:
     request, no session and no fake.
     """
     main, deps = ops_lane("sunil.main", "sunil.api.deps")
-    app = main.create_app()
+    del main  # the import guard's job is done; the app comes from the harness.
+    from tests.ops_harness import SERVICE_TOKEN, build_ops_app
+
+    # NOT `create_app()` bare. That call is unbuildable BY DESIGN — no defaulted
+    # SESSION_SECRET, a `./config` path relative to the invoking directory, and a
+    # `fake` seam that MUST be injected (wiring.py rule 1: production code never
+    # imports a test double) — so a bare call grades the factory's refusal to boot
+    # rather than this clause's property. Built the way the sibling suite builds
+    # it for exactly this walk (`test_c5_chat.py::_route_table_app()`): the real
+    # `create_app`, explicit Settings + Seams, no database traffic, no request.
+    # Shared from `tests/ops_harness.py` so the contract clause and the wiring
+    # unit tests walk one definition of "the application", not two.
+    #
+    # The machine lane is turned ON (`service_token=`) so the clause cannot pass
+    # for the wrong reason: over an app with no configured token, "no C6 route
+    # accepts a bearer" would also be true of an app that had accidentally
+    # registered the dependency everywhere.
+    app, _sessionmaker = build_ops_app(service_token=SERVICE_TOKEN)
     target = deps.require_service_token
 
     def uses(dependant, seen: set[int] | None = None) -> bool:
@@ -1150,8 +1167,14 @@ def test_c6_9_the_five_operations_are_read_only() -> None:
     these paths is 405 from the framework, not a handler." Asserted on the route
     table, so it holds without a request: each of the five paths is registered
     for GET only."""
-    main = ops_lane("sunil.main", "sunil.api.routes.tasks")
-    app = main.create_app() if hasattr(main, "create_app") else ops_lane("sunil.main").create_app()
+    ops_lane("sunil.main", "sunil.api.routes.tasks")
+    from tests.ops_harness import build_ops_app
+
+    # Same fix and same reason as the clause above: `create_app()` bare cannot
+    # boot by design. The replaced line was wrong twice over — `ops_lane` answers
+    # a LIST when given two module names, so `hasattr(main, "create_app")` was
+    # always False and the fallback branch made the bare call anyway.
+    app, _sessionmaker = build_ops_app()
 
     registered: dict[str, set[str]] = {}
     for route in app.routes:
