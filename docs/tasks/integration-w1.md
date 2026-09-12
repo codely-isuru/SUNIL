@@ -351,3 +351,53 @@ Same two failures, same §3 reason (`create_app()` takes no arguments — the fi
 of its six blockers, `SESSION_SECRET`, is what the traceback shows). The +2 are
 `tests/unit/ops/test_status_event_tiebreak.py`.
 
+## 7. Security review dispositions (wave 1)
+
+### 7.1 C-2 — sign-in username timing oracle — FIXED
+
+`sunil/api/routes/auth.py` set `_DUMMY_HASH = "0" * 32`. That value has no `$`,
+so `verify_password`'s `encoded.split("$", 2)` raised `ValueError` and the
+function returned `False` **before** reaching `hashlib.scrypt`. The unknown
+username path therefore did no key-derivation work at all, while a known
+username paid a full scrypt run — measured 0.005 ms vs 34.1 ms. The dummy hash
+that exists to make the two paths indistinguishable was itself the
+username-existence oracle, and the module docstring's second named property
+("an unknown username still runs a scrypt verification against a dummy hash")
+was false.
+
+Fix: `_DUMMY_HASH = hash_password("timing-dummy")`, computed once at module
+import, so the constant is a genuine `scrypt$<salt>$<derived>` string that
+survives the format checks and forces the KDF run. `hash_password` moved above
+the constant; no other behaviour changed. Cost is one scrypt run at start-up,
+none per request.
+
+Verified after the fix, same measurement: unknown-username 34.35 ms vs
+known-username 33.90 ms (ratio 1.01).
+
+Test-first, `tests/unit/test_auth_password.py` (3 tests, written and watched
+fail before the fix — `assert 0 == 1`, i.e. zero scrypt calls on the unknown
+path):
+
+* `_DUMMY_HASH` parses to the shape `verify_password` validates (`scrypt`
+  scheme, `_SALT_BYTES` salt, `_SCRYPT["dklen"]` derived key);
+* verifying against `_DUMMY_HASH` invokes `hashlib.scrypt` exactly once;
+* the unknown-username and wrong-password paths do the *same* number of scrypt
+  calls.
+
+The tests count KDF invocations rather than wall-clock time deliberately: a
+timing assertion on a shared CI box flakes, a call count does not.
+
+### 7.2 Related rate-limiting question — ACCEPTED for localhost, pending a deployment gate
+
+`POST /api/v1/auth/login` has no attempt throttle or lockout. Accepted as-is for
+the current single-owner, localhost-bound deployment (Security's framing): the
+scrypt cost at `n=2**14` is the only brake, and it is an adequate one when the
+only reachable client is the owner's own machine. This must be revisited at the
+deployment gate — the moment the API is exposed beyond loopback, per-username
+and per-IP throttling with lockout becomes a pre-condition, not an improvement.
+Recorded here so the gate inherits the decision rather than rediscovering it.
+
+Suite after this change: **902 passed, 2 failed, 4 skipped** — the +3 are the
+new auth tests; the 2 failures are the same §3 QA-owned harness lines, confirmed
+still failing with this change stashed.
+

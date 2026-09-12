@@ -39,9 +39,21 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1, "dklen": 32}
 _SALT_BYTES = 16
 
+
+def hash_password(password: str) -> str:
+    """`scrypt$<salt hex>$<derived hex>`."""
+    salt = os.urandom(_SALT_BYTES)
+    derived = hashlib.scrypt(password.encode("utf-8"), salt=salt, **_SCRYPT)
+    return f"scrypt${salt.hex()}${derived.hex()}"
+
+
 #: Verified against when the username is unknown, so the work — and therefore the
-#: response time — is the same on both paths.
-_DUMMY_HASH = "0" * 32
+#: response time — is the same on both paths. It must be a genuine scrypt hash:
+#: a placeholder that fails ``verify_password``'s format split would return
+#: ``False`` without hashing, making the unknown-username path ~7000x faster than
+#: the known one — the exact username oracle this dummy exists to prevent.
+#: Computed once at import, so it costs one KDF run at start-up, not per request.
+_DUMMY_HASH = hash_password("timing-dummy")
 
 
 class LoginRequest(BaseModel):
@@ -49,13 +61,6 @@ class LoginRequest(BaseModel):
 
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=1000)
-
-
-def hash_password(password: str) -> str:
-    """`scrypt$<salt hex>$<derived hex>`."""
-    salt = os.urandom(_SALT_BYTES)
-    derived = hashlib.scrypt(password.encode("utf-8"), salt=salt, **_SCRYPT)
-    return f"scrypt${salt.hex()}${derived.hex()}"
 
 
 def verify_password(password: str, encoded: str) -> bool:
