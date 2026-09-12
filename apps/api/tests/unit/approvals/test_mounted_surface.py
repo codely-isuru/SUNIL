@@ -303,6 +303,32 @@ async def test_the_mounted_decision_answers_the_contract_codes_end_to_end() -> N
         assert missing.json()["error"]["kind"] == "not_found"
 
 
+# R7.1 (docs/tasks/integration-w1-rulings.md, ruling R7 — "Migration deltas
+# (verbatim)"): the ruling's fake-wired variant, the half parcel 2 correctly
+# deferred because the fake's `decide` was not awaitable yet (S2-wiring.md §4).
+# Body verbatim from the ruling; it closes QA's recorded wave-1 observation that
+# "the C4 decision path has no green coverage in the bootable configuration".
+async def test_the_mounted_decision_runs_on_the_fake_wired_app() -> None:
+    """C4 v1.2.0 (ruling R7): the fake's `decide` is the awaitable,
+    service-clocked form, so the bootable (fake-wired) configuration's decision
+    path answers the contract's codes — the coverage gap `integration-w1.md`
+    §8.3 recorded is closed. The row is parked INTO the fake because on a
+    fake-wired app the fake is the decision store while the reads are the
+    database read model (a test-only split; §5 item 3)."""
+    async with mounted() as (client, _app, _engine):
+        fake = _app_service(_app)
+        parked = await fake.park(park_request())
+
+        decided = await client.post(
+            f"/api/v1/approvals/{parked.approval_id}/decision",
+            json={"decision": "approve"},
+            headers=WEB_HEADERS,
+        )
+
+        assert decided.status_code == 200, decided.text
+        assert decided.json()["status"] == "approved"
+
+
 def _app_service(app):
     """The C4 seam the application actually resolved — not a second instance
     over the same engine, which is how a test proves a route works while the
