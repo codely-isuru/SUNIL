@@ -14,8 +14,20 @@ requires-python = ">=3.12"
 # C1 §2 ToolOperation.params_model / C2 §2 / C3 §2 / C4 §4 models are Pydantic v2
 # BaseModels. Nothing speculative (no FastAPI, no httpx, no SQLAlchemy) —
 # those arrive with the Phase 2 implementations that need them.
+#
+# Phase 2 / Stream B (task/S-B-gateway) is the first such implementation, so the
+# two it needs are declared here rather than leaned on from a dev extra:
+#   httpx  — C2 §3's two lanes are raw HTTP by decision, "no vendor SDKs";
+#            imported by providers/{gateway,anthropic,openai}.py.
+#   pyyaml — ModelCatalogue.load parses config/models.yaml at startup. It was
+#            reachable only via the dev extra, i.e. absent from a production
+#            install; the dev extra keeps its own entry for the OpenAPI suites.
+# tests/unit/providers/test_runtime_dependencies.py fails if a Stream B module
+# ever imports a third-party package that is not declared here.
 dependencies = [
+  "httpx>=0.27,<1",
   "pydantic>=2.9,<3",
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
