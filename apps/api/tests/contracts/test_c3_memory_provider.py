@@ -421,34 +421,67 @@ async def test_c3_6_unavailable_provider_raises_on_every_call() -> None:
         )
 
 
-def test_c3_6_service_degrades_recall_and_surfaces_write_failure() -> None:
+async def test_c3_6_service_degrades_recall_and_surfaces_write_failure() -> None:
     """C3 contract test 6, service half — memory being down DEGRADES a turn; it
     never fails one.
 
-    Guarded on ``core/memory/service.py`` (Stream C: audit-outside-vendor, scope
+    Guarded on ``core/memory/service.py`` (audit-outside-vendor, scope
     resolution, the §2 800 ms latency budget). The provider-side raise is
     asserted above; the degrade cannot be asserted against the provider alone,
-    and C3 names no service API, so the assertions are specified here and this
-    fails the moment the module lands rather than skipping forever (F5).
+    and C3 names no service API, so the assertions are specified here.
+
+    Written 2026-09-12 against the landed module (the F5 guard did its job and is
+    kept below, so a future removal of the module re-skips rather than errors).
     """
     from importlib import import_module  # noqa: PLC0415
 
     try:
-        import_module("sunil.core.memory.service")
-    except ModuleNotFoundError:
+        service_module = import_module("sunil.core.memory.service")
+    except ModuleNotFoundError:  # pragma: no cover - the module is present
         pytest.skip(
-            "C3 contract test 6's service half needs sunil/core/memory/service.py "
-            "(Stream C). This test activates when it lands."
+            "C3 contract test 6's service half needs sunil/core/memory/service.py. "
+            "This test activates when it lands."
         )
-    pytest.fail(
-        "core/memory/service.py now exists — write this test: wrap "
-        "FakeMemoryProvider(unavailable=True) in the service and assert (a) recall "
-        "returns an EMPTY result instead of raising and the turn's "
-        "memory_retrieved carries {degraded: true}, (b) a write failure SURFACES "
-        "(a lost write must be visible, §4), and (c) the audit event is written "
-        "OUTSIDE the vendor call, so a provider that never returns still leaves "
-        "the audit row the receipt's audit_event_id echoes."
+
+    class RecordingSink:
+        """The audit half of the linkage: it records BEFORE the vendor call and
+        keeps what it wrote, so the row can be asserted even when the provider
+        never returns."""
+
+        def __init__(self) -> None:
+            self.rows: list[str] = []
+
+        async def record_memory_write(self, *, scope, item) -> str:
+            del scope, item
+            self.rows.append(f"audit-{len(self.rows) + 1}")
+            return self.rows[-1]
+
+    sink = RecordingSink()
+    service = service_module.MemoryService(
+        FakeMemoryProvider(unavailable=True), audit_sink=sink
     )
+
+    # (a) recall DEGRADES — an empty result and a degraded flag, never a raise.
+    outcome = await service.recall("anything", CONV_1)
+    assert outcome.items == []
+    assert outcome.degraded is True
+    assert outcome.reason == "unavailable"
+
+    # (b) a write failure SURFACES: a lost write must be visible (§4).
+    with pytest.raises(MemoryUnavailableError):
+        await service.write(item("anything"), rules(), scope=CONV_1)
+
+    # (c) the audit event was written OUTSIDE the vendor call — the provider
+    # raised, and the row is still there for the receipt's audit_event_id to
+    # echo. The same holds for a provider that never returns at all.
+    assert sink.rows == ["audit-1"]
+
+    # A healthy provider is not degraded, so (a) is the failure path and not the
+    # service's only behaviour.
+    healthy = service_module.MemoryService(FakeMemoryProvider(), audit_sink=sink)
+    assert (await healthy.recall("anything", CONV_1)).degraded is False
+    receipt = await healthy.write(item("remembered"), rules(), scope=CONV_1)
+    assert receipt.audit_event_id == sink.rows[-1]
 
 
 # --------------------------------------------------------------------------- #
