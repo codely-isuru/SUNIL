@@ -53,6 +53,48 @@ tools:
         read_only: false
         timeout_s: 30
         params_ref: sunil.tools.mcp.params:IssuesCloseParams
+      # ---- Stream F's two git writes (ADR-030 §4) --------------------------
+      # Both are `read_only: false` and both take the SAME three arguments, so
+      # the approval a `merge_main` parks binds exactly the values the push
+      # used. `project_key` — never owner/repo and never a URL: the repository
+      # is resolved from config/projects.yaml by the wiring code (M1's T-16),
+      # so no plan and no execution engine can point these at another repo.
+      push_branch:
+        # `allow` in config/permissions.yaml: it pushes the developer agent's
+        # OWN branch, and `agents/developer/agent.py` has already refused to
+        # let that branch be a protected one. Without that refusal this grant
+        # would be an ungoverned write to the branch `merge_main` protects.
+        read_only: false
+        timeout_s: 30
+        params_ref: sunil.tools.mcp.params:PushBranchParams
+      merge_main:
+        # `ask_user`: the owner decides, every time. This is the operation the
+        # dashboard's worked example renders as `github_mcp.merge_main`.
+        read_only: false
+        timeout_s: 30
+        params_ref: sunil.tools.mcp.params:MergeMainParams
+    #
+    # OPEN DEFECT, W2R2 integration round — READ BEFORE FIRST LIVE BOOT.
+    # NONE of the four operation names above is advertised by the pinned
+    # server. Run on 2026-09-12 against the real `command:` below, tools/list
+    # answered with exactly nine tools, verbatim:
+    #   create_branch, create_issue, create_or_update_file,
+    #   create_pull_request, create_repository, fork_repository,
+    #   get_file_contents, push_files, search_repositories
+    # (and npm reports the package itself as "no longer supported").
+    # ADR-034's startup drift check compares the rows here against that list
+    # and refuses `start()` on a mismatch — a refusal that is NOT local to one
+    # row: the ENTIRE `github_mcp` tool leaves the registry, exactly as Stream
+    # E found with `n8n_mcp.run_workflow`. Nothing in the suite catches it,
+    # because no test spawns the pinned server.
+    # This PREDATES the two rows above — `issues_list` / `issues_close` have
+    # the same problem — so adding them changes the blast radius not at all.
+    # Fixing it is a RULING, not an edit: either these names become the
+    # server's (`issues_list` -> `list_issues`, `push_branch` -> some
+    # composition of `create_branch` + `push_files`, and there is no merge tool
+    # here at all), or `command:`/`version:` names a maintained server that
+    # publishes these verbs — and a params model follows whichever is chosen.
+    # Recorded in docs/tasks/integration-w2r2.md for the integration ruling.
 
   # -------------------------------------------------------------- mcp_http ---
   n8n_mcp:

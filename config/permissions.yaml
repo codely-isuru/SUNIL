@@ -42,3 +42,26 @@ agents:
     # cross-validation, so this file cannot be left behind on its own.
     n8n_mcp:
       post_update: ask_user
+
+  # Stream F's developer agent (ADR-030 §4, docs/tasks/S2-F-openhands.md §5.1).
+  # The agent delegates a work order to the sandboxed OpenHands engine and then
+  # expresses the git writes that run wants as ordinary tool calls, decided
+  # here like anyone else's.
+  #
+  # There is deliberately no row for the DELEGATION itself: a sandboxed run that
+  # touches nothing outside its own container is not an action on the world, and
+  # the chokepoint governs actions on the world. The work order is a NON-tool
+  # plan step addressed to the agent.
+  developer:
+    github_mcp:
+      # The one unattended write in this file, and narrow enough to earn it: it
+      # pushes the agent's OWN work branch. Two things make it narrow, and
+      # neither is in this file — `agents/developer/agent.py` refuses a branch
+      # that is protected, is the base branch, or lacks the work order's prefix,
+      # and the params model forbids any field beyond those three. Widen either
+      # and this grant stops meaning "its own branch".
+      push_branch: allow
+      # The owner decides, every time. `main` is precisely what the branch rule
+      # above protects, so this is the row that stops an autonomous loop
+      # reaching it: the call parks via C4 and the turn ends.
+      merge_main: ask_user
