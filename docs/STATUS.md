@@ -27,6 +27,22 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**✅ WAVE 1 MERGED TO `V2` — 2026-09-12 (c474baa).** The V2 core exists and is review-clean:
+spine (12-stage governed turn, live-proven against fakes), tool chokepoint + permission engine +
+GitHub tool + MCP adapters, model gateway (live-verified against real LiteLLM), approvals service
+(CAS race-proven on real Postgres) + C6 ops reads, the full contract-fake suite, and the Obsidian
+& Gold web app (screenshot-verified against the approved mockups, injection containment live).
+Suite at merge: 912/0/4 SQLite · 951/0/4 Postgres. Reviews mirrored in docs/reviews/2026-09-12-*.
+Branches cleaned: only `main` + `V2` remain.
+
+**NEXT — WAVE 2 (the wiring round):** flip `wiring.py` to real seams and boot the governed turn
+against the live Compose stack end-to-end. Blocking security conditions inherited by name
+(THREAT_MODEL §9): C-1 transactional consume+attempt at the chokepoint, C-3 credential_env
+allowlist. Plus: SA's decide-clock question (integration-w1 §8.3 — the C4 decision path has no
+green coverage in the bootable config until answered), R2 ORM-class fence, R3 Origin move,
+lane-flag tripwire hardening, agents.yaml grants-vs-catalogue warning, test-side schema
+workaround removal. Then Streams C (Mem0), E (n8n), F (OpenHands).
+
 **WAVE 1 BUILT + INTEGRATED (2026-09-12).** All six lanes done; merged onto `task/integration-w1`
 (two unions hand-resolved: pyproject deps, unit conftest). Integration exposed and fixed 15
 integration-only failures (win32 event-loop collision between lanes, five wiring gaps — the
