@@ -9,8 +9,11 @@ with `outcome="parked"` and a C4 `ApprovalRef`.
 Nothing is mocked that the architecture names as a seam: the provider is C2 §5's
 `FakeProvider`, the tool is C1 §6.3's `FakeToolAdapter` behind
 `FakePermissionHook`, the approvals service is C4 §6's `FakeApprovalsService`.
-The one double is the Tool Manager itself (Stream A's file — see
-`tool_manager_double.py` for why the spine must not write it).
+Nothing is a double either, since ruling R8's follow-up: the Tool Manager is the
+REAL `core/tool_framework/manager.py` chokepoint. The interim double was retired
+the moment the park exit's typed `ApprovalRef` landed — it had invented an
+`approval_id` in `data` that the real manager never sets, which is how every
+assertion here stayed green against behaviour the shipped code did not have.
 """
 
 from __future__ import annotations
