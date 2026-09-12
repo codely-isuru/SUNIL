@@ -277,6 +277,13 @@ Two things that make a first boot fail where a re-boot succeeds, both found the 
   `docker volume ls --filter name=sunil-v2` is empty before claiming first-boot evidence.
   When tearing down, name the volumes deliberately: this host also carries `sunil_pgdata` /
   `sunil_redisdata` from V1 and volumes for six unrelated projects.
+- **A stale `n8n_data` volume stops n8n booting at all** (added 2026-09-12, Stream E). The
+  symptom is `Mismatching encryption keys` in the n8n log: the volume holds a credential vault
+  encrypted under the `N8N_ENCRYPTION_KEY` of whichever `.env` created it, and a freshly
+  generated `.env` carries a different one. The fix is `./scripts/dev-down.sh --volumes` — which
+  **also destroys the Postgres volume**, so read the bullet above before running it. To keep
+  another round's data instead, boot under your own `COMPOSE_PROJECT_NAME` (a `.env` value) and
+  get your own volumes — that is how the Stream E round ran alongside an existing stack.
 
 ### Health endpoints
 

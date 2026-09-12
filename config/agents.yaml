@@ -22,7 +22,13 @@ agents:
       # The C1 §6.3 fake tool. It is granted here so the spine's own
       # integration turn is a real governed turn rather than a stub; Stream A
       # adds the real servers alongside it.
-      # RULING 2026-09-12 (wave-1 R1, docs/tasks/integration-w1-rulings.md): grant stays — structurally inert in real wiring, because grants only NARROW the adapter-built catalogue (plan_schema.py builds the tool enum from the catalogue; plan_validator.py requires catalogue membership before the grant is consulted; no fake_tool adapter or permissions.yaml triple exists outside tests). Rejected: a test-scoped overlay config.
+      # RULING 2026-09-12 (wave-1 R1, docs/tasks/integration-w1-rulings.md):
+      # the grant stays. It is structurally inert in real wiring, because a
+      # grant can only NARROW the adapter-built catalogue — plan_schema.py
+      # builds the tool enum FROM that catalogue, plan_validator.py requires
+      # catalogue membership before the grant is consulted, and no fake_tool
+      # adapter or permissions.yaml triple exists outside the tests.
+      # Rejected alternative: a test-scoped overlay config.
       fake_tool:
         - echo
         - write_item

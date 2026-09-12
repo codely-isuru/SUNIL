@@ -410,7 +410,12 @@ services:
   #     SUNIL_APPROVAL_TTL_HOURS: ${SUNIL_APPROVAL_TTL_HOURS:-72}
   #     SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL: ${SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL:-}
   #     SUNIL_SERVICE_TOKEN: ${SUNIL_SERVICE_TOKEN:?set in .env}
-  #     SUNIL_MEMORY_PROVIDER: ${SUNIL_MEMORY_PROVIDER:-mem0}
+  #     # `pgvector`, NOT `mem0`: pgvector is the built provider (ADR-030
+  #     # Amendment 2 ratifies it). `mem0` is still selectable and still
+  #     # unbuilt — it raises a loud SeamUnavailable rather than falling back —
+  #     # so this default would have refused to boot a container whose .env did
+  #     # not set the variable.
+  #     SUNIL_MEMORY_PROVIDER: ${SUNIL_MEMORY_PROVIDER:-pgvector}
   #     GITHUB_TOKEN: ${GITHUB_TOKEN:-}
   #     # NO ANTHROPIC_API_KEY / OPENAI_API_KEY here, ever: upstream keys are
   #     # scoped to infra/.env.litellm and the app reaches providers only
