@@ -1,0 +1,70 @@
+---
+# The Tool Registry (ADR-034, C1 §5): every tool and the operations it exposes.
+#
+# Authority, not inventory: "an MCP tool is callable IFF it appears here with an
+# explicit `operations:` entry ... AND has a permission row" (C1 §5). A server
+# that advertises a tool absent from this file does not exist to SUNIL — the
+# adapter logs it at startup and ignores it. Server self-description
+# (`readOnlyHint`, `inputSchema`) never overrides anything below.
+#
+# `read_only` and `timeout_s` are SUNIL's values. `params_ref` points at the
+# Pydantic model SUNIL validates with (C1 step 2, `extra="forbid"` enforced by
+# the loader) — never a schema fetched from the server.
+#
+# NO SECRET VALUES LIVE HERE. `credential_env:` and the `*_env` fields are
+# environment-variable NAMES; each maps to the lowercased `SecretStr` field of
+# the same name on `Settings` and is injected into the child's minimal
+# environment at spawn (C1 §5). A name with no matching field, or an unset
+# value, fails adapter startup.
+version: 1
+
+tools:
+  # ---------------------------------------------------------------- native ---
+  github:
+    kind: native
+    display_name: GitHub (native, read-only)
+    # M1's proven tool, ported. owner/repo come from config/projects.yaml via
+    # the wiring code, NEVER from the plan: the only parameter is project_key.
+    operations:
+      list_recent_activity:
+        read_only: true
+        timeout_s: 15
+        params_ref: sunil.tools.github.adapter:GitHubListRecentActivityParams
+
+  # ------------------------------------------------------------- mcp_stdio ---
+  github_mcp:
+    kind: mcp_stdio
+    display_name: GitHub MCP server
+    # Pinned version (ADR-034): the drift check at startup compares the
+    # configured operations against the live server's tools/list.
+    command: ["npx", "-y", "@modelcontextprotocol/server-github@0.6.2"]
+    version: 0.6.2
+    credential_env: ["GITHUB_TOKEN"]
+    operations:
+      issues_list:
+        read_only: true
+        timeout_s: 30
+        params_ref: sunil.tools.mcp.params:IssuesListParams
+      issues_close:
+        # A write to a third party. `read_only: false` is OUR statement — the
+        # reference server advertises its own annotations and SUNIL ignores
+        # them. Granted `ask_user` in config/permissions.yaml, so the call
+        # parks via C4 before it executes.
+        read_only: false
+        timeout_s: 30
+        params_ref: sunil.tools.mcp.params:IssuesCloseParams
+
+  # -------------------------------------------------------------- mcp_http ---
+  n8n_mcp:
+    kind: mcp_http
+    display_name: n8n MCP server
+    # Settings FIELD NAMES, not URLs or tokens: the base URL passes the ADR-033
+    # loopback-or-named-host validator on Settings, and the token stays a
+    # SecretStr until it becomes an Authorization header (TB5).
+    base_url_env: SUNIL_N8N_MCP_BASE_URL
+    auth_token_env: SUNIL_N8N_MCP_AUTH_TOKEN
+    operations:
+      run_workflow:
+        read_only: false
+        timeout_s: 60
+        params_ref: sunil.tools.mcp.params:RunWorkflowParams

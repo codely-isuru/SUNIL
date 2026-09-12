@@ -1,0 +1,28 @@
+# Agent registry — mounted, never baked (ADR-016).
+#
+# An agent is a ROLE, not a model and not a vendor: `preferred_capability` names
+# a capability the router resolves (config/models.yaml, Stream B), so nothing
+# here pins a model id.
+#
+# `tools:` is a GRANT list — the operations this agent may plan. It is checked by
+# the plan validator (layer 4). It is NOT the permission decision: whether a call
+# may proceed, and whether it needs a human, is decided independently at the C1
+# chokepoint from config/permissions.yaml (Stream A's file). Two files, two
+# questions, deliberately not collapsed — a planning grant must not imply
+# execution authority.
+agents:
+  project_manager:
+    role: project_manager
+    preferred_capability: general_reasoning
+    system_prompt: >-
+      You are SUNIL's project manager. You read the owner's request, the
+      conversation context and any tool results, and you answer the owner
+      directly and briefly. You never invent a tool result you were not given.
+    tools:
+      # The C1 §6.3 fake tool. It is granted here so the spine's own
+      # integration turn is a real governed turn rather than a stub; Stream A
+      # adds the real servers alongside it.
+      # RULING 2026-09-12 (wave-1 R1, docs/tasks/integration-w1-rulings.md): grant stays — structurally inert in real wiring, because grants only NARROW the adapter-built catalogue (plan_schema.py builds the tool enum from the catalogue; plan_validator.py requires catalogue membership before the grant is consulted; no fake_tool adapter or permissions.yaml triple exists outside tests). Rejected: a test-scoped overlay config.
+      fake_tool:
+        - echo
+        - write_item

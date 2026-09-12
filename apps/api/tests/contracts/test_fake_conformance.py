@@ -30,6 +30,7 @@ import pytest
 import tests.fakes.fake_approvals as fake_approvals_module
 import tests.fakes.fake_hooks as fake_hooks_module
 import tests.fakes.fake_memory_provider as fake_memory_module
+import tests.fakes.fake_ops_store as fake_ops_store_module
 import tests.fakes.fake_provider as fake_provider_module
 import tests.fakes.fake_tool_adapter as fake_tool_adapter_module
 from sunil.core.approvals.base import ApprovalsService
@@ -39,8 +40,10 @@ from sunil.providers.base import LLMProvider
 from tests.fakes.fake_approvals import FakeApprovalsService
 from tests.fakes.fake_hooks import FakePermissionHook, RecordingAuditHook
 from tests.fakes.fake_memory_provider import FakeMemoryProvider
+from tests.fakes.fake_ops_store import FakeOpsStore
 from tests.fakes.fake_provider import FakeProvider
 from tests.fakes.fake_tool_adapter import FakeToolAdapter
+from tests.fakes.ops_seam import OpsReadStore
 
 pytestmark = pytest.mark.contract
 
@@ -52,6 +55,10 @@ PAIRS = [
     (FakeApprovalsService, ApprovalsService, fake_approvals_module, "_check"),
     (FakeMemoryProvider, MemoryProvider, fake_memory_module, "_check"),
     (FakeProvider, LLMProvider, fake_provider_module, "_check"),
+    # C6 §6. Its Protocol is transcribed in tests/fakes/ops_seam.py because the
+    # production module (sunil/core/ops/base.py) is Phase 2 work — see that
+    # module's docstring for the one-line swap when Stream D lands it.
+    (FakeOpsStore, OpsReadStore, fake_ops_store_module, "_check"),
 ]
 IDS = [f"{fake.__name__}->{protocol.__name__}" for fake, protocol, _, _ in PAIRS]
 

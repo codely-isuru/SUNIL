@@ -155,8 +155,11 @@ call that skips `decide()` (§33.3, §33.5).
 | `SUNIL_APPROVAL_TTL_HOURS` | `72` | no | approvals service (`expires_at`) |
 | `SUNIL_APPROVAL_CONSUME_GRACE_HOURS` | `1` | no | approvals service — consume-CAS time bound + stale-approved sweep (C4 §1; Security review 2026-09-10 item 1) |
 | `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` | unset (webhook off) | no | `core/approvals/notify`; ADR-033 validator |
+| `SUNIL_APPROVALS_SWEEPER_ENABLED` | `true` | no | `main.py` lifespan — run C4 §1's approvals sweep (startup reconcile + 60 s cadence) in this process. Kill switch for operators (a second process owning the schedule, or a sweep implicated in an incident); OFF means *not started*, never "started and idle", because `reconcile_on_startup` is a state transition (integration-w1 §4) |
 | `SUNIL_SERVICE_TOKEN` | unset (machine lane off) | yes | `require_service_token` on the chat route only (ADR-035) |
 | `SUNIL_MEMORY_PROVIDER` | `fake` until Stream C lands, then `mem0` | no | memory service wiring |
+| `SUNIL_TOOL_MANAGER` | `real` | no | seam selector, `api/wiring.py` — which C1 implementation is wired; `fake` requires an injected seam (`Seams`) and is unreachable from configuration alone (wiring rule 1: production code never imports test doubles) |
+| `SUNIL_APPROVALS_SERVICE` | `real` | no | seam selector, `api/wiring.py` — which C4 implementation is wired; `fake` requires an injected seam, as above |
 
 Rulings on this inventory (2026-09-10 security-delta residuals S-1/S-3/S-4): **driver token** —
 `+psycopg` (psycopg v3) is normative because it is ADR-002's recorded driver and one dependency
@@ -170,6 +173,14 @@ generates `SUNIL_SERVICE_TOKEN` on `.env` auto-create, so the TB7 machine lane i
 generated dev environment — the table's `unset (machine lane off)` stays the fail-closed
 application default when the variable is absent; `SUNIL_MEMORY_PROVIDER` runs `fake` until
 Stream C lands (the table default), `mem0` being the committed end-state value in `.env.example`.
+
+Inventory append, 2026-09-12 (wave-1 rulings, QA wave S1): `SUNIL_APPROVALS_SWEEPER_ENABLED`,
+`SUNIL_TOOL_MANAGER` and `SUNIL_APPROVALS_SERVICE` — all three added by the integration round
+(`settings.py`; the selectors read in `api/wiring.py`) — were in no inventory, which falsified this
+section's "complete" heading; they are the rows above. Swept `Settings` (14 `SUNIL_*` fields) and
+`api/wiring.py` against this table: these three were the only gaps, and
+`SUNIL_APPROVAL_CONSUME_GRACE_HOURS` has been present since the 2026-09-10 row. The `.env.example`
+half of S1 is the integration lane's concurrent fix, not this append.
 
 **Web — `apps/web`:** `NEXT_PUBLIC_API_BASE_URL` = `http://localhost:8000` (MUST be `localhost`
 so the session cookie is same-site with the page origin — the ADR-008 rule; the API may bind

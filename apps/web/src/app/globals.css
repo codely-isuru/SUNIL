@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Obsidian & Gold — dark-only, committed (Amendment A §A.8, owner's Gate-2
+ * ruling). There is deliberately NO `prefers-color-scheme` query and no light
+ * map anywhere in this app: every colour is painted explicitly.
+ */
+:root {
+  color-scheme: dark;
+  /* §A.5 faces. Loaded with a stylesheet <link> in layout.tsx (as the
+     mockups do) rather than next/font, so a build never depends on reaching
+     fonts.googleapis.com; the fallback stacks in tailwind.config.ts keep the
+     app legible if the request fails. */
+  --font-display: "Space Grotesk";
+  --font-body: "Inter";
+  --font-mono: "JetBrains Mono";
+}
+
+@layer base {
+  html {
+    background-color: #0b0906;
+  }
+
+  body {
+    background-color: #0b0906;
+    /* §A.4 scanline texture — canvas only, ≤1.5% gold, never behind panel text */
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(201, 162, 39, 0.012) 0 1px,
+      transparent 1px 3px
+    );
+    color: #cec5b4;
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    /* §A.5: load-bearing for Inter — a ticking countdown must not reflow a row */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* §A.4 focus ring: 2px gold, 2px offset, 4px 22%-alpha halo (6.4:1 vs the
+     lightest ground — needs 3:1). Never removed, only replaced. */
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid #c9a227;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.22);
+    border-radius: 3px;
+  }
+
+  /* Native disclosure markers are replaced by our own chevron everywhere. */
+  summary {
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+/*
+ * DESIGN_SYSTEM.md §7 global reduced-motion kill-switch, carried over from M1
+ * unchanged. This is what disables the live pulse, the armed shimmer and every
+ * transition — no per-component variant is needed as a result.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* The armed state must stay legible without motion: the shimmer sweep is
+     removed outright and the glow border carries it (§A.4). */
+  .shimmer-sweep::after {
+    content: none !important;
+  }
+}
+
+@layer components {
+  /* §A.4 corner ticks — the ONE primary panel per view. */
+  .tick {
+    position: relative;
+  }
+
+  .tick::before,
+  .tick::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1px solid rgba(201, 162, 39, 0.38);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .tick::before {
+    top: -1px;
+    left: -1px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .tick::after {
+    bottom: -1px;
+    right: -1px;
+    border-left: 0;
+    border-top: 0;
+  }
+
+  /* §A.4 hairline gold rule under a view title. */
+  .rule-h1::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 140px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(201, 162, 39, 0.38), transparent);
+  }
+
+  /* §A.4 shimmer sweep — armed confirm button only. */
+  .shimmer-sweep {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shimmer-sweep::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -60%;
+    width: 45%;
+    background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: shimmer 2600ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    pointer-events: none;
+  }
+
+  @keyframes shimmer {
+    0% {
+      left: -60%;
+    }
+    60%,
+    100% {
+      left: 115%;
+    }
+  }
+}

@@ -246,3 +246,34 @@ Gate 2 approved; the owner ruled **Q1 = freeze** the three ops-read endpoints
 | QA delta (owner: qa_engineer) | NEW `tests/fakes/fake_ops_store.py` (`FakeOpsStore` per C6 §6 — F2 no-inherit witness rule, F1 deep-copy rule, shared `FakeClock`, `ops_fixture()` incl. the deliberate `task-9`/`task-10` equal-timestamp lexicographic tie and 21 terminal tasks for the recent-cap probe) + NEW suite `tests/contracts/test_c6_ops_reads.py`, ten tests (C6 §6 list: order/cursor laws, filters, activity partition + detail-projection probe, audit derivations incl. spine-only `stage_count`, episode partition, per-route auth incl. bearer-401, byte-fidelity containment probe). No existing fake or suite changes |
 | Untrusted content | Plain-text containment notes carried on `objective`, audit `summary`, audit `detail` (C4 §4 / spec §6.3 / T-32) in both C6 files; server byte-fidelity made normative + tested (C6 test 10) |
 | Open questions untouched | Q3/Q4/Q5/Q8 unchanged; Q9 (parked-turn stage count) changes observed counts only — C6 shapes are count-agnostic |
+
+---
+
+## Freeze-scope ruling — harness modules serving frozen suites (2026-09-12, wave-1 rulings batch, owner: Solution Architect)
+
+**Driven by:** QA wave-1 nit **N1** — `tests/contracts/test_c6_9_*` (a frozen contract file) now
+builds its application through `apps/api/tests/ops_harness.py`, a module the implementation lane
+owns, so the meaning of a contract clause ("a signed-in owner") could be changed without touching
+the frozen file.
+
+**Rule (blessed, not relocated):** a module outside `tests/contracts/` that a frozen contract suite
+imports for its harness is **itself change-controlled, by name**. The named list — extended only by
+a dated edit to this section, in the same PR that introduces the import:
+
+1. `apps/api/tests/ops_harness.py` (imported by `tests/contracts/test_c6_ops_reads.py`; shared with
+   `tests/contracts/test_c5_chat.py`'s in-file `_route_table_app()` shape and
+   `tests/unit/test_app_wiring.py`)
+
+Change control means: (a) any edit to a listed module requires **QA sign-off in review even when
+`tests/contracts/` is untouched** — the diff is treated as a contract-file diff; (b) each listed
+module's app-construction semantics must stay pinned by at least one wiring test outside the frozen
+suite (today: `tests/unit/test_app_wiring.py`, which walks the identical construction — QA N1's own
+"indirectly pinned" observation, made a requirement); (c) a listed module may add capabilities but
+must never change the meaning of an existing call signature the frozen suites use.
+
+**Rejected alternative:** relocating `ops_harness.py` into `tests/contracts/`. Rejected because it
+grows the frozen surface with lane-owned app-construction wiring (every future wiring change would
+then be a frozen-file diff), forks QA's accepted Choice 1 (qa-wave-w1 §3.1 — one definition of "a
+signed-in owner" shared by the contract clauses and the wiring tests), and answers an ownership
+question with a file move: the risk N1 names is *unreviewed drift*, which a review rule closes and a
+directory does not.

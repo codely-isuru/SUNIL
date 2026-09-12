@@ -1,0 +1,166 @@
+# The SUNIL model catalogue and capability map (C2 §2; read by
+# `sunil/core/routing/catalogue.py`).
+#
+# =========================================================================
+# THE MODEL-ID NAMESPACE IS THE GATEWAY ALIAS SET, VERBATIM (C2 §2, normative)
+# =========================================================================
+# The `models:` keys below MUST equal LiteLLM's `model_name` alias set in
+# `infra/litellm/config.yaml` exactly — at Phase 0: claude-sonnet,
+# claude-opus, claude-haiku, gpt-flagship, gpt-mini. Upstream ids such as
+# `anthropic/claude-sonnet-4-5` appear ONLY inside the gateway's own config
+# and in `CompletionResult.provider_model` as reported facts; a
+# `CompletionRequest.model` carrying an upstream id is a config bug.
+# `GatewayProvider.start()` checks this against the live gateway's
+# `GET /v1/models` at boot and refuses to start on drift
+# (`GatewayModelParityError`) — a drifted namespace is a boot failure, never
+# a runtime 400.
+#
+# `provider_model_id:` is the provider-NATIVE id, read ONLY by the
+# direct-lane adapters (`providers/anthropic.py`, `providers/openai.py`).
+# The router namespace is therefore lane-invariant: flipping the ADR-033
+# kill switch (`SUNIL_LLM_PROVIDER_LANE`) changes no model id anywhere, and
+# the router cannot see the lane at all.
+#
+# =========================================================================
+# PRICES: PINNED, VERSIONED — AND NOT MACHINE-VERIFIABLE HERE
+# =========================================================================
+# `pricing_version` is stamped onto every `llm_calls` row at the time of the
+# call, so editing a price here never silently rewrites the cost of a
+# historical call (C2 §2; M1 §4.4/§13.1 rule, ported).
+#
+# `pricing_verified: false` marks every row below, and it is not decoration:
+# this build environment has no network access to a vendor pricing page and
+# neither vendor ships a machine-readable static price table, so the numbers
+# are published-list-price values carried over from the M1 catalogue and the
+# gateway's own model mapping — they are PLAUSIBLE, not VERIFIED. Cost is
+# money and an unverified number must never pass for a checked one (M1 T23
+# lesson). Action for whoever has a browser: confirm all ten rates against
+# the vendor pricing pages, then set `pricing_verified: true` and bump
+# `pricing_version`. Until then, treat `Usage.cost_usd` as an estimate —
+# the gateway's own per-key spend (LiteLLM, `/key/info`) is the billing
+# cross-check, and SUNIL's number stays the authoritative one for policy
+# only because it is the versioned one (C2 §2).
+#
+# Capability names — what callers ask for. Nothing above the router ever
+# names a vendor or a model (C2 §2, ROADMAP §33 rule 1).
+version: 1
+pricing_version: "2026-09-11-unverified"
+
+providers:
+  # `local: false` — reached over the network. No provider is local in
+  # Phase 0, which is exactly why a LOCAL_ONLY request is a routing error
+  # (C2 §2 / ROADMAP §26.10): fail closed, never downgrade. A local
+  # provider is added here with `local: true` and a capability pointed at
+  # it; the router needs no code change for that.
+  anthropic:
+    local: false
+    lane: prod
+
+  openai:
+    local: false
+    lane: prod
+
+  # ---- OmniRoute — DEV LANE, PUBLIC WORKLOADS ONLY -----------------------
+  # Commented out to mirror `infra/litellm/config.yaml`, where the matching
+  # `model_list` entry is also commented out: a dev lane must not exist
+  # until a human enables it deliberately. When enabled, `max_privacy_class`
+  # is what the ROUTER enforces (ADR-030 §8) — uncommenting the gateway
+  # entry alone does not make it reachable, because the capability it would
+  # serve must also be declared here.
+  #
+  # omniroute:
+  #   local: false
+  #   lane: dev
+  #   max_privacy_class: public
+
+models:
+  claude-sonnet:
+    provider: anthropic
+    provider_model_id: claude-sonnet-4-5
+    context_window: 1000000
+    max_output: 64000
+    input_usd_per_mtok: "3"
+    output_usd_per_mtok: "15"
+    supports_structured_output: true
+    pricing_verified: false
+
+  claude-opus:
+    provider: anthropic
+    provider_model_id: claude-opus-4-1
+    context_window: 200000
+    max_output: 32000
+    input_usd_per_mtok: "15"
+    output_usd_per_mtok: "75"
+    supports_structured_output: true
+    pricing_verified: false
+
+  claude-haiku:
+    provider: anthropic
+    provider_model_id: claude-haiku-4-5
+    context_window: 200000
+    max_output: 64000
+    input_usd_per_mtok: "1"
+    output_usd_per_mtok: "5"
+    supports_structured_output: true
+    pricing_verified: false
+
+  gpt-flagship:
+    provider: openai
+    provider_model_id: gpt-5
+    context_window: 400000
+    max_output: 128000
+    input_usd_per_mtok: "1.25"
+    output_usd_per_mtok: "10"
+    supports_structured_output: true
+    pricing_verified: false
+
+  gpt-mini:
+    provider: openai
+    provider_model_id: gpt-5-mini
+    context_window: 400000
+    max_output: 128000
+    input_usd_per_mtok: "0.25"
+    output_usd_per_mtok: "2"
+    supports_structured_output: true
+    pricing_verified: false
+
+capabilities:
+  # The orchestrator's own plan-generation call (ROADMAP §25). ALWAYS a
+  # structured-output request, so the model must support it; 8k output is
+  # generous for a plan and keeps a runaway generation cheap.
+  plan_generation:
+    model: claude-sonnet
+    max_tokens: 8192
+    timeout_s: 30.0
+
+  # The agent analysis call — the only streaming leg (ADR-028).
+  general_reasoning:
+    model: claude-sonnet
+    max_tokens: 8192
+    timeout_s: 30.0
+
+  # Escalation target. Not on any hot path; declared so that using it later
+  # is a config edit, never a code change (ADR-016).
+  complex_reasoning:
+    model: claude-opus
+    max_tokens: 16384
+    timeout_s: 60.0
+
+  # Cheap, fast, high-volume work: classification, routing hints, titles.
+  fast_classification:
+    model: claude-haiku
+    max_tokens: 2048
+    timeout_s: 15.0
+
+  # The second vendor, reachable by config alone — proof that a provider
+  # swap needs no code change (ADR-003 §4.6). `general_reasoning` can be
+  # repointed here if the Anthropic key or quota disappears.
+  general_reasoning_openai:
+    model: gpt-flagship
+    max_tokens: 8192
+    timeout_s: 30.0
+
+  cheap_summarisation:
+    model: gpt-mini
+    max_tokens: 4096
+    timeout_s: 20.0

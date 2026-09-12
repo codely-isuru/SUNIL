@@ -1,0 +1,19 @@
+allowBuilds:
+  sharp: false
+  unrs-resolver: false
+  # Stream D test runner (vitest → vite → esbuild): esbuild's postinstall
+  # unpacks its platform binary, so the build script must be allowed.
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@next/env@16.3.1'
+  - '@next/eslint-plugin-next@16.3.1'
+  - '@next/swc-darwin-arm64@16.3.1'
+  - '@next/swc-darwin-x64@16.3.1'
+  - '@next/swc-linux-arm64-gnu@16.3.1'
+  - '@next/swc-linux-arm64-musl@16.3.1'
+  - '@next/swc-linux-x64-gnu@16.3.1'
+  - '@next/swc-linux-x64-musl@16.3.1'
+  - '@next/swc-win32-arm64-msvc@16.3.1'
+  - '@next/swc-win32-x64-msvc@16.3.1'
+  - eslint-config-next@16.3.1
+  - next@16.3.1
