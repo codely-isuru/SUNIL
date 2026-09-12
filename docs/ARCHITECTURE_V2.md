@@ -118,7 +118,7 @@ against the fakes").
 | TB2 | API → LiteLLM | `SUNIL_LLM_GATEWAY_BASE_URL` (`http://localhost:4000`) | ADR-033 URL validator; per-agent virtual key (`LITELLM_VIRTUAL_KEY_*`, budgets in LiteLLM); redaction registry keeps secrets out of prompts; router privacy policy upstream of transport |
 | TB3 | LiteLLM → cloud providers | `api.anthropic.com` / `api.openai.com` | provider keys live ONLY in the litellm container env; SUNIL app env carries none in gateway lane |
 | TB4 | API → MCP stdio child | spawned subprocess, JSON-RPC on pipes | minimal child env (only `credential_env` names, C1 §5); params validated pre-send; results untrusted + size-capped (C1 §3); `timeout_s` |
-| TB5 | API → MCP HTTP (n8n) | `SUNIL_N8N_MCP_BASE_URL` (`http://localhost:5680/mcp` — ADR-032 Amendment 1) | ADR-033 validator; n8n-side auth header from settings; same untrusted-results posture |
+| TB5 | API → MCP HTTP (n8n) | `SUNIL_N8N_MCP_BASE_URL` (`http://localhost:5680/mcp/sunil` — port ADR-032 Amendment 1; workflow path ADR-033 Amendment 1) | ADR-033 validator; n8n-side auth header from settings — **bearer enforcement proven live** (S2-E §4, THREAT_MODEL DC-21); same untrusted-results posture |
 | TB6 | MCP server / n8n → upstream SaaS | GitHub, Gmail, Stripe, WordPress… | least-privilege credentials held in the server/n8n vault, never in agents (ADR-030 rule); pinned server versions (ADR-034 drift check) |
 | TB7 | n8n → API | `http://localhost:8000/api/v1/chat` | `SUNIL_SERVICE_TOKEN` bearer (ADR-035), constant-time compare, route-scoped; audit `channel="service"` |
 | TB8 | API → n8n webhook | `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` | ADR-033 validator; redacted summary payload only (C4 §2); fire-and-forget |
@@ -150,14 +150,18 @@ call that skips `decide()` (§33.3, §33.5).
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | unset in gateway lane | yes | direct lane only (kill-switch fallback) |
 | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` | canonical values | no | direct lane; ADR-017 validator (canonical ∨ loopback) |
 | `GITHUB_TOKEN` | — required for github servers | yes | injected into `github_mcp` child env at spawn (C1 §5), and the native tool |
-| `SUNIL_N8N_MCP_BASE_URL` | `http://localhost:5680/mcp` | no | `tools/mcp/http`; ADR-033 validator (loopback ∨ `n8n`); port 5680 — ADR-032 Amendment 1 |
+| `SUNIL_N8N_MCP_BASE_URL` | `http://localhost:5680/mcp/sunil` | no | `tools/mcp/http`; ADR-033 validator (loopback ∨ `n8n`); port 5680 — ADR-032 Amendment 1; workflow path — ADR-033 Amendment 1 (`/mcp` alone answers 404) |
 | `SUNIL_N8N_MCP_AUTH_TOKEN` | — required when n8n_mcp configured | yes | auth header for TB5 |
 | `SUNIL_APPROVAL_TTL_HOURS` | `72` | no | approvals service (`expires_at`) |
 | `SUNIL_APPROVAL_CONSUME_GRACE_HOURS` | `1` | no | approvals service — consume-CAS time bound + stale-approved sweep (C4 §1; Security review 2026-09-10 item 1) |
 | `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` | unset (webhook off) | no | `core/approvals/notify`; ADR-033 validator |
 | `SUNIL_APPROVALS_SWEEPER_ENABLED` | `true` | no | `main.py` lifespan — run C4 §1's approvals sweep (startup reconcile + 60 s cadence) in this process. Kill switch for operators (a second process owning the schedule, or a sweep implicated in an incident); OFF means *not started*, never "started and idle", because `reconcile_on_startup` is a state transition (integration-w1 §4) |
 | `SUNIL_SERVICE_TOKEN` | unset (machine lane off) | yes | `require_service_token` on the chat route only (ADR-035) |
-| `SUNIL_MEMORY_PROVIDER` | `fake` until Stream C lands, then `mem0` | no | memory service wiring |
+| `SUNIL_MEMORY_PROVIDER` | `fake` (application default); `.env.example` commits `pgvector` — the real engine (ADR-030 Amendment 2); `mem0` selectable → loud `SeamUnavailable`, never a fallback | no | memory seam selector, `api/wiring.py` |
+| `SUNIL_MEMORY_EMBEDDER` | `hashing` (keyless, lexical recall); `gateway` = real embeddings, refuses to boot without the key | no | `core/memory/embedding.py::build_embedder`; flip-to-`gateway` gated by ruling R10 |
+| `SUNIL_MEMORY_EMBEDDING_MODEL` | `text-embedding-3-small` | no | `GatewayEmbedder` request model id (gateway alias namespace, C2 §2) |
+| `SUNIL_MEMORY_EMBEDDING_API_KEY` | unset | yes | `GatewayEmbedder` bearer (gateway virtual key) |
+| `SUNIL_OPENHANDS_BASE_URL` | `http://localhost:3400` — in `settings.py` since 2026-09-12 (W2R2 item 2c / ADR-033 Amendment 1: `sunil_openhands_base_url` + validator + `_NAMED_HOSTS` entry; stale "not yet in settings" caveat cleared by ruling R16-D4, 2026-09-12) | no | `agents/developer` client wiring; ADR-033 validator (loopback ∨ `openhands`) |
 | `SUNIL_TOOL_MANAGER` | `real` | no | seam selector, `api/wiring.py` — which C1 implementation is wired; `fake` requires an injected seam (`Seams`) and is unreachable from configuration alone (wiring rule 1: production code never imports test doubles) |
 | `SUNIL_APPROVALS_SERVICE` | `real` | no | seam selector, `api/wiring.py` — which C4 implementation is wired; `fake` requires an injected seam, as above |
 
@@ -171,8 +175,9 @@ this inventory; per-operation tool budgets are C1 `timeout_s`, and a parked turn
 outside the deadline — §6). **Dev defaults** (documented, no behaviour change): `scripts/dev-up.*`
 generates `SUNIL_SERVICE_TOKEN` on `.env` auto-create, so the TB7 machine lane is ON in a
 generated dev environment — the table's `unset (machine lane off)` stays the fail-closed
-application default when the variable is absent; `SUNIL_MEMORY_PROVIDER` runs `fake` until
-Stream C lands (the table default), `mem0` being the committed end-state value in `.env.example`.
+application default when the variable is absent; `SUNIL_MEMORY_PROVIDER` defaults `fake` in code
+while `.env.example` commits `pgvector`, the real engine *(this sentence originally said "then
+`mem0`" — corrected 2026-09-12 per ADR-030 Amendment 2)*.
 
 Inventory append, 2026-09-12 (wave-1 rulings, QA wave S1): `SUNIL_APPROVALS_SWEEPER_ENABLED`,
 `SUNIL_TOOL_MANAGER` and `SUNIL_APPROVALS_SERVICE` — all three added by the integration round
@@ -181,6 +186,16 @@ section's "complete" heading; they are the rows above. Swept `Settings` (14 `SUN
 `api/wiring.py` against this table: these three were the only gaps, and
 `SUNIL_APPROVAL_CONSUME_GRACE_HOURS` has been present since the 2026-09-10 row. The `.env.example`
 half of S1 is the integration lane's concurrent fix, not this append.
+
+Inventory append, 2026-09-12 (round-2 ratification batch, rulings R9–R15,
+`docs/tasks/integration-w1-rulings.md`): the `SUNIL_MEMORY_PROVIDER` row corrected to the ratified
+engine (ADR-030 Amendment 2); three Stream C embedding fields added (`SUNIL_MEMORY_EMBEDDER`,
+`SUNIL_MEMORY_EMBEDDING_MODEL`, `SUNIL_MEMORY_EMBEDDING_API_KEY` — they were in `settings.py` and
+`.env.example` but in no inventory); `SUNIL_OPENHANDS_BASE_URL` added ahead of its `settings.py`
+field (ADR-033 Amendment 1 — the row carries the "not yet in settings" flag until the applier
+lands it); `SUNIL_N8N_MCP_BASE_URL` default corrected to the workflow path `/mcp/sunil` here, in
+§4's TB5 row and in the Compose in-network example (S2-E §7 item 1; ADR-033 Amendment 1). Sweep
+basis: `settings.py`'s full `SUNIL_*` field set diffed against this table.
 
 **Web — `apps/web`:** `NEXT_PUBLIC_API_BASE_URL` = `http://localhost:8000` (MUST be `localhost`
 so the session cookie is same-site with the page origin — the ADR-008 rule; the API may bind
@@ -197,7 +212,7 @@ so the session cookie is same-site with the page origin — the ADR-008 rule; th
 | `n8n` | `n8nio/n8n:2.38.5` | `127.0.0.1:5680→5678` | `N8N_ENCRYPTION_KEY` (secret — the vault key), `DB_TYPE=postgresdb`, `DB_POSTGRESDB_HOST=postgres`, `DB_POSTGRESDB_DATABASE=n8n` + role creds; holds tool creds + `SUNIL_SERVICE_TOKEN` in its vault |
 | `openhands` (V2-D/F) | pinned at adoption (not yet in compose) | `127.0.0.1:3400→3000` | sandbox config; git creds scoped per ADR-030 item 4 |
 | `langfuse` (optional) | pinned at adoption (not yet in compose) | `127.0.0.1:3200→3000` | own secret set; adds ClickHouse if adopted |
-| `api` / `web` (later — the api container is a commented stub today; profiles arrive with it, ADR-032 Amendment 1) | built from repo | `8000`/`3001` as above | same app env, with in-network URLs (`http://litellm:4000`, `postgres:5432`, `http://n8n:5678/mcp`) — legal under ADR-033's named-host rule |
+| `api` / `web` (later — the api container is a commented stub today; profiles arrive with it, ADR-032 Amendment 1) | built from repo | `8000`/`3001` as above | same app env, with in-network URLs (`http://litellm:4000`, `postgres:5432`, `http://n8n:5678/mcp/sunil`) — legal under ADR-033's named-host rule |
 
 Nothing else reads the process environment (M1 law: `settings.py` is the single env seam).
 

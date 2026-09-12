@@ -52,3 +52,67 @@ class RunWorkflowParams(BaseModel, extra="forbid"):
 
     workflow_id: str = Field(min_length=1, max_length=128)
     payload: dict = Field(default_factory=dict)
+
+
+#: The branch charset, identical to ``agents/developer/agent.py``'s ``_BRANCH_RE``
+#: and deliberately so: the agent validates a branch before it builds these
+#: arguments, and a params model that admitted MORE than the agent does would be
+#: the gap a second caller walks through. Conservative by construction — must
+#: start alphanumeric, and nothing a shell or a git refspec reads as syntax
+#: (``--upload-pack=...`` is an argument, not a ref).
+_BRANCH_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$"
+#: `config/projects.yaml`'s key space (M1's T-16 rule: a plan names a project,
+#: never a repository or a URL). The REPOSITORY is resolved from the registry by
+#: the wiring code, which is why no model here has an `owner`/`repo`/`url` field.
+_PROJECT_KEY_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
+
+
+class PushBranchParams(BaseModel, extra="forbid"):
+    """``github_mcp.push_branch`` — ADR-030 §4's `allow` row.
+
+    Granted unattended, and narrow enough to deserve it: it pushes the
+    developer agent's OWN work branch. `base_branch` is carried because the push
+    is meaningful only against the branch the work was cut from, and because the
+    `args_hash` a later `merge_main` approval binds to must cover the same three
+    values (`docs/tasks/S2-F-openhands.md` §2).
+
+    Nothing here is copied from the execution engine's reply: the agent builds
+    all three fields from values it validated itself (control 3). `extra="forbid"`
+    is what stops a fourth field — a remote, a token, a force flag — riding along.
+    """
+
+    project_key: str = Field(pattern=_PROJECT_KEY_PATTERN)
+    branch: str = Field(pattern=_BRANCH_PATTERN)
+    base_branch: str = Field(pattern=_BRANCH_PATTERN)
+
+
+class MergeMainParams(BaseModel, extra="forbid"):
+    """``github_mcp.merge_main`` — ADR-030 §4's `ask_user` row.
+
+    Same three fields as the push, on purpose: this is the operation an owner
+    reads on the approval card, and "merge THAT branch into THAT base of THAT
+    project" is the whole question. Identical shape also means the pair cannot
+    drift into an approval that binds different arguments from the write.
+    """
+
+    project_key: str = Field(pattern=_PROJECT_KEY_PATTERN)
+    branch: str = Field(pattern=_BRANCH_PATTERN)
+    base_branch: str = Field(pattern=_BRANCH_PATTERN)
+
+
+class PostUpdateParams(BaseModel, extra="forbid"):
+    """``n8n_mcp.post_update`` — the one governed action the Stream E MCP Server
+    Trigger workflow exposes (``infra/n8n/workflows/mcp-server.json``).
+
+    Tight where ``run_workflow`` is loose, and deliberately so: this operation's
+    arguments are what an owner reads on the approval card before deciding, so
+    they are two named, bounded fields rather than a free-form ``payload``. The
+    ``args_hash`` covers exactly this shape — "the owner approved posting THAT
+    summary against THAT project" — and ``extra="forbid"`` is what stops a plan
+    smuggling a third key past the value the approval binds to.
+    """
+
+    #: The same key space as ``config/projects.yaml`` (M1's T-16 rule: a plan
+    #: names a project, never a repository or a URL).
+    project_key: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    summary: str = Field(min_length=1, max_length=2000)

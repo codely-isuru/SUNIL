@@ -151,20 +151,22 @@ def test_cross_validation_passes_for_the_shipped_pair() -> None:
     cross_validate_permissions(config, registry)
 
 
-def test_the_shipped_config_declares_all_three_adapter_kinds() -> None:
+def test_the_shipped_config_declares_the_two_live_adapter_kinds() -> None:
     config = load_tools_config(REPO_ROOT / "config" / "tools.yaml")
 
     assert config.tools["github"].kind is AdapterKind.NATIVE
-    assert config.tools["github_mcp"].kind is AdapterKind.MCP_STDIO
     assert config.tools["n8n_mcp"].kind is AdapterKind.MCP_HTTP
-    # C1 §5 — pinned identity: a stdio server pins a version, an HTTP one names
-    # the settings field its base URL comes from (never a literal URL in config,
-    # which would bypass the ADR-033 validator).
-    assert config.tools["github_mcp"].version
+    # C1 §5 — pinned identity: an HTTP server names the settings field its base
+    # URL comes from (never a literal URL in config, which would bypass the
+    # ADR-033 validator).
     assert config.tools["n8n_mcp"].base_url_env == "SUNIL_N8N_MCP_BASE_URL"
     assert config.tools["n8n_mcp"].auth_token_env == "SUNIL_N8N_MCP_AUTH_TOKEN"
-    # No secret VALUES in config — only env-variable names (C1 §5).
-    assert config.tools["github_mcp"].credential_env == ("GITHUB_TOKEN",)
+    # The shipped `mcp_stdio` example is DORMANT — ruling R16 (2026-09-12): the
+    # pinned server was deprecated and advertised none of SUNIL's operation
+    # names, so the block is commented out until the w2r3 verified-pin parcel.
+    # The loader's stdio path stays covered by this module's own synthetic
+    # GOOD_BLOCK, which is a loader fixture and keeps its inert literal.
+    assert "github_mcp" not in config.tools
 
 
 def test_the_shipped_config_names_no_secret_values() -> None:

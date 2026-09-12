@@ -23,13 +23,48 @@ agents:
     github:
       list_recent_activity: allow
 
-    # MCP over stdio. `issues_close` WRITES to a third party, so it is
-    # `ask_user`: the call parks via C4 and executes only after the owner
-    # approves it (ARCHITECTURE_V2 §6's worked example).
-    github_mcp:
-      issues_list: allow
-      issues_close: ask_user
+    # github_mcp is DORMANT — ruling R16 (2026-09-12,
+    # docs/tasks/integration-w1-rulings.md): the pinned server was deprecated
+    # and served none of these names. Rows return ONLY with the w2r3
+    # verified-pin parcel, TOGETHER with the tools.yaml block (R15 atomicity —
+    # a row here without that block is a startup cross-validation refusal).
+    # To restore verbatim (`issues_close` stays `ask_user` — ARCHITECTURE_V2
+    # §6's worked example; the call parks via C4):
+    # github_mcp:
+    #   issues_list: allow
+    #   issues_close: ask_user
 
     # MCP over streamable HTTP (the n8n MCP server, Stream E).
+    # `post_update` WRITES (it records something outside SUNIL), so it parks via
+    # C4 rather than executing on the agent's say-so. There is no `allow` row on
+    # this server by design: n8n is the one tool whose own workflows can be
+    # edited in a browser, so an unattended grant here would widen with an edit
+    # nobody reviews (docs/tasks/S2-E-n8n.md §3).
+    #
+    # `run_workflow` is gone with the tools.yaml row it needed — see the comment
+    # there. A grant for an operation no tool declares fails startup's
+    # cross-validation, so this file cannot be left behind on its own.
     n8n_mcp:
-      run_workflow: ask_user
+      post_update: ask_user
+
+  # Stream F's developer agent (ADR-030 §4, docs/tasks/S2-F-openhands.md §5.1).
+  # The agent delegates a work order to the sandboxed OpenHands engine and then
+  # expresses the git writes that run wants as ordinary tool calls, decided
+  # here like anyone else's.
+  #
+  # There is deliberately no row for the DELEGATION itself: a sandboxed run that
+  # touches nothing outside its own container is not an action on the world, and
+  # the chokepoint governs actions on the world. The work order is a NON-tool
+  # plan step addressed to the agent.
+  # The developer's two ADR-030 §4 rows — `push_branch: allow` (the one
+  # unattended write; narrow because agents/developer/agent.py refuses
+  # protected/base/wrong-prefix branches and the params model forbids a fourth
+  # field) and `merge_main: ask_user` (the owner decides, every time) — are
+  # DORMANT: ruling R16 (2026-09-12). They return only with the w2r3
+  # verified-pin parcel; until then the engine's structural default-deny is
+  # the decision of record. The agent stays as an empty mapping so the
+  # whole-file pins keep their shape. To restore verbatim:
+  #   github_mcp:
+  #     push_branch: allow
+  #     merge_main: ask_user
+  developer: {}

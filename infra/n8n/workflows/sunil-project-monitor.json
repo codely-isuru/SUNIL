@@ -1,0 +1,100 @@
+{
+  "name": "SUNIL - project monitor",
+  "meta": {
+    "sunil": {
+      "role": "trigger",
+      "lane": "service",
+      "instruction_owner": "infra/n8n/workflows (Stream E)",
+      "note": "ADR-030 §5 role 1. Exception-reporting by instruction: the turn is asked to say nothing when everything is on track, so a two-hourly schedule does not become two-hourly noise."
+    }
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9-17/2 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "sunil-project-monitor-cron",
+      "name": "Every 2h, 09:00-17:00 weekdays",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/v1/chat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-SUNIL-Channel-Label",
+              "value": "n8n:project-monitor"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: \"Project health sweep across the active Codely engagements. Flag only exceptions: a project with no commit in 72 hours, a pull request open longer than three days, a task past its due date, or a CI run that has been red since the last sweep. One line each, project first. If nothing qualifies, reply with exactly: all clear.\", channel_label: \"n8n:project-monitor\" }) }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "sunil-project-monitor-post",
+      "name": "POST /api/v1/chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "__SUNIL_SERVICE_TOKEN_CREDENTIAL_ID__",
+          "name": "SUNIL service token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst status = r.statusCode ?? 0;\nconst body = r.body ?? {};\nreturn [{ json: {\n  workflow: 'sunil-project-monitor',\n  delivered: status === 200,\n  status,\n  request_id: body.request_id ?? null,\n  conversation_id: body.conversation_id ?? null,\n  outcome: body.outcome ?? 'unreachable',\n} }];"
+      },
+      "id": "sunil-project-monitor-outcome",
+      "name": "Record trigger outcome",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    }
+  ],
+  "connections": {
+    "Every 2h, 09:00-17:00 weekdays": {
+      "main": [[{ "node": "POST /api/v1/chat", "type": "main", "index": 0 }]]
+    },
+    "POST /api/v1/chat": {
+      "main": [[{ "node": "Record trigger outcome", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Australia/Melbourne",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300
+  }
+}

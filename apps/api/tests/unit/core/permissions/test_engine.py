@@ -158,14 +158,39 @@ def test_load_permissions_on_a_missing_file_is_an_error_not_an_empty_allow(tmp_p
 
 def test_the_shipped_repo_config_loads_and_grants_only_reviewed_triples() -> None:
     """``config/permissions.yaml`` as committed: every grant is a triple a human
-    reviewed, and nothing is granted ``allow`` that is not read-only (ADR-034 —
-    new operations arrive by config PR, never by a server advertising them)."""
+    reviewed (ADR-034 — new operations arrive by config PR, never by a server
+    advertising them).
+
+    Growth-pinned deliberately: the agent list is asserted WHOLE, so an agent
+    appearing in that file has to come past this test. W2R2 added ``developer``
+    (ADR-030 §4, Stream F).
+
+    This test used to claim in passing that "nothing is granted ``allow`` that
+    is not read-only". It never asserted it, and as of ADR-030 §4 it is no
+    longer true — ``developer.github_mcp.push_branch`` is an unattended WRITE,
+    deliberately. The rule now has a home that ENFORCES it:
+    ``tests/unit/agents/test_developer_mount.py::
+    test_no_unattended_write_exists_while_github_mcp_is_dormant``
+    checks every ``allow`` row in this file against ``read_only`` in
+    ``config/tools.yaml``. While ``github_mcp`` is dormant that set is empty;
+    the one named exception returns with the w2r3 parcel.
+    """
     from pathlib import Path
 
     repo_config = Path(__file__).resolve().parents[6] / "config" / "permissions.yaml"
     registry = load_permissions(repo_config)
 
-    assert registry.agent_ids() == ["project_manager"]
+    assert registry.agent_ids() == ["project_manager", "developer"]
     assert registry.grant_for("project_manager", "github", "list_recent_activity") == "allow"
-    assert registry.grant_for("project_manager", "github_mcp", "issues_close") == "ask_user"
+    # Every ``github_mcp`` row is commented out — ruling R16 (2026-09-12): the
+    # pinned server was deprecated and advertised none of these names, so the
+    # rows return only with the w2r3 verified-pin parcel, together with the
+    # ``config/tools.yaml`` block. ``developer`` stays in the agent list above
+    # as an explicit empty mapping.
+    assert registry.grant_for("project_manager", "github_mcp", "issues_close") is None
     assert registry.grant_for("project_manager", "github_mcp", "repos_delete") is None
+    assert registry.grant_for("developer", "github_mcp", "push_branch") is None
+    assert registry.grant_for("developer", "github_mcp", "merge_main") is None
+    # The delegation to the execution engine is not a tool call, so it has no
+    # row here and none in config/tools.yaml (S2-F-openhands.md §2).
+    assert registry.grant_for("developer", "github_mcp", "fix_and_pr") is None

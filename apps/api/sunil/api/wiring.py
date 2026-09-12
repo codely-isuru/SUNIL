@@ -117,16 +117,52 @@ def resolve_provider(settings: Any, seams: Seams) -> Any:
     return build_provider(settings)
 
 
-def resolve_memory_provider(settings: Any, seams: Seams) -> Any:
-    """C3 — the long-term memory provider behind `core/memory/service.py`."""
+def resolve_memory_provider(settings: Any, seams: Seams, *, engine: Any = None) -> Any:
+    """C3 — the long-term memory provider behind `core/memory/service.py`.
+
+    `pgvector` is the REAL one: `memory_providers/pgvector_provider.py`, on
+    Postgres 17 + pgvector, with the embedder chosen by `SUNIL_MEMORY_EMBEDDER`.
+
+    Two refusals here, both deliberate.
+
+    * **No engine → no boot.** The provider is given the APPLICATION's engine,
+      never one of its own, for `resolve_approvals`' reason in its own terms: the
+      audit row that names a memory is written by the memory service on the
+      application's connection, and a provider holding a second engine would
+      file the memory in one database while its own audit trail lived in
+      another. A memory provider with no database loses every write.
+    * **`mem0` is still unbuilt and still says so.** It would be trivial to fall
+      back to the built provider; that is exactly what must not happen. An
+      operator who configured Mem0 would get a different engine with different
+      retrieval behaviour and no indication of it. ADR-030's seam is only real
+      while the unselected vendor stays selectable and stays loud.
+    """
     selected = settings.sunil_memory_provider
     if selected == "fake":
         return _require(seams.memory_provider, setting="SUNIL_MEMORY_PROVIDER", value=selected)
     if seams.memory_provider is not None:
         return seams.memory_provider
-    raise _unbuilt(
-        setting="SUNIL_MEMORY_PROVIDER", stream="C", module="memory_providers/mem0_provider.py"
+    if selected == "mem0":
+        raise _unbuilt(
+            setting="SUNIL_MEMORY_PROVIDER",
+            stream="C",
+            module="memory_providers/mem0_provider.py",
+        )
+
+    if engine is None:
+        raise SeamUnavailable(
+            "SUNIL_MEMORY_PROVIDER='pgvector' selects "
+            "memory_providers/pgvector_provider.py, which is a database provider, "
+            "but no engine was available at wiring time. Refusing to boot rather "
+            "than serving a memory that silently forgets every write."
+        )
+
+    from sunil.core.memory.embedding import build_embedder  # noqa: PLC0415
+    from sunil.memory_providers.pgvector_provider import (  # noqa: PLC0415
+        PgVectorMemoryProvider,
     )
+
+    return PgVectorMemoryProvider(engine=engine, embedder=build_embedder(settings))
 
 
 def resolve_approvals(settings: Any, seams: Seams, *, engine: Any = None) -> Any:

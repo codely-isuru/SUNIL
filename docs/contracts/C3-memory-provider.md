@@ -1,11 +1,12 @@
 # C3 — Memory Provider Interface
 
-**Version:** 1.1.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
-**Consumers:** Stream C (Mem0 + entities), core orchestrator (context loading, stage 3
+**Version:** 1.1.1 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Consumers:** Stream C (memory engine + entities), core orchestrator (context loading, stage 3
 `memory_retrieved`), Stream D (audit browser shows memory writes).
 **Informed by:** M1 reference `main:apps/api/sunil/core/memory/short_term.py` (short-term = the
 conversation's own messages; the auditable `memories` pointer row), ROADMAP §13, ADR-014 (capture
-classes), ADR-030 (Mem0 behind the seam; entity schema stays custom).
+classes), ADR-030 + Amendment 2 (a replaceable engine behind the seam — first-party pgvector
+built, Mem0 selectable-unbuilt; entity schema stays custom).
 
 Change policy: additive optional fields bump MINOR; changes to `recall`/`write` signatures, scope
 kinds, or receipt semantics bump MAJOR with a new ADR.
@@ -16,7 +17,8 @@ kinds, or receipt semantics bump MAJOR with a new ADR.
 
 One seam through which every agent/orchestrator memory read and write passes, so that: retrieval is
 scoped (no agent reads outside its scope), every write is classified (§26.9) and audited, and the
-engine (Mem0 on Postgres/pgvector) is a replaceable vendor. **Short-term memory is not behind this
+engine (the first-party pgvector provider today; Mem0 selectable-unbuilt — ADR-030 Amendment 2) is
+replaceable. **Short-term memory is not behind this
 seam** — per the M1-proven shape, the current conversation's recent messages are read directly from
 the `messages` table by the context loader; C3 governs long-term/semantic memory only.
 
@@ -129,16 +131,25 @@ Normative rules:
 - **Latency budget**: `recall` on the turn hot path must return in ≤ 800 ms or the context loader
   proceeds without long-term memory (recorded in the trace as `memory_retrieved` with
   `{"degraded": true}`). Memory being down degrades a turn; it never fails one.
-- **Embeddings** (Mem0 backend) are obtained through the C2 gateway, so embedding calls inherit
-  routing, budgets and audit like every other model call.
+- **Embeddings** are obtained through the LiteLLM gateway transport (`GatewayEmbedder`, when
+  `SUNIL_MEMORY_EMBEDDER=gateway`), so embedding calls inherit **routing and budgets** (virtual
+  key; the gateway's spend log). They do **not** yet appear in SUNIL's `llm_calls` audit: the
+  frozen C2 `LLMProvider` protocol has no `embed()` method, so the call cannot ride the audited
+  provider seam, and adding one is a MAJOR C2 change no memory lane may make in passing. The audit
+  half of the original promise is a registered **C2 v2.0.0 candidate** (ruling R10,
+  `docs/tasks/integration-w1-rulings.md`, owning round named there); until it lands, the gateway's
+  own spend log is the only per-call record of embedding egress. *(v1.1.1 — this bullet previously
+  promised "routing, budgets and audit"; the audit clause was unimplementable against frozen C2.)*
 
 ## 3. Entity linkage points
 
-The entity schema (`clients`, `projects`, `people` + `entity_links`) is **custom Stream C code**,
-not Mem0's. The seam touches it in exactly two places:
+The entity schema (`clients`, `projects`, `people` + `memory_entity_links` — the landed table
+name, v1.1.1) is **custom Stream C code**, never the vendor's. The seam touches it in exactly two
+places:
 
-1. `MemoryItem.entity_refs` — persisted verbatim with the memory (Mem0 metadata), so recall can
-   filter by entity without joining SUNIL tables.
+1. `MemoryItem.entity_refs` — persisted verbatim with the memory (provider-persisted metadata;
+   `memory_entity_links` rows in the pgvector engine), so recall can filter by entity without
+   joining SUNIL tables.
 2. Scope resolution — `MemoryScope(kind="project", id="pda")` is resolved by the memory *service*
    (SUNIL code) to the project's entity id before hitting the provider; the provider only ever sees
    resolved ids. Unknown ids raise `MemoryScopeError` before any vendor call.
@@ -249,6 +260,18 @@ Contract tests (`apps/api/tests/contracts/test_c3_memory_provider.py`):
    unnoticed before this ruling.
 
 ## Changelog
+
+- **v1.1.1 — 2026-09-12 (round-2 ratification batch, rulings R9/R10).** PATCH, two doc-truth
+  corrections, zero semantic movement: (1) §2's embeddings bullet no longer promises `llm_calls`
+  audit — frozen C2 has no `embed()`, so the promise was unimplementable; the bullet now states
+  what holds (routing + budgets via the gateway transport) and names the audit gap as the
+  registered C2 v2.0.0 candidate (R10). (2) Descriptive vendor prose updated per ADR-030
+  Amendment 2 (first-party pgvector engine; Mem0 selectable-unbuilt) and §3's parenthetical
+  updated to the landed link-table name `memory_entity_links`. PATCH defense: no signature, scope
+  kind, receipt semantics or fake behaviour moves; every §5 contract test is byte-identical; the
+  only text changed either described an engine choice this contract never bound (the seam is the
+  contract, the engine is ADR-030's) or promised behaviour no conforming implementation could
+  exhibit. The MINOR/MAJOR bars are untouched.
 
 - **v1.1.0 — 2026-09-10 (post-merge, C3-scope round).** `write` gains keyword-only
   `scope: MemoryScope` (QA fakes-build finding F-1, `docs/tasks/P0-fakes.md`): v1.0.0's signature

@@ -44,7 +44,23 @@ SUPPORTED_INTENTS: tuple[str, ...] = (
 
 #: Actions that call no tool. Every OTHER legal action is `tool_call`, whose
 #: tool/operation pair is registry-derived below.
-NON_TOOL_ACTIONS: tuple[str, ...] = ("resolve_project", "summarise_activity", "answer")
+#:
+#: `fix_and_pr` is Stream F's work order (ADR-030 §4, S2-F §5 handover 6): it
+#: addresses the `developer` AGENT, and a delegation to a sandbox that touches
+#: nothing outside its own container is not an action on the world. Modelling it
+#: as a tool instead would need a `config/tools.yaml` entry with no adapter
+#: behind it — a tool the plan validator must reject and the chokepoint could
+#: never execute. The git writes that run wants ARE tool calls, decided at the
+#: chokepoint like anyone else's. Layer 4 already accepted such a step; adding it
+#: here is what lets a constrained-decode planner EMIT one
+#: (`agents/developer/agent.py::WORK_ORDER_ACTION` is the same string, and a test
+#: pins the two together).
+NON_TOOL_ACTIONS: tuple[str, ...] = (
+    "resolve_project",
+    "summarise_activity",
+    "answer",
+    "fix_and_pr",
+)
 
 TOOL_CALL_ACTION = "tool_call"
 

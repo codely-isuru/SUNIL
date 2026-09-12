@@ -243,6 +243,119 @@ services:
     networks: [sunil]
 
   # -----------------------------------------------------------------------
+  # OpenHands — the Developer/QA execution engine (ADR-030 §4, Stream F).
+  #
+  # DELIBERATELY COMMENTED OUT. This is not an unfinished block; it is the
+  # outcome of the runtime decision below, and uncommenting it without taking
+  # that decision again would re-open the finding it records.
+  #
+  # ---- The docker.sock question (wave-1 security review: FORBIDDEN) -------
+  # OpenHands' default runtime spawns a fresh sandbox CONTAINER per
+  # conversation, which it does by talking to the host's Docker daemon through
+  # a bind-mounted /var/run/docker.sock. That mount is not a permission, it is
+  # a privilege escalation: anything that reaches the socket can start a
+  # container with the host root filesystem bind-mounted and privileged: true.
+  # The threat-model implication is specific, not generic --
+  #   * the new SUNIL -> dev-engine boundary would become "agent-authored code
+  #     -> host root", collapsing the other boundaries in docs/THREAT_MODEL.md
+  #     rather than adding one: the socket reaches the postgres volume
+  #     (audit_events, approvals), n8n's credential vault, and
+  #     infra/.env.litellm with the provider keys ADR-030 §2 exists to keep out
+  #     of the app's reach;
+  #   * the code running in that sandbox is written by an autonomous loop whose
+  #     context includes issue bodies and repository files -- exactly the
+  #     untrusted input C1 §3 is written for. "Sandboxed" would then be a
+  #     comment, not a control.
+  # So the socket is not mounted here, and no variant of this block may mount
+  # it without a new ADR and a security review that answers this paragraph.
+  #
+  # ---- The alternatives, and why the block is still commented ------------
+  #   * Remote runtime (SANDBOX_REMOTE_RUNTIME_API_URL): moves container
+  #     spawning to a runtime service, so this container needs no socket. It is
+  #     the option that fits the rule. It needs a runtime API endpoint we do
+  #     not host and have not stood up; pointing it at a third-party hosted
+  #     runtime would ship client repository contents off-machine, which is a
+  #     privacy-class decision (ADR-030's OmniRoute reasoning applies verbatim)
+  #     and not one this stream may take.
+  #   * Local runtime (the agent's commands run inside this container): needs
+  #     no socket, but removes the isolation between the agent and the service
+  #     that governs it. Rejected on the same grounds.
+  #   * Kubernetes / E2B / Modal runtimes: each is a new hosted dependency.
+  # Enabling this service therefore has a prerequisite that is an ADR, not an
+  # edit: choose a sandbox runtime, then uncomment. Stream F's SUNIL-side seam
+  # is complete and tested without it (docs/tasks/S2-F-openhands.md).
+  #
+  # ---- Notes for whoever enables it --------------------------------------
+  #   * profiles: [dev-agents] keeps it out of the default `up`. NOTE that
+  #     `docker compose config` also OMITS profiled services (verified with
+  #     Compose v5.5.1 on 2026-09-12), so CI's port/loopback gate will not see
+  #     this service: the gate needs a second pass with `--profile dev-agents`
+  #     before this block goes live. Do NOT add `openhands` to that gate's
+  #     EXPECTED map before the second pass exists -- the service is absent
+  #     from the default resolved config, so the entry would fail the build.
+  #   * Host 3400 -> container 3000 is ADR-032's frozen table ("openhands
+  #     (Phase V2-D/F) | 127.0.0.1:3400 | openhands:3000"), not a free choice.
+  #     127.0.0.1 for the reason in this file's header.
+  #   * The image MUST be pinned by digest before this runs. The tag below is a
+  #     blocking placeholder on purpose: this branch was built without registry
+  #     access, and a version number written from memory is worse than a
+  #     placeholder that stops a boot. CI's floating-tag rule does not read
+  #     commented lines, so this note is the only guard until then.
+  #   * The scoped git credential is the SANDBOX's, delivered at ITS boot in
+  #     its own env file (never the shared root .env -- the LiteLLM finding
+  #     above). Fine-grained, one repository, contents:read/write only, no
+  #     admin and no org scope. SUNIL's developer agent holds no git credential
+  #     and cannot pass one (sunil/agents/developer/client.py), so this token is
+  #     the only git authority the engine has -- and merge_main stays SUNIL's
+  #     own approval-gated tool call rather than something the sandbox can do
+  #     for itself. Branch protection on main is the server-side backstop for
+  #     that and should be on before this boots.
+  #   * The model comes from LiteLLM, not from a provider key: the engine joins
+  #     the same gateway as the rest of SUNIL with its OWN virtual key and
+  #     budget (ADR-030 §2), so a runaway loop is a budget line rather than a
+  #     surprise invoice.
+  #   * SUNIL's side needs SUNIL_OPENHANDS_BASE_URL, and ADR-033's named-host
+  #     set must gain "openhands" in settings.py at the same time (the ADR
+  #     already anticipates it: "openhands joins it in Phase V2-D").
+  #
+  # openhands:
+  #   # PIN ME before enabling: <image>@sha256:<digest>. Unverified here.
+  #   image: docker.all-hands.dev/all-hands-ai/openhands:PIN-ME
+  #   container_name: ${COMPOSE_PROJECT_NAME:-sunil-v2}-openhands
+  #   profiles: [dev-agents]
+  #   restart: unless-stopped
+  #   environment:
+  #     # NO DOCKER_HOST, and NO /var/run/docker.sock volume. See above.
+  #     SANDBOX_RUNTIME: remote
+  #     SANDBOX_REMOTE_RUNTIME_API_URL: ${OPENHANDS_RUNTIME_API_URL:?choose a runtime first}
+  #     LLM_BASE_URL: http://litellm:4000
+  #     LLM_API_KEY: ${LITELLM_VIRTUAL_KEY_OPENHANDS:?set in .env}
+  #     LLM_MODEL: ${OPENHANDS_MODEL:-litellm_proxy/claude}
+  #     LOG_ALL_EVENTS: "false"
+  #   env_file:
+  #     # The sandbox's own scoped git token lives here and nowhere else.
+  #     - path: ./.env.openhands
+  #       required: false
+  #   volumes:
+  #     # Conversation state only. No host source tree is mounted: the engine
+  #     # clones the repository itself, with its own credential.
+  #     - openhands_state:/.openhands
+  #     # (also declare `openhands_state:` in the top-level volumes: map when
+  #     # you uncomment this -- it is not declared while this is dead config)
+  #   ports:
+  #     - "127.0.0.1:${OPENHANDS_HOST_PORT:-3400}:3000"
+  #   depends_on:
+  #     litellm:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:3000/health')\""]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 60s
+  #   networks: [sunil]
+
+  # -----------------------------------------------------------------------
   # STUB — the SUNIL application container plugs in HERE.
   #
   # Intentionally commented out: no application code exists on `V2` yet
@@ -285,12 +398,24 @@ services:
   #     # A per-agent VIRTUAL key, never LITELLM_MASTER_KEY: the master key is
   #     # the proxy's admin credential (it can mint keys and read all spend).
   #     LITELLM_VIRTUAL_KEY_DEFAULT: ${LITELLM_VIRTUAL_KEY_DEFAULT:?set in .env}
-  #     SUNIL_N8N_MCP_BASE_URL: http://n8n:5678/mcp
+  #     # `/mcp/sunil`, not `/mcp`: the trailing segment is the MCP Server
+  #     # Trigger workflow's own path. `/mcp` is n8n's prefix and answers 404
+  #     # (docs/tasks/S2-E-n8n.md §3, verified against the live 2.38.5 server).
+  #     SUNIL_N8N_MCP_BASE_URL: http://n8n:5678/mcp/sunil
   #     SUNIL_N8N_MCP_AUTH_TOKEN: ${SUNIL_N8N_MCP_AUTH_TOKEN:?set in .env}
+  #     # Only meaningful with the `dev-agents` profile up (the openhands
+  #     # service below is still commented out — S2-F §4). Harmless before
+  #     # then: nothing reads it, and ADR-033 validates it either way.
+  #     SUNIL_OPENHANDS_BASE_URL: http://openhands:3000
   #     SUNIL_APPROVAL_TTL_HOURS: ${SUNIL_APPROVAL_TTL_HOURS:-72}
   #     SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL: ${SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL:-}
   #     SUNIL_SERVICE_TOKEN: ${SUNIL_SERVICE_TOKEN:?set in .env}
-  #     SUNIL_MEMORY_PROVIDER: ${SUNIL_MEMORY_PROVIDER:-mem0}
+  #     # `pgvector`, NOT `mem0`: pgvector is the built provider (ADR-030
+  #     # Amendment 2 ratifies it). `mem0` is still selectable and still
+  #     # unbuilt — it raises a loud SeamUnavailable rather than falling back —
+  #     # so this default would have refused to boot a container whose .env did
+  #     # not set the variable.
+  #     SUNIL_MEMORY_PROVIDER: ${SUNIL_MEMORY_PROVIDER:-pgvector}
   #     GITHUB_TOKEN: ${GITHUB_TOKEN:-}
   #     # NO ANTHROPIC_API_KEY / OPENAI_API_KEY here, ever: upstream keys are
   #     # scoped to infra/.env.litellm and the app reaches providers only

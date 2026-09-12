@@ -1,0 +1,60 @@
+{
+  "name": "SUNIL - MCP server",
+  "meta": {
+    "sunil": {
+      "role": "mcp_server",
+      "endpoint": "/mcp/sunil",
+      "auth": "bearerAuth (httpBearerAuth credential, value = SUNIL_N8N_MCP_AUTH_TOKEN)",
+      "note": "ADR-030 §5 role 2 — n8n is a CONNECTOR FABRIC reached through the governed chokepoint. Every tool this workflow advertises must also appear in config/tools.yaml with a permission row, or it does not exist to SUNIL (ADR-034). authentication MUST stay 'bearerAuth': 'none' is the node default and would publish this endpoint to anything that can reach the port (docs/tasks/S2-E-n8n.md §4)."
+    }
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "bearerAuth",
+        "path": "sunil",
+        "instructions": "SUNIL's own governed action surface. Only the tools declared in SUNIL's config/tools.yaml are callable; anything else advertised here is ignored by the client."
+      },
+      "id": "sunil-mcp-trigger",
+      "name": "MCP Server Trigger",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "webhookId": "sunil",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "__SUNIL_MCP_BEARER_CREDENTIAL_ID__",
+          "name": "SUNIL MCP bearer"
+        }
+      },
+      "notes": "The bearer value lives in n8n's encrypted credential vault, never in this file. scripts/n8n-setup.* creates it from SUNIL_N8N_MCP_AUTH_TOKEN and substitutes the id on import."
+    },
+    {
+      "parameters": {
+        "description": "Record a short status update against a Codely project. Returns the stored update as structured data.",
+        "jsCode": "// Echo-style demo of the governed action (Stream E). It deliberately writes\n// nowhere: the point being proved is the GOVERNANCE path — plan → SUNIL's\n// params model → permission ask_user → owner approval → chokepoint → this tool\n// — not the storage. Replacing this body with a real write changes nothing\n// about who is allowed to call it.\nconst project_key = String(query.project_key ?? '').trim();\nconst summary = String(query.summary ?? '').trim();\nif (!project_key || !summary) {\n  return JSON.stringify({ ok: false, error: 'project_key and summary are both required' });\n}\nreturn JSON.stringify({\n  ok: true,\n  project_key,\n  summary,\n  recorded_at: new Date().toISOString(),\n  recorded_by: 'n8n:sunil-mcp-server',\n});",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"project_key\": {\n      \"type\": \"string\",\n      \"description\": \"The Codely project key, as it appears in SUNIL's config/projects.yaml.\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One or two sentences describing what changed.\"\n    }\n  },\n  \"required\": [\"project_key\", \"summary\"],\n  \"additionalProperties\": false\n}"
+      },
+      "id": "sunil-mcp-tool-post-update",
+      "name": "post_update",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [220, 180],
+      "notes": "The NODE NAME is the MCP tool name from toolCode v1.2 onward, and it must match config/tools.yaml exactly — the adapter's startup drift check (ADR-034) refuses to start if it does not."
+    }
+  ],
+  "connections": {
+    "post_update": {
+      "ai_tool": [[{ "node": "MCP Server Trigger", "type": "ai_tool", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Australia/Melbourne",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 120
+  }
+}

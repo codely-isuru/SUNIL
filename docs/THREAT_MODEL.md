@@ -250,7 +250,11 @@ list may be described as present until its milestone ships.
 | DC-17 | **Approval before a spoken instruction executes a write.** M9's auto-send is safe *only* while every reachable tool operation is read-only. When write-capable tools land, a misheard command becomes an executed command | **M5** | ADR-020. The answer is the `ASK_USER` path (DC-2), not a voice-specific control. `SUNIL_VOICE_AUTO_SEND` exists so the default can be flipped in one config edit on that day |
 | ~~DC-18~~ | ~~Purge of `var/voice/`~~ — **WITHDRAWN 2026-08-19.** ADR-021 Amendment 1: `local_file` is not built, the setting does not exist, and nothing is retained | — | Kept struck through rather than deleted, so the register shows a control that was removed by *removing the feature*, not by lowering a claim |
 | DC-19 | **Rate limiting on the voice endpoints** | M11 | M1/M9 have one user and no limiter anywhere in the system. The speak endpoint's bounded cache caps the common case, not a determined loop |
+| DC-21a | **DC-21 wording fix (Security w2r2 F-3):** control #3 holds fail-closed, but a lifespan-start 403 leaves the tool present-but-transport_error, not absent - the row must state what the code does | next docs pass (SA) | Registered 2026-09-12 |
+| DC-22 | **Retention for the wave-2 durable stores:** memories has no reaper (expired rows recall-filtered, never deleted) and clients/people/projects are business PII outside ADR-014 capture scope and DC-16 purge. No write path exists yet - gap, not vulnerability | **sweep/housekeeping milestone; the write-path wave inherits C-A** (docs/tasks/w2r3-conditions.md) | Registered 2026-09-12 |
+| DC-23 | **Memory-write gate (Security w2r2 C-A, verbatim in reviews/2026-09-12-w2-security-review.md):** system-role recall framing, unimplemented local_only prompt filter, unanswered write authorization - all three MUST close in whichever wave lands a production memory write or seed path | **blocking on that wave** | Registered 2026-09-12 |
 | DC-20 | **Per-username and per-IP login throttling with lockout on `POST /api/v1/auth/login`.** Accepted absent for the current single-owner, loopback-bound deployment — the scrypt cost (`n=2**14`) is the only brake, adequate while the only reachable client is the owner's machine | **Deployment/exposure gate** — the moment the API is exposed beyond loopback this is a **pre-condition, not an improvement** (Security wave-1; disposition recorded in `docs/tasks/integration-w1.md` §7.2) | Registered 2026-09-12 so the gate inherits the decision instead of rediscovering it |
+| DC-21 | **Periodic audit of the n8n MCP Server Trigger's workflow-level `authentication` value.** It defaults to `none` (which serves `initialize`/`tools/list`/`tools/call` unauthenticated) and is one browser dropdown away from the shipped `bearerAuth` — a browser edit is not reviewable. The single setting that turns the governed connector fabric into an open one | **Next security hardening pass** (join whatever periodic configuration audit the platform grows), and a **pre-condition of any beyond-loopback n8n exposure** | Registered 2026-09-12 (ruling R15; evidence S2-E §4). Three independent compensating controls hold meanwhile — see the dated block below |
 
 ### Security wave-1 review conditions (appended 2026-09-12, wave-1 rulings batch)
 
@@ -263,6 +267,26 @@ are inherited by **wave-2's wiring round as named requirements, not chat history
 |---|---|---|
 | **C-1 — HIGH (wave-2 blocking)** | **C1 §2.1 step-4's transactional rule has no production caller.** Verbatim (security wave-1, mirrored in [`reviews/2026-09-12-w1-security-review.md`](reviews/2026-09-12-w1-security-review.md)): `core/tool_framework/manager.py:261-269` calls `consume()` without `attempt_audit`; the attempt row is written at step 4 by `core/audit/hooks.py`, which commits in its own session. Same on the park path. C1: "on the continuation path the attempt row MUST commit in the same DB transaction as the consume CAS". A crash between consume-commit and attempt-write is "spent but unrecorded"; reconcile rule 3 leans on that row existing. The service seam is proven atomic both directions — it has zero callers. Fix at wiring: continuation passes an `attempt_audit` callback on the provided conn (step 4 skips the duplicate); park via `conn=` with the attempt row in the same transaction | **CLOSED w2r1 @5e0de87** (security delta 2026-09-12; residuals R-1a/R-1b + R-3a LOW/INFO, next hardening pass) |
 | **C-3 — MEDIUM-LOW (wave-2 blocking)** | **`credential_env` can grant ANY Settings secret to an MCP child.** Verbatim: `tools/mcp/credentials.py:43-59` resolves any lowercase-matching Settings field — `credential_env: [SESSION_SECRET]` (or `SUNIL_SERVICE_TOKEN`, `DATABASE_URL`) in `config/tools.yaml` hands the cookie-signing key to a spawned child by config change alone. Fix: explicit grantable-field allowlist (tool credentials only) enforced in `_settings_value`, with a test naming the ungrantable trio | **CLOSED w2r1 @5e0de87** (security delta 2026-09-12; residuals R-1a/R-1b + R-3a LOW/INFO, next hardening pass) |
+
+### n8n MCP bearer enforcement — proven; the residual is DC-21 (appended 2026-09-12, round-2 ratification batch, ruling R15)
+
+The deferred platform-review question — does n8n do anything with `SUNIL_N8N_MCP_AUTH_TOKEN`, or is
+the MCP endpoint effectively unauthenticated? — is **settled with live evidence** (S2-E §4, n8n
+2.38.5, probes from outside the container): 403 with no bearer, 403 with a wrong bearer, **403 with
+a valid `mcp-session-id` but no bearer** (a session does not substitute for the token), 403 when
+the same token is presented as HTTP Basic or as a query parameter, 200 + full MCP handshake only on
+the correct `Authorization: Bearer`; the credential lives in n8n's encrypted vault, not in a file.
+The standing "treat the n8n MCP endpoint as unauthenticated until proven otherwise" posture is
+**closed against n8n 2.38.5 with the MCP Server Trigger configured `bearerAuth` as shipped**.
+
+What stays open is exactly DC-21: `authentication` **defaults to `none`**, and the distance from
+governed to ungoverned is one unreviewable browser dropdown. Until DC-21's audit exists, three
+independent compensating controls hold (each verified in S2-E): **(1)** loopback-only publish
+(`127.0.0.1:5680`, CI-asserted on every published port); **(2)** the export is the reviewable
+artefact — `test_the_mcp_server_trigger_requires_a_bearer` reds on anything but `bearerAuth`, and
+re-running `scripts/n8n-setup.*` re-imports the file over whatever a browser did; **(3)** SUNIL
+fails closed — a 403 at startup is a `ToolAdapterStartupError`, so the tool is absent from the
+registry, never half-mounted.
 
 ---
 

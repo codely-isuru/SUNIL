@@ -32,27 +32,54 @@ tools:
         params_ref: sunil.tools.github.adapter:GitHubListRecentActivityParams
 
   # ------------------------------------------------------------- mcp_stdio ---
-  github_mcp:
-    kind: mcp_stdio
-    display_name: GitHub MCP server
-    # Pinned version (ADR-034): the drift check at startup compares the
-    # configured operations against the live server's tools/list.
-    command: ["npx", "-y", "@modelcontextprotocol/server-github@0.6.2"]
-    version: 0.6.2
-    credential_env: ["GITHUB_TOKEN"]
-    operations:
-      issues_list:
-        read_only: true
-        timeout_s: 30
-        params_ref: sunil.tools.mcp.params:IssuesListParams
-      issues_close:
-        # A write to a third party. `read_only: false` is OUR statement — the
-        # reference server advertises its own annotations and SUNIL ignores
-        # them. Granted `ask_user` in config/permissions.yaml, so the call
-        # parks via C4 before it executes.
-        read_only: false
-        timeout_s: 30
-        params_ref: sunil.tools.mcp.params:IssuesCloseParams
+  # github_mcp — DORMANT by ruling R16 (2026-09-12,
+  # docs/tasks/integration-w1-rulings.md). Committed commented-out ON PURPOSE
+  # (the S2-F compose-block pattern): this is the ruled interim state, not an
+  # unfinished edit.
+  #
+  # WHY: the previous pin — npx @modelcontextprotocol/server-github@0.6.2 —
+  # is upstream-deprecated ("no longer supported") and advertised NONE of
+  # SUNIL's four operation names. tools/list, captured 2026-09-12:
+  #   create_branch, create_issue, create_or_update_file, create_pull_request,
+  #   create_repository, fork_repository, get_file_contents, push_files,
+  #   search_repositories
+  # Under ADR-034's drift check any one unserved row refuses start() and takes
+  # the ENTIRE tool out of the registry — and spawning a dead package with
+  # GITHUB_TOKEN in its environment is not an acceptable failure mode. So no
+  # executable github_mcp surface exists until a VERIFIED pin lands.
+  #
+  # RE-LANDING is ONE atomic parcel (w2r3 — R16 names every step): pin the
+  # official github/github-mcp-server (PIN-ME: unverifiable offline from this
+  # tree; parcel step 0 boots the candidate, captures tools/list verbatim into
+  # the task file and pins it in a test — the n8n post_update pattern), bind
+  # SUNIL's operation names to the captured verbs via ADR-034 Amendment 1
+  # (`server_tool:` bindings + the merge_main composition; operation names
+  # stay SUNIL's), and land this block + the permission rows + the pin test
+  # TOGETHER (R15's atomicity rule). The rows to restore, verbatim:
+  #
+  # github_mcp:
+  #   kind: mcp_stdio
+  #   display_name: GitHub MCP server
+  #   command: [PIN-ME — github/github-mcp-server, digest-pinned at capture]
+  #   version: PIN-ME
+  #   credential_env: ["GITHUB_TOKEN"]
+  #   operations:
+  #     issues_list:    # expected binding: list_issues — verify at capture
+  #       read_only: true
+  #       timeout_s: 30
+  #       params_ref: sunil.tools.mcp.params:IssuesListParams
+  #     issues_close:   # expected binding: update_issue(state=closed)
+  #       read_only: false
+  #       timeout_s: 30
+  #       params_ref: sunil.tools.mcp.params:IssuesCloseParams
+  #     push_branch:    # executor ruled toward the ENGINE's scoped token;
+  #       read_only: false   # final shape belongs to the engine-enablement
+  #       timeout_s: 30      # ADR (R16 part 4)
+  #       params_ref: sunil.tools.mcp.params:PushBranchParams
+  #     merge_main:     # expected binding: create_pull_request +
+  #       read_only: false   # merge_pull_request — ONE approval over
+  #       timeout_s: 30      # {project_key, branch, base_branch} (R16 part 3)
+  #       params_ref: sunil.tools.mcp.params:MergeMainParams
 
   # -------------------------------------------------------------- mcp_http ---
   n8n_mcp:
@@ -63,8 +90,30 @@ tools:
     # SecretStr until it becomes an Authorization header (TB5).
     base_url_env: SUNIL_N8N_MCP_BASE_URL
     auth_token_env: SUNIL_N8N_MCP_AUTH_TOKEN
+    #
+    # `run_workflow` USED TO BE DECLARED HERE AND IS DELIBERATELY GONE (Stream
+    # E). Two reasons, both found by running the real adapter against the real
+    # server:
+    #   1. Nothing implemented it. A configured operation the live server does
+    #      not advertise fails the ADR-034 drift check, and that failure is not
+    #      local to the operation — `start()` refuses, so the ENTIRE n8n tool
+    #      leaves the registry. One aspirational row took the whole server down.
+    #   2. It was the wrong shape for a governed surface. "Run workflow X with
+    #      payload Y" is a meta-tool: its blast radius is every workflow n8n
+    #      holds, including the scheduled ones that hold SUNIL's service token,
+    #      and an approval card for it reads "run something". Named actions —
+    #      `post_update` below — are what an owner can actually consent to.
+    # Re-adding one is a two-step change in this order: publish the tool on the
+    # MCP Server Trigger workflow FIRST, then add the row here plus a permission
+    # row. `sunil.tools.mcp.params:RunWorkflowParams` is still in the tree for
+    # whoever does that.
     operations:
-      run_workflow:
+      post_update:
+        # Stream E's governed action, served by the MCP Server Trigger workflow
+        # in infra/n8n/workflows/mcp-server.json. `read_only: false` is OUR
+        # statement about it — it records an update against a project — and the
+        # startup drift check (ADR-034) requires the live server to advertise a
+        # tool of exactly this name before the adapter will start.
         read_only: false
-        timeout_s: 60
-        params_ref: sunil.tools.mcp.params:RunWorkflowParams
+        timeout_s: 30
+        params_ref: sunil.tools.mcp.params:PostUpdateParams
