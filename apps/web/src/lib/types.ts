@@ -6,11 +6,15 @@
  * `docs/contracts/C4-approvals-openapi.yaml`. Nothing here may be widened
  * without a contract change.
  *
- * The ops-read shapes (`Task`, `ActivityResponse`, `AuditTurn`, `AuditEvent`,
- * `ProjectSummary`) follow `V2_DASHBOARD_SPEC.md` §13.1–§13.4 — the C6
- * proposal the Architect is freezing on `task/S0-ops-contracts`. §13 states
- * the shapes are identical until C6 lands; when it does, this file is the one
- * place to reconcile.
+ * The ops-read shapes (`Task`, `ActivityResponse`, `AuditTurn`, `AuditEvent`)
+ * are transcribed from the FROZEN `docs/contracts/C6-ops-reads-openapi.yaml`
+ * v1.0.0 (2026-09-11) — spec §13.1–13.3 verbatim plus the Q2 `project_key`
+ * ruling. `ProjectSummary` stays on C5/§13.4 (explicitly out of C6's scope,
+ * C6 §7). Reconciled against C6 on merge; `src/lib/mock/c6-conformance.test.ts`
+ * holds the mock layer to these key sets.
+ *
+ * House style, both contracts: every key is ALWAYS PRESENT; absence is `null`.
+ * Optional (`?`) is therefore wrong for a C6 field and is not used below.
  */
 
 // ── C4: approvals ────────────────────────────────────────────────────────────
@@ -67,7 +71,7 @@ export interface ErrorResponse {
   error: { kind: ErrorKind; message: string };
 }
 
-// ── C6 (proposed, spec §13): tasks ───────────────────────────────────────────
+// ── C6 §13.1: tasks ──────────────────────────────────────────────────────────
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "failed" | "parked";
 
@@ -77,15 +81,30 @@ export interface Task {
   objective: string;
   status: TaskStatus;
   assigned_agent: string;
-  priority?: number | null;
-  project_key?: string | null;
+  /** `tasks.priority`; V2 writes `"normal"`. A trusted STRING, not a rank. */
+  priority: string;
+  /** Q2 ruling — written once at task creation, never updated. */
+  project_key: string | null;
   request_id: string;
   conversation_id: string;
-  approval_id?: string | null;
+  approval_id: string | null;
   created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-  failure_kind?: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failure_kind: string | null;
+}
+
+/** `GET /api/v1/tasks/{task_id}` — the task plus its timeline (C6 §2.2). */
+export interface TaskStatusEvent {
+  /** Null on the creation event. */
+  from_status: string | null;
+  to_status: string;
+  at: string;
+}
+
+export interface TaskDetail extends Task {
+  /** Ascending `at`; ties keep write order. */
+  status_events: TaskStatusEvent[];
 }
 
 export interface TaskListResponse {
@@ -110,9 +129,15 @@ export type StageName =
   | "final_response";
 
 export interface ActivityItem extends Task {
-  latest_stage?: StageName | null;
-  latest_stage_at?: string | null;
-  latest_detail?: {
+  latest_stage: StageName | null;
+  latest_stage_at: string | null;
+  /**
+   * The projection of the highest-seq audit row's `detail` onto EXACTLY these
+   * three contracted keys (C6 §2.3). No other key passes — audit `detail` may
+   * embed untrusted excerpts, and this projection is what keeps the endpoint's
+   * trusted-detail promise true.
+   */
+  latest_detail: {
     project_display_name?: string;
     tool?: string;
     operation?: string;
@@ -130,13 +155,19 @@ export interface ActivityResponse {
 export interface AuditTurn {
   request_id: string;
   started_at: string;
+  /** `at` of the `final_response` row; null while the turn is in flight. */
   ended_at: string | null;
+  /** Twelve-spine rows only — episode rows are not counted (C6 §2.4). */
   stage_count: number;
-  outcome: string | null;
+  outcome: "ok" | "failed" | "parked" | null;
   failure_kind: string | null;
   agent: string | null;
+  /**
+   * C6 returns the ID ONLY — there is no `conversation_label` on this shape,
+   * so spec §10.1's "conversation" column renders the id. Recorded as a
+   * fidelity deviation in `docs/tasks/S-D-web.md`.
+   */
   conversation_id: string | null;
-  conversation_label?: string | null;
   task_id: string | null;
 }
 
@@ -153,12 +184,13 @@ export interface AuditEvent {
   summary: string;
   detail: Record<string, unknown>;
   at: string;
-  task_id?: string | null;
+  task_id: string | null;
 }
 
 export interface AuditTraceResponse {
   events: AuditEvent[];
-  approval_events?: AuditEvent[];
+  /** Null when the turn had no approval episode (C6 §2.4). */
+  approval_events: AuditEvent[] | null;
 }
 
 // ── C5 / §13.4: projects ─────────────────────────────────────────────────────

@@ -118,25 +118,53 @@ export function mockPendingCount(): number {
   return approvals.filter((a) => a.status === "pending").length;
 }
 
+/**
+ * C6 §7 fake rule: every page is a deep copy — no shared mutable state between
+ * calls or with the seed arrays (the F1 lesson).
+ */
+function copy<T>(value: T): T {
+  return structuredClone(value);
+}
+
+/**
+ * C6 §2.1 rule 3: `next_cursor` is null ONLY when the page is SHORT. An
+ * exactly-full final page returns a cursor and the client learns it is done
+ * from the following empty page. The views must tolerate that, so the mock
+ * must produce it.
+ */
+function cursorFor<T>(page: T[], limit: number, id: (row: T) => string): string | null {
+  return page.length < limit ? null : id(page[page.length - 1]);
+}
+
 export function mockListTasks(params: { limit?: number } = {}): TaskListResponse {
+  // §2.1 rule 1: created_at desc, then id desc — plain-string comparison.
   const ordered = [...MOCK_TASKS].sort(
-    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+    (a, b) =>
+      Date.parse(b.created_at) - Date.parse(a.created_at) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
   );
   const limit = params.limit ?? 50;
-  return { tasks: ordered.slice(0, limit), next_cursor: null };
+  const page = ordered.slice(0, limit);
+  return { tasks: copy(page), next_cursor: cursorFor(page, limit, (t) => t.id) };
 }
 
 export function mockActivity(): ActivityResponse {
-  return MOCK_ACTIVITY;
+  return copy(MOCK_ACTIVITY);
 }
 
 export function mockProjects(): ProjectListResponse {
-  return { projects: MOCK_PROJECTS };
+  return { projects: copy(MOCK_PROJECTS) };
 }
 
 export function mockAuditIndex(params: { limit?: number } = {}): AuditTurnListResponse {
+  // §2.1: started_at desc, request_id desc.
+  const ordered = [...MOCK_AUDIT_TURNS].sort(
+    (a, b) =>
+      Date.parse(b.started_at) - Date.parse(a.started_at) ||
+      (a.request_id < b.request_id ? 1 : a.request_id > b.request_id ? -1 : 0),
+  );
   const limit = params.limit ?? 50;
-  return { turns: MOCK_AUDIT_TURNS.slice(0, limit), next_cursor: null };
+  const page = ordered.slice(0, limit);
+  return { turns: copy(page), next_cursor: cursorFor(page, limit, (t) => t.request_id) };
 }
 
 export function mockAuditTrace(requestId: string): AuditTraceResponse {
@@ -145,5 +173,5 @@ export function mockAuditTrace(requestId: string): AuditTraceResponse {
     // than inventing twelve stages that never happened.
     throw new MockNotFound(`no trace for ${requestId}`);
   }
-  return { events: MOCK_TRACE, approval_events: MOCK_APPROVAL_EVENTS };
+  return { events: copy(MOCK_TRACE), approval_events: copy(MOCK_APPROVAL_EVENTS) };
 }

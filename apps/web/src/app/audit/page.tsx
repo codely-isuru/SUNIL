@@ -126,8 +126,17 @@ function AuditIndexView() {
                       absolute={clockTime(turn.started_at)}
                     />
                   </td>
+                  {/* §10.1's "conversation" column. C6 freezes `conversation_id`
+                      and no label, so the id is what there is — an identifier,
+                      styled as one (fidelity note D-F3). */}
                   <td className="max-w-[34ch] truncate border-b border-border px-3.5 py-3 text-cell">
-                    {turn.conversation_label ?? "—"}
+                    {turn.conversation_id ? (
+                      <span className="font-mono text-data text-text-secondary">
+                        {turn.conversation_id}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="border-b border-border px-3.5 py-3 text-cell">
                     {turn.outcome === "parked" ? (

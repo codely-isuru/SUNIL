@@ -353,8 +353,10 @@ function DashboardView() {
                 <Link href={`/audit/${turn.request_id}`} className="font-mono text-small">
                   {turn.request_id}
                 </Link>
-                <span className="min-w-0 flex-1 truncate text-text-primary">
-                  {turn.conversation_label ? `"${turn.conversation_label}"` : "—"}
+                {/* C6 carries no conversation label — the id is the only
+                    conversation handle the contract returns (fidelity note D-F3). */}
+                <span className="min-w-0 flex-1 truncate font-mono text-small text-text-secondary">
+                  {turn.conversation_id ?? "—"}
                 </span>
                 {turn.outcome === "parked" ? (
                   <StatusPill status="parked" context="task" />

@@ -195,6 +195,7 @@ export const MOCK_TASKS: Task[] = [
       "Refund the February deep-clean charge for the EasyClean customer billed twice",
     status: "parked",
     assigned_agent: "project_manager",
+    priority: "normal",
     project_key: "easy_clean_workforce",
     request_id: "01JQ8ZC2N4",
     conversation_id: "conv-01JQ8ZC1EasyCleanFeb",
@@ -209,9 +210,11 @@ export const MOCK_TASKS: Task[] = [
     objective: "Check EasyClean Workforce for overdue franchise onboarding steps",
     status: "in_progress",
     assigned_agent: "project_manager",
+    priority: "normal",
     project_key: "easy_clean_workforce",
     request_id: "01JQ9AA1RR",
     conversation_id: "conv-01JQ9AA0EasyCleanOps",
+    approval_id: null,
     created_at: at(-14_000),
     started_at: at(-14_000),
     completed_at: null,
@@ -222,9 +225,11 @@ export const MOCK_TASKS: Task[] = [
     objective: "Fix the PDA cert-tagline regression reported on Round 11",
     status: "in_progress",
     assigned_agent: "developer",
+    priority: "normal",
     project_key: "pda_learning",
     request_id: "01JQ9AB6TT",
     conversation_id: "conv-01JQ9AB5PdaCert",
+    approval_id: null,
     created_at: at(-67_000),
     started_at: at(-67_000),
     completed_at: null,
@@ -235,9 +240,11 @@ export const MOCK_TASKS: Task[] = [
     objective: "Check 925 Driving session bookings for duplicates",
     status: "failed",
     assigned_agent: "project_manager",
+    priority: "normal",
     project_key: "pda_925",
     request_id: "01JQ85MCQ1",
     conversation_id: "conv-01JQ85M0925Dupes",
+    approval_id: null,
     created_at: at(-2 * HOUR),
     started_at: at(-2 * HOUR),
     completed_at: at(-2 * HOUR + 42_000),
@@ -248,9 +255,11 @@ export const MOCK_TASKS: Task[] = [
     objective: "Morning brief — what needs attention across Codely today",
     status: "completed",
     assigned_agent: "project_manager",
+    priority: "normal",
     project_key: "sunil",
     request_id: "01JQ82PP7K",
     conversation_id: "conv-01JQ82P1MorningBrief",
+    approval_id: null,
     created_at: at(-3 * HOUR),
     started_at: at(-3 * HOUR),
     completed_at: at(-3 * HOUR + 21_000),
@@ -282,8 +291,18 @@ export const MOCK_ACTIVITY: ActivityResponse = {
     },
   ],
   recent: [
-    { ...MOCK_TASKS[3], latest_stage: "final_response", latest_stage_at: at(-2 * HOUR) },
-    { ...MOCK_TASKS[4], latest_stage: "final_response", latest_stage_at: at(-3 * HOUR) },
+    {
+      ...MOCK_TASKS[3],
+      latest_stage: "final_response",
+      latest_stage_at: at(-2 * HOUR),
+      latest_detail: null,
+    },
+    {
+      ...MOCK_TASKS[4],
+      latest_stage: "final_response",
+      latest_stage_at: at(-3 * HOUR),
+      latest_detail: null,
+    },
   ],
 };
 
@@ -328,7 +347,6 @@ export const MOCK_AUDIT_TURNS: AuditTurn[] = [
     failure_kind: null,
     agent: "project_manager",
     conversation_id: "conv-01JQ8ZC1EasyCleanFeb",
-    conversation_label: "EasyClean February billing",
     task_id: "task-01JQ8ZC4",
   },
   {
@@ -340,7 +358,6 @@ export const MOCK_AUDIT_TURNS: AuditTurn[] = [
     failure_kind: "tool_failed",
     agent: "project_manager",
     conversation_id: "conv-01JQ85M0925Dupes",
-    conversation_label: "925 duplicate bookings",
     task_id: "task-01JQ85M1",
   },
   {
@@ -352,7 +369,6 @@ export const MOCK_AUDIT_TURNS: AuditTurn[] = [
     failure_kind: null,
     agent: "project_manager",
     conversation_id: "conv-01JQ82P1MorningBrief",
-    conversation_label: "n8n:morning-brief (service lane)",
     task_id: "task-01JQ82P2",
   },
   {
@@ -364,26 +380,27 @@ export const MOCK_AUDIT_TURNS: AuditTurn[] = [
     failure_kind: null,
     agent: "developer",
     conversation_id: "conv-01JQ8VB0SunilAuth",
-    conversation_label: "SUNIL session secret rotation",
     task_id: "task-01JQ8VB2",
   },
 ];
 
 const TRACE_BASE = -19 * MIN;
+/** Every row of a turn links back to the turn's task (C6 `AuditEvent.task_id`). */
+const TRACE_TASK_ID = "task-01JQ8ZC4";
 
 export const MOCK_TRACE: AuditEvent[] = [
-  { seq: 1, stage: "message_received", actor: "api", summary: "Received your message", detail: {}, at: at(TRACE_BASE) },
-  { seq: 2, stage: "context_loaded", actor: "api", summary: "Loaded conversation context", detail: { messages: 6 }, at: at(TRACE_BASE + 120) },
-  { seq: 3, stage: "memory_retrieved", actor: "memory", summary: "Checked memory", detail: { hits: 2 }, at: at(TRACE_BASE + 340) },
-  { seq: 4, stage: "model_selected", actor: "router", summary: "Chose a model", detail: { capability: "reasoning", provider: "anthropic", model: "claude-opus-5" }, at: at(TRACE_BASE + 410) },
-  { seq: 5, stage: "llm_io", actor: "llm", summary: "Interpreted the request", detail: { purpose: "plan", provider_attempts: 1, input_tokens: 2841, output_tokens: 412 }, at: at(TRACE_BASE + 2_400) },
-  { seq: 6, stage: "plan_created", actor: "planner", summary: "Created a plan", detail: { project_key: "easy_clean_workforce", project_display_name: "EasyClean Workforce", agent: "project_manager", plan_attempts: 1 }, at: at(TRACE_BASE + 2_600) },
-  { seq: 7, stage: "agent_started", actor: "agent", summary: "Started the agent", detail: { agent: "project_manager", agent_display_name: "Project Manager Agent" }, at: at(TRACE_BASE + 2_700) },
-  { seq: 8, stage: "tool_requested", actor: "agent", summary: "Asked to use a tool", detail: { tool: "stripe_mcp", operation: "refunds.create" }, at: at(TRACE_BASE + 3_050) },
-  { seq: 9, stage: "permission_decision", actor: "permissions", summary: "Permission check — ask_user", detail: { decision: "ask_user", tool: "stripe_mcp", operation: "refunds.create" }, at: at(TRACE_BASE + 3_100) },
-  { seq: 10, stage: "tool_result", actor: "tools", summary: "Tool not run — parked for approval", detail: { ok: false, duration_ms: 0, error_kind: "approval_required" }, at: at(TRACE_BASE + 3_120) },
-  { seq: 11, stage: "agent_result", actor: "agent", summary: "Analysed the result", detail: { ok: false }, at: at(TRACE_BASE + 3_180) },
-  { seq: 12, stage: "final_response", actor: "api", summary: "Prepared the answer", detail: { outcome: "parked", failure_kind: null }, at: at(TRACE_BASE + 3_260) },
+  { seq: 1, stage: "message_received", actor: "api", summary: "Received your message", detail: {}, at: at(TRACE_BASE), task_id: TRACE_TASK_ID },
+  { seq: 2, stage: "context_loaded", actor: "api", summary: "Loaded conversation context", detail: { messages: 6 }, at: at(TRACE_BASE + 120), task_id: TRACE_TASK_ID },
+  { seq: 3, stage: "memory_retrieved", actor: "memory", summary: "Checked memory", detail: { hits: 2 }, at: at(TRACE_BASE + 340), task_id: TRACE_TASK_ID },
+  { seq: 4, stage: "model_selected", actor: "router", summary: "Chose a model", detail: { capability: "reasoning", provider: "anthropic", model: "claude-opus-5" }, at: at(TRACE_BASE + 410), task_id: TRACE_TASK_ID },
+  { seq: 5, stage: "llm_io", actor: "llm", summary: "Interpreted the request", detail: { purpose: "plan", provider_attempts: 1, input_tokens: 2841, output_tokens: 412 }, at: at(TRACE_BASE + 2_400), task_id: TRACE_TASK_ID },
+  { seq: 6, stage: "plan_created", actor: "planner", summary: "Created a plan", detail: { project_key: "easy_clean_workforce", project_display_name: "EasyClean Workforce", agent: "project_manager", plan_attempts: 1 }, at: at(TRACE_BASE + 2_600), task_id: TRACE_TASK_ID },
+  { seq: 7, stage: "agent_started", actor: "agent", summary: "Started the agent", detail: { agent: "project_manager", agent_display_name: "Project Manager Agent" }, at: at(TRACE_BASE + 2_700), task_id: TRACE_TASK_ID },
+  { seq: 8, stage: "tool_requested", actor: "agent", summary: "Asked to use a tool", detail: { tool: "stripe_mcp", operation: "refunds.create" }, at: at(TRACE_BASE + 3_050), task_id: TRACE_TASK_ID },
+  { seq: 9, stage: "permission_decision", actor: "permissions", summary: "Permission check — ask_user", detail: { decision: "ask_user", tool: "stripe_mcp", operation: "refunds.create" }, at: at(TRACE_BASE + 3_100), task_id: TRACE_TASK_ID },
+  { seq: 10, stage: "tool_result", actor: "tools", summary: "Tool not run — parked for approval", detail: { ok: false, duration_ms: 0, error_kind: "approval_required" }, at: at(TRACE_BASE + 3_120), task_id: TRACE_TASK_ID },
+  { seq: 11, stage: "agent_result", actor: "agent", summary: "Analysed the result", detail: { ok: false }, at: at(TRACE_BASE + 3_180), task_id: TRACE_TASK_ID },
+  { seq: 12, stage: "final_response", actor: "api", summary: "Prepared the answer", detail: { outcome: "parked", failure_kind: null }, at: at(TRACE_BASE + 3_260), task_id: TRACE_TASK_ID },
 ];
 
 export const MOCK_APPROVAL_EVENTS: AuditEvent[] = [
@@ -394,5 +411,6 @@ export const MOCK_APPROVAL_EVENTS: AuditEvent[] = [
     summary: "Parked for your approval",
     detail: { approval_id: "apr-01JQ8ZC7QF3M2", expires_at: at(72 * HOUR - 18 * MIN) },
     at: at(TRACE_BASE + 3_300),
+    task_id: TRACE_TASK_ID,
   },
 ];
