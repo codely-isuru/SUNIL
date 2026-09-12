@@ -49,7 +49,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol
 
-from sqlalchemy import or_, select, tuple_, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from sunil.core.approvals.base import (
@@ -67,6 +67,13 @@ from sunil.core.approvals.base import (
 from sunil.core.approvals.config import ApprovalsConfig
 from sunil.core.approvals.ids import ulid_approval_id
 from sunil.core.approvals.notify import ApprovalNotifier, NullNotifier
+from sunil.core.approvals.read_model import (
+    ROW_COLUMNS,
+    approval_from_row,
+    get_approval_on,
+    list_approvals_on,
+    to_iso,
+)
 from sunil.core.approvals.table import approvals_table as T
 
 logger = logging.getLogger(__name__)
@@ -84,29 +91,14 @@ AUDIT_EXPIRED = "approval_expired"
 AUDIT_RECONCILED = "continuation_reconciled"
 AUDIT_RESCHEDULED = "continuation_rescheduled"
 
-#: Columns the HTTP-facing ``Approval`` model is built from. ``continuation`` is
-#: NOT among them — C4 §4: it never leaves this service over HTTP. Listing the
-#: projection explicitly (rather than ``SELECT *``) is what makes that
-#: structural instead of a habit.
-ROW_COLUMNS = (
-    T.c.id,
-    T.c.status,
-    T.c.created_at,
-    T.c.expires_at,
-    T.c.agent_id,
-    T.c.tool,
-    T.c.operation,
-    T.c.args_hash,
-    T.c.params_redacted,
-    T.c.request_id,
-    T.c.conversation_id,
-    T.c.task_id,
-    T.c.summary,
-    T.c.decided_at,
-    T.c.decided_by,
-    T.c.decision_reason,
-    T.c.consumed_at,
-)
+# The `Approval` projection (`ROW_COLUMNS`) and the row → model mapper now live
+# in `read_model.py`, because C4's two GET routes read the table directly (the
+# C6 read-model precedent — QA wave-1 B1). A copy here would be a second
+# projection of the same table, free to drift from the one the routes serve.
+# `continuation` is in neither — C4 §4: it never leaves this service over HTTP.
+# `to_iso` is re-exported from this module's old home so its importers keep one
+# renderer rather than growing a second.
+__all__ = ["DatabaseApprovalsService", "ReconciliationReport", "to_iso"]
 
 
 # --------------------------------------------------------------------------- #
@@ -176,11 +168,6 @@ class ReconciliationReport:
 # --------------------------------------------------------------------------- #
 # Timestamp edge
 # --------------------------------------------------------------------------- #
-def to_iso(moment: datetime) -> str:
-    """The contract's ISO-8601 UTC form (``…Z``), whole seconds."""
-    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _aware(moment: datetime | None) -> datetime | None:
     """SQLite hands back naive datetimes even from a ``timezone=True`` column;
     Postgres hands back aware ones. Normalise at the edge so the comparison
@@ -233,30 +220,10 @@ class DatabaseApprovalsService:
 
     @staticmethod
     def _model(row: Any) -> Approval:
-        """Map one result row onto the C4 ``Approval`` model."""
-        return Approval(
-            id=row.id,
-            status=ApprovalStatus(row.status),
-            created_at=to_iso(_aware(row.created_at)),
-            expires_at=to_iso(_aware(row.expires_at)),
-            agent_id=row.agent_id,
-            tool=row.tool,
-            operation=row.operation,
-            args_hash=row.args_hash,
-            params_redacted=row.params_redacted,
-            request_id=row.request_id,
-            conversation_id=row.conversation_id,
-            task_id=row.task_id,
-            summary=row.summary,
-            decided_at=(
-                None if row.decided_at is None else to_iso(_aware(row.decided_at))
-            ),
-            decided_by=row.decided_by,
-            decision_reason=row.decision_reason,
-            consumed_at=(
-                None if row.consumed_at is None else to_iso(_aware(row.consumed_at))
-            ),
-        )
+        """Map one result row onto the C4 ``Approval`` model — the read model's
+        mapper, so a row this service returns from ``decide`` and the same row
+        read by the HTTP surface render identically."""
+        return approval_from_row(row)
 
     @staticmethod
     def _conflict(row: Any) -> StateConflict:
@@ -667,47 +634,21 @@ class DatabaseApprovalsService:
         rows share a ``created_at``. An unknown cursor raises ``ValueError``
         (the route's 422) rather than silently serving page one, which would
         make a paging loop restart for ever.
+
+        The query itself lives in ``read_model.py`` and is the SAME one the
+        mounted ``GET /api/v1/approvals`` issues (QA wave-1 B1): this method is
+        the in-process caller's door to it, not a second implementation.
         """
-        conditions = []
-        if status is not None:
-            conditions.append(T.c.status == status.value)
-
-        async with self.engine.connect() as conn:
-            if cursor is not None:
-                anchor = (
-                    await conn.execute(
-                        select(T.c.created_at, T.c.id).where(T.c.id == cursor)
-                    )
-                ).first()
-                if anchor is None:
-                    raise ValueError(f"unknown cursor: {cursor}")
-                conditions.append(
-                    tuple_(T.c.created_at, T.c.id)
-                    < tuple_(anchor.created_at, anchor.id)
-                )
-
-            rows = (
-                await conn.execute(
-                    select(*ROW_COLUMNS)
-                    .where(*conditions)
-                    .order_by(T.c.created_at.desc(), T.c.id.desc())
-                    .limit(limit)
-                )
-            ).fetchall()
-
-        page = [self._model(row) for row in rows]
-        next_cursor = page[-1].id if len(page) == limit else None
-        return ApprovalListResponse(approvals=page, next_cursor=next_cursor)
+        return await list_approvals_on(
+            self.engine, status=status, limit=limit, cursor=cursor
+        )
 
     async def get(self, approval_id: str) -> Approval | None:
-        """One approval with full (redacted) detail — the C4 detail route.
-        ``None`` → the route's 404. ``continuation`` is not in ``ROW_COLUMNS``,
-        so it cannot reach the response by accident (C4 §4)."""
-        async with self.engine.connect() as conn:
-            row = (
-                await conn.execute(select(*ROW_COLUMNS).where(T.c.id == approval_id))
-            ).first()
-        return None if row is None else self._model(row)
+        """One approval with full (redacted) detail — the read model's detail
+        query, on this service's engine. ``None`` → the route's 404.
+        ``continuation`` is not in ``ROW_COLUMNS``, so it cannot reach the
+        response by accident (C4 §4)."""
+        return await get_approval_on(self.engine, approval_id)
 
     async def continuation_for(self, approval_id: str) -> dict | None:
         """The persisted continuation (C4 §1 restart safety), for the resume

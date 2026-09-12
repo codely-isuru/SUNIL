@@ -401,3 +401,150 @@ Suite after this change: **902 passed, 2 failed, 4 skipped** — the +3 are the
 new auth tests; the 2 failures are the same §3 QA-owned harness lines, confirmed
 still failing with this change stashed.
 
+---
+
+## 8. QA wave-1 B1 — the mounted C4 surface answered an authorised owner 500 — FIXED
+
+**The defect, reproduced as QA reported it.** With a real cookie, `X-SUNIL-Client: web`
+and a matching `Origin`, all three C4 routes answered 500 —
+`TypeError: object ApprovalListResponse can't be used in 'await' expression`
+(`routes/approvals.py:266`), while the three C6 routes answered 200.
+
+**Root cause, stated precisely.** C4 §4's `ApprovalsService` protocol declares TWO
+methods, `park` and `consume`, and C4 §1 names their single caller: the Tool
+Manager. The HTTP surface awaited FIVE things off that same injected object, so
+the seam the routes demanded was wider than the contract that governs it — and a
+service implementing the contract exactly (C4 §6's frozen fake does) 500s on
+every route. The fix moves the production code to the contract; the fake was not
+reshaped (QA was right to refuse: a fake reshaped to match its caller stops being
+evidence).
+
+### 8.1 The five awaits, and where each landed
+
+| # | was | now | why |
+|---|---|---|---|
+| 1 | `await service.list_approvals(...)` | **read model** — `core/approvals/read_model.py::list_approvals` on the app's engine | not on the §4 protocol; C4 §6.5 specifies the *listing law*, not a service method the HTTP layer may assume. C6 solved the identical problem with `ops_read_model.py` rather than growing service methods — same table, same pagination law |
+| 2 | `await service.get(...)` | **read model** — `read_model.get_approval` | `get` appears NOWHERE in C4 — not in §4, not in §6. It had no contract home on the service at all, so inventing one on the protocol was the one move that was certainly wrong |
+| 3 | `await service.decide(...)` | **stays on the service** (`service_decide()`), 501 with the gap named if the wired seam has none | C4 §6.2 makes `decide`'s shape "normative for the real service layer too", and says status mapping lives in the HTTP layer *because* of it. It is also a CAS: a second implementation of a transition is a second way to lose one. §8.3 is the STOP |
+| 4 | `await service.finalise_refusal(...)` | the service **if it offers it**, else a logged warning | C4 §3 states the effect ("the task is finalised `failed` / `approval_refused`") and names no method and no actor. Not on any protocol, so it is invoked opportunistically — the treatment `main._build_sweeper` already gives this class of gap |
+| 5 | `await scheduler.schedule(...)` (via `getattr(service, "scheduler")`) | unchanged in kind, now symmetric with #4 | ADR-031's effect, likewise unnamed as a method. A failure is logged and the 200 stands: the CAS has committed and C4 §3 rule 1 re-picks the approval up at boot — raising would tell the owner a decision failed that did not |
+
+The sixth `await` in the module (`await require_web_client(request)` inside
+`require_owner_lane`) is a dependency composition, not a seam call, and is
+untouched.
+
+**One query, not two.** `DatabaseApprovalsService.list_approvals` / `.get` now
+delegate to the same `read_model` functions the routes call, and `_model` to the
+same row mapper. The service keeps its API (the C4 parity suite and the Tool
+Manager path are unchanged) and the route no longer has a private projection free
+to drift from it. `ROW_COLUMNS` still excludes `continuation`, so C4 §4's "never
+leaves this service over HTTP" stays structural — now for both callers.
+`get_engine` moved to `routes/approvals.py::get_read_engine` and is re-exported
+by `ops_read_model`, so C4's reads and C6's reads resolve their engine through
+ONE function and cannot end up pointed at two databases.
+
+### 8.2 Evidence — red, then green
+
+New file `tests/unit/approvals/test_mounted_surface.py`: eight authorised-path
+tests through the REAL `create_app`, with a cookie minted by the real
+`POST /api/v1/auth/login` — the C4 mirror of C6's
+`test_the_ops_read_engine_is_wired_to_the_applications_database`, the test whose
+absence let this ship.
+
+1. `test_the_mounted_list_answers_the_authorised_owner` — 200, newest-first, nosniff
+2. `test_the_mounted_list_filters_by_status_and_pages` — `status=` plus the `limit`/`cursor` walk
+3. `test_the_mounted_list_answers_an_unknown_cursor_with_422`
+4. `test_the_mounted_detail_answers_200_and_never_leaks_the_continuation` — and the untrusted `summary`/`params_redacted` come back byte-faithful
+5. `test_the_mounted_detail_answers_404_for_an_unknown_id`
+6. `test_the_mounted_decision_approves_for_the_authorised_owner` — 200, 409 on the repeat, then the detail read sees the same row decided (one database, not two)
+7. `test_the_mounted_decision_refuses_and_does_not_500_without_a_task_gateway`
+8. `test_the_mounted_decision_names_the_gap_when_the_seam_has_no_service_decide` — 501, not 500
+
+Written and watched fail FIRST, against the production code as QA found it:
+
+```
+RED  (new module, production code unchanged)   5 failed, 3 passed
+     TypeError: object ApprovalListResponse can't be used in 'await' expression   (routes/approvals.py:266)
+     TypeError: FakeApprovalsService.decide() missing 1 required positional argument: 'now'  (:314)
+RED  (whole suite, the fix stashed)            905 passed, 7 failed, 4 skipped
+GREEN                                          912 passed, 0 failed, 4 skipped
+```
+
+Counts, each leg run twice, identical both times:
+
+| Leg | Before | After |
+|---|---|---|
+| `apps/api`, SQLite | 904 P / 0 F / 4 S | **912 P / 0 F / 4 S** |
+| `apps/api`, + Postgres (throwaway `postgres:17`, `-p 127.0.0.1:55446`, CSPRNG password never written to the repo) | 943 P / 0 F / 4 S | **951 P / 0 F / 4 S** |
+
+The 4 skips are the pre-existing, legitimate ones (§6).
+
+### 8.3 STOP — the one path left 501, for the architect
+
+**`decide` has a contract home; its *callable shape* does not.** C4 §6.2 declares
+`decide(approval_id, decision, reason, now)` with no `async` marker, and the
+frozen fake implements exactly that: synchronous, with the CALLER supplying
+`now`, because the fake's clock is injected. A real HTTP layer cannot be that
+caller — it owns no clock, and any clock it invented would override the
+service's and silently redefine "expired" (the route would be passing wall-clock
+`now` to a service a test has wired with a `FakeClock`).
+`DatabaseApprovalsService` therefore reads its injected clock — as C4 §4's
+`consume` does, for the same reason — and exposes an awaitable
+`decide(approval_id, decision, reason)`.
+
+So the route uses the awaitable form when the wired seam has it, and otherwise
+answers **501 `not_implemented` naming the gap**: never a 500 `TypeError`, never
+a guessed clock. In the fake wiring — still the only configuration the app can
+boot (§5 item 3) — `POST …/decision` is that 501 today; both GETs are 200,
+because they no longer touch the seam at all.
+
+**Architect ask (one question).** Is the service-layer decision seam an
+**awaitable `decide(approval_id, decision, reason)` whose `now` comes from the
+service's own clock**? If yes, C4 §6.2 should say so and C4 §6's fake should grow
+that form — a QA-owned change made against a ruled contract rather than against a
+caller — after which the 501 branch and `DECISION_SEAM_MISSING` are deleted
+together. The alternative (the HTTP layer supplying `now`) is what this round
+rejects, and the rejection is written into the route's docstring so the next
+reader does not re-litigate it silently.
+
+Deliberately NOT done here: widening `core/approvals/base.py::ApprovalsService`
+to six methods (QA's suggested "natural answer"). That is a contract change, it
+is the SA's to make, and the read-model placement means four of the six never
+needed to be on a protocol at all.
+
+### 8.4 QA S1 (the `.env.example` half) — DONE
+
+`SUNIL_APPROVALS_SWEEPER_ENABLED=true`, `SUNIL_TOOL_MANAGER=real` and
+`SUNIL_APPROVALS_SERVICE=real` added, with comments that say what turning each
+one off actually costs: for the sweeper, that lazy expiry only reaches rows
+somebody reads, so an untouched stale `approved` row stays spendable; for the
+seam selectors, that `fake` is unreachable from config alone and a deployed
+`.env` naming it refuses to boot. The ARCHITECTURE_V2 §5 half is the SA's (R6,
+landed this round).
+
+### 8.5 R5 notice — `tests/ops_harness.py` was edited, additively (QA sign-off required)
+
+Ruling R5 makes that module change-controlled by name: an edit to it is treated
+as a contract-file diff even though `tests/contracts/` is untouched. The diff is
+one new keyword and the helper that resolves it — `build_ops_app(...,
+approvals_factory=)`, for the tests that need the C4 seam built over the app's
+OWN engine (two engines would let a decision test pass while the application
+answered a different database). Passing both `approvals=` and
+`approvals_factory=` raises rather than resolving a precedence. **No existing
+behaviour moves:** with neither keyword the seam is `FakeApprovalsService()`
+exactly as before, and the definition of "a signed-in owner" is untouched. The
+construction semantics stay pinned outside the frozen suite by
+`tests/unit/test_app_wiring.py`, which still passes.
+
+### 8.6 Two things found while fixing, both already ruled or recorded
+
+* `db/models.py::Approval` still declares an `approvals` table with VARCHAR
+  timestamps that no code writes and no migration creates, so a
+  `Base.metadata.create_all` builds a table no deployment has. The new test
+  module therefore creates the spine's tables MINUS `approvals`, plus Stream D's
+  — the migrated shape. Ruled R2 (delete + autogenerate fence, wave-2); the test
+  module's docstring points at it.
+* The 501 body is built in the route rather than raised as an `ApiError`, because
+  the spine renders that class through the wave's shared `ErrorBody`, whose
+  `kind` is the closed set C4 §5 declares. A 501 is by construction outside the
+  contract, so it must not widen the vocabulary every other route answers with.

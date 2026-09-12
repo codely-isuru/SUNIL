@@ -13,6 +13,21 @@ let a caller mint rows with no continuation and a binding the server did not
 compute — an approval that could never be consumed correctly, or one whose
 binding an attacker chose.
 
+**Where each operation is served from** (QA wave-1 finding B1, fixed here). C4
+§4's ``ApprovalsService`` protocol declares two methods — ``park`` and
+``consume`` — and C4 §1 names their single caller, the Tool Manager. This
+surface used to await four more off that same object, which no conformant
+service has to provide, so the mounted routes answered an authorised owner 500
+(``TypeError: object ApprovalListResponse can't be used in 'await' expression``).
+They are now placed where the contract puts them:
+
+| operation | served by | contract |
+|---|---|---|
+| list | ``core/approvals/read_model.py`` over the ``approvals`` table | C4 §6.5's law; the C6 read-model precedent |
+| detail | the same read model | C4 OpenAPI; ``get`` is on no protocol |
+| decide | the wired C4 service | C4 §6.2 — normative for the service layer |
+| finalise refusal / schedule continuation | the wired service, **if it offers them** | C4 §3 states the effect, names no method |
+
 Status mapping lives here and nowhere else, which is why
 ``ApprovalsService.decide`` returns ``Approval | StateConflict | None`` instead
 of raising (C4 §6.2, normative since v1.0.1):
@@ -23,6 +38,7 @@ of raising (C4 §6.2, normative since v1.0.1):
 | ``StateConflict`` | 409, body carries ``current_status`` |
 | ``None`` | 404 ``not_found`` |
 | ``ValueError`` from a bad cursor | 422 ``validation_error`` |
+| no service-layer ``decide`` at all | 501, the gap named (:func:`service_decide`) |
 
 **No decision idempotency** (C4 §5): repeating a decision returns 409 with the
 true state rather than a comforting echo, so the UI cannot show a user a
@@ -41,12 +57,14 @@ remains the dashboard's to honour; the API's job is to not make it impossible.
 from __future__ import annotations
 
 import logging
+from inspect import iscoroutinefunction
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from sunil.core.approvals import read_model
 from sunil.core.approvals.base import (
     Approval,
     ApprovalListResponse,
@@ -142,7 +160,14 @@ async def require_owner_session(request: Request) -> str:
 def get_approvals_service(request: Request):
     """The service instance the app was wired with. A 500 (not a 404) if it is
     missing: an unwired route is a deployment bug, and pretending the approval
-    does not exist would hide it."""
+    does not exist would hide it.
+
+    Reached by the DECISION route only. C4 §4's protocol is ``park``/``consume``
+    — the Tool Manager's seam — and C4 §6.2 adds ``decide`` normatively for the
+    service layer; the two reads go to the database read model instead, so no
+    route demands a method the contract does not give a conformant service
+    (QA wave-1 B1).
+    """
     service = getattr(request.app.state, "approvals_service", None)
     if service is None:
         raise RuntimeError(
@@ -150,6 +175,29 @@ def get_approvals_service(request: Request):
             "service before mounting this router"
         )
     return service
+
+
+def get_read_engine(request: Request):
+    """The engine C4's and C6's read models query.
+
+    One resolver for both surfaces (``ops_read_model.get_engine`` is this
+    function) so the approvals queue and the ops reads cannot end up pointed at
+    two different databases. A missing engine raises rather than returning an
+    empty page: an unwired read route answering ``{"approvals": []}`` looks
+    exactly like an empty queue, which is the one answer an approvals dashboard
+    must never invent.
+    """
+    engine = getattr(request.app.state, "ops_engine", None)
+    if engine is None:
+        engine = getattr(
+            getattr(request.app.state, "approvals_service", None), "engine", None
+        )
+    if engine is None:
+        raise RuntimeError(
+            "app.state.ops_engine is not set — wire a read engine before "
+            "mounting the ops routers"
+        )
+    return engine
 
 
 def refuse_service_bearer(request: Request) -> None:
@@ -238,6 +286,104 @@ def install_error_handlers(app) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# The one seam call, and the post-decision effects that are not on any protocol
+# --------------------------------------------------------------------------- #
+def service_decide(service: object):
+    """C4 §6.2's decision method on whichever C4 service the app was wired with,
+    or ``None`` when this deployment has no such seam.
+
+    ``decide`` is the one HTTP operation the contract puts on the service layer:
+    §6.2 declares its return shape — ``Approval | StateConflict | None``, never
+    a raise for absence or conflict — as "normative for the real service layer
+    too", precisely so that status mapping lives in this module and nowhere
+    else. It is a compare-and-swap, so it cannot move to the read model: a
+    second implementation of a transition is a second way to lose one.
+
+    **The gap this function refuses to paper over.** C4 declares that method with
+    no ``async`` marker and with a ``now`` argument (§6.2), which is the shape
+    the frozen fake implements — a synchronous ``decide(id, decision, reason,
+    now)`` whose caller owns the clock. A real HTTP layer cannot be that caller:
+    it owns no clock, and one it invented would override the service's own and
+    silently decide what "expired" means. The database service therefore reads
+    its injected clock, exactly as C4 §4's ``consume`` does, and exposes an
+    awaitable ``decide(id, decision, reason)``.
+
+    So a wired service either offers that awaitable form — used here — or it
+    offers only the fake's clock-parameterised one, in which case this surface
+    answers :data:`DECISION_SEAM_MISSING` (501, the gap named), never a 500
+    ``TypeError`` and never a guess at the clock. Recorded for the architect in
+    ``docs/tasks/integration-w1.md`` §8.
+    """
+    method = getattr(service, "decide", None)
+    return method if iscoroutinefunction(method) else None
+
+
+#: The 501 body, built here rather than raised as an :class:`ApiError`, because
+#: the spine renders that class through the wave's shared ``ErrorBody``, whose
+#: ``kind`` is the closed set C4 §5 declares (401/403/404/422). A 501 is by
+#: construction outside the contract — it says "this deployment has no seam for
+#: an operation the contract has" — so it must not widen the vocabulary every
+#: other route answers with. When the architect rules the seam, this constant
+#: and its branch disappear together.
+DECISION_SEAM_MISSING = error_body(
+    "not_implemented",
+    "the wired approvals service exposes no asynchronous service-layer "
+    "decide(approval_id, decision, reason) — C4 §6.2's decision seam is "
+    "unavailable in this deployment",
+)
+
+
+async def run_post_decision_effect(
+    service: object, approval_id: str, decision: str
+) -> None:
+    """C4 §3's two after-effects: refuse finalises the task ``failed`` /
+    ``approval_refused``; approve schedules the continuation.
+
+    Neither is on C4 §4's protocol and neither has a named method in the
+    contract — §3 states the effect, not the caller — so each is invoked only
+    when the wired service offers it, and its absence is a WARNING rather than a
+    500. That is the treatment ``main._build_sweeper`` already gives the same
+    class of gap ("no sweeper" on a service with no schedule): a service without
+    a task gateway has no task to finalise, and refusing to answer the owner
+    would turn a missing collaborator into an outage on a decision the owner has
+    already made.
+
+    A failing effect is logged and the 200 stands, for the same reason: the CAS
+    has committed, the decision is the owner's, and C4 §3's startup
+    reconciliation picks up an approved-but-unscheduled approval on the next
+    boot. An exception here would tell the owner their decision failed when it
+    did not.
+    """
+    if decision == "refuse":
+        finalise = getattr(service, "finalise_refusal", None)
+        if finalise is None:
+            logger.warning(
+                "approval refused but the wired service has no finalise_refusal(); "
+                "C4 §3's task finalisation did not run for %s",
+                approval_id,
+            )
+            return
+        try:
+            await finalise(approval_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to finalise refusal for %s", approval_id)
+        return
+
+    scheduler = getattr(service, "scheduler", None)
+    if scheduler is None:
+        logger.warning(
+            "approval approved but the wired service has no continuation "
+            "scheduler; ADR-031's resume does not run for %s",
+            approval_id,
+        )
+        return
+    try:
+        await scheduler.schedule(approval_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to schedule continuation for %s", approval_id)
+
+
+# --------------------------------------------------------------------------- #
 # The router
 # --------------------------------------------------------------------------- #
 def create_router() -> APIRouter:
@@ -260,12 +406,13 @@ def create_router() -> APIRouter:
         limit: int = Query(default=50, ge=1, le=200),
         cursor: str | None = Query(default=None),
     ) -> ApprovalListResponse:
-        service = get_approvals_service(request)
+        engine = get_read_engine(request)
         response.headers.update(NOSNIFF)
         try:
-            return await service.list_approvals(
-                status=status, limit=limit, cursor=cursor
-            )
+            async with engine.connect() as conn:
+                return await read_model.list_approvals(
+                    conn, status=status, limit=limit, cursor=cursor
+                )
         except ValueError as exc:
             # An unresolvable cursor is a client bug. Answering it with page one
             # would make a "Load more" loop restart for ever instead of failing.
@@ -284,8 +431,9 @@ def create_router() -> APIRouter:
         request: Request,
         approval_id: Annotated[str, Path()],
     ) -> Approval:
-        service = get_approvals_service(request)
-        approval = await service.get(approval_id)
+        engine = get_read_engine(request)
+        async with engine.connect() as conn:
+            approval = await read_model.get_approval(conn, approval_id)
         if approval is None:
             raise ApiError(404, "not_found", f"no approval with id {approval_id}")
         response.headers.update(NOSNIFF)
@@ -304,14 +452,19 @@ def create_router() -> APIRouter:
         approval_id: Annotated[str, Path()],
         body: DecisionRequest,
     ) -> Response:
-        """The only mutating endpoint. Approving schedules the continuation;
-        refusing finalises the parked task as ``failed`` /
-        ``approval_refused`` (C4 §3). Both post-transition effects run only
-        after the CAS reports a win, so a lost race schedules nothing and
-        finalises nothing.
+        """The only mutating endpoint, and the only one that reaches the C4
+        seam. Approving schedules the continuation; refusing finalises the
+        parked task as ``failed`` / ``approval_refused`` (C4 §3). Both
+        post-transition effects run only after the CAS reports a win, so a lost
+        race schedules nothing and finalises nothing.
         """
         service = get_approvals_service(request)
-        result = await service.decide(approval_id, body.decision, body.reason)
+        decide = service_decide(service)
+        if decide is None:
+            return JSONResponse(
+                status_code=501, content=DECISION_SEAM_MISSING, headers=NOSNIFF
+            )
+        result = await decide(approval_id, body.decision, body.reason)
 
         if result is None:
             raise ApiError(404, "not_found", f"no approval with id {approval_id}")
@@ -322,22 +475,7 @@ def create_router() -> APIRouter:
                 headers=NOSNIFF,
             )
 
-        if body.decision == "refuse":
-            await service.finalise_refusal(approval_id)
-        else:
-            scheduler = getattr(service, "scheduler", None)
-            if scheduler is not None:
-                # ADR-031: the endpoint returns immediately and the service
-                # schedules the continuation. A scheduling failure must not
-                # un-approve a decision the owner has already made, so it is
-                # logged and the 200 stands — the startup reconciliation
-                # (C4 §3 rule 1) picks the approval up again.
-                try:
-                    await scheduler.schedule(approval_id)
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "failed to schedule continuation for %s", approval_id
-                    )
+        await run_post_decision_effect(service, approval_id, body.decision)
         return JSONResponse(
             status_code=200, content=result.model_dump(mode="json"), headers=NOSNIFF
         )

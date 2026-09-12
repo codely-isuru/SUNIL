@@ -46,7 +46,6 @@ from datetime import UTC as _UTC
 from datetime import datetime
 from typing import Any
 
-from fastapi import Request
 from sqlalchemy import (
     JSON,
     Column,
@@ -61,7 +60,8 @@ from sqlalchemy import (
 )
 
 from sunil.api.routes.approvals import ApiError
-from sunil.core.approvals.service import to_iso
+from sunil.api.routes.approvals import get_read_engine as _get_read_engine
+from sunil.core.approvals.read_model import to_iso
 from sunil.core.approvals.table import approvals_table
 
 #: Stream D's private read model over the spine's tables — see the docstring.
@@ -188,21 +188,13 @@ def aware(value: datetime | None) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=_UTC)
 
 
-def get_engine(request: Request):
-    """The read engine. Same wiring seam as C4's service: the spine sets it on
-    app state. A missing engine is a 500, not an empty list — an unwired ops
-    route that returns ``{"tasks": []}`` looks exactly like a quiet system."""
-    engine = getattr(request.app.state, "ops_engine", None)
-    if engine is None:
-        engine = getattr(
-            getattr(request.app.state, "approvals_service", None), "engine", None
-        )
-    if engine is None:
-        raise RuntimeError(
-            "app.state.ops_engine is not set — wire a read engine before "
-            "mounting the ops routers"
-        )
-    return engine
+#: The read engine. Same wiring seam as C4's service: the spine sets it on app
+#: state. A missing engine is a 500, not an empty list — an unwired ops route
+#: that returns ``{"tasks": []}`` looks exactly like a quiet system. Defined in
+#: ``routes/approvals.py`` and re-exported here (the import direction is already
+#: that way round, for ``ApiError``), because C4's reads became read-model
+#: queries too and two resolvers could point the two surfaces at two databases.
+get_engine = _get_read_engine
 
 
 def parse_ts(value: str, field: str) -> datetime:

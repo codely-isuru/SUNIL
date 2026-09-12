@@ -54,19 +54,28 @@ C6_PATHS = [
 ]
 
 
-def build_ops_app(*, service_token: str | None = None, approvals=None, **overrides):
+def build_ops_app(
+    *,
+    service_token: str | None = None,
+    approvals=None,
+    approvals_factory=None,
+    **overrides,
+):
     """The real `create_app` with the frozen fakes wired. Returns `(app, sessionmaker)`.
 
     Synchronous, so the request-free route-table walks can use it too.
     `approvals` replaces C4 §6's fake for the tests that need a service with a
-    schedule; every other keyword is a `Settings` field.
+    schedule; `approvals_factory` is the same seam for a service that needs the
+    app's OWN engine (the real `DatabaseApprovalsService`, which must write to
+    the database the mounted read model reads — two engines would let a test
+    pass while the application answered a different database). Every other
+    keyword is a `Settings` field.
     """
     from sunil.api.wiring import Seams
     from sunil.db.base import Base
     from sunil.main import create_app
     from sunil.settings import Settings
 
-    from tests.fakes.fake_approvals import FakeApprovalsService
     from tests.fakes.fake_memory_provider import FakeMemoryProvider
     from tests.fakes.fake_provider import FakeProvider
 
@@ -94,7 +103,7 @@ def build_ops_app(*, service_token: str | None = None, approvals=None, **overrid
             sessionmaker=sessionmaker,
             provider=FakeProvider(),
             memory_provider=FakeMemoryProvider(),
-            approvals=approvals if approvals is not None else FakeApprovalsService(),
+            approvals=_resolve_approvals(approvals, approvals_factory, engine),
             # Never reached by an ops read; present because a `fake` seam
             # selection must be injected rather than defaulted (wiring.py rule 1).
             tool_manager=lambda audit_hook: None,
@@ -102,6 +111,21 @@ def build_ops_app(*, service_token: str | None = None, approvals=None, **overrid
     )
     app.state.schema_base = Base
     return app, sessionmaker
+
+
+def _resolve_approvals(approvals, approvals_factory, engine):
+    """One C4 seam per app, chosen from the two injection shapes above. Both
+    given is a test bug, not a precedence question, so it is refused here rather
+    than silently resolved."""
+    from tests.fakes.fake_approvals import FakeApprovalsService
+
+    if approvals is not None and approvals_factory is not None:
+        raise TypeError("pass approvals= or approvals_factory=, not both")
+    if approvals is not None:
+        return approvals
+    if approvals_factory is not None:
+        return approvals_factory(engine)
+    return FakeApprovalsService()
 
 
 @asynccontextmanager
