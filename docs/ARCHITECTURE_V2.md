@@ -161,7 +161,7 @@ call that skips `decide()` (§33.3, §33.5).
 | `SUNIL_MEMORY_EMBEDDER` | `hashing` (keyless, lexical recall); `gateway` = real embeddings, refuses to boot without the key | no | `core/memory/embedding.py::build_embedder`; flip-to-`gateway` gated by ruling R10 |
 | `SUNIL_MEMORY_EMBEDDING_MODEL` | `text-embedding-3-small` | no | `GatewayEmbedder` request model id (gateway alias namespace, C2 §2) |
 | `SUNIL_MEMORY_EMBEDDING_API_KEY` | unset | yes | `GatewayEmbedder` bearer (gateway virtual key) |
-| `SUNIL_OPENHANDS_BASE_URL` | `http://localhost:3400` — **field not yet in `settings.py`** (ADR-033 Amendment 1 names the applier) | no | `agents/developer` client wiring; ADR-033 validator (loopback ∨ `openhands`) |
+| `SUNIL_OPENHANDS_BASE_URL` | `http://localhost:3400` — in `settings.py` since 2026-09-12 (W2R2 item 2c / ADR-033 Amendment 1: `sunil_openhands_base_url` + validator + `_NAMED_HOSTS` entry; stale "not yet in settings" caveat cleared by ruling R16-D4, 2026-09-12) | no | `agents/developer` client wiring; ADR-033 validator (loopback ∨ `openhands`) |
 | `SUNIL_TOOL_MANAGER` | `real` | no | seam selector, `api/wiring.py` — which C1 implementation is wired; `fake` requires an injected seam (`Seams`) and is unreachable from configuration alone (wiring rule 1: production code never imports test doubles) |
 | `SUNIL_APPROVALS_SERVICE` | `real` | no | seam selector, `api/wiring.py` — which C4 implementation is wired; `fake` requires an injected seam, as above |
 

@@ -26,6 +26,7 @@ fix round.
 | R13 | S2-C §7.6 — `EntityResolver` built-but-unwired | This file (wiring delta + owning round) |
 | R14 | S2-F §5.3 + S2-E §7.1 — `SUNIL_OPENHANDS_BASE_URL`, `openhands` named host, n8n MCP path | **ADR-033 Amendment 1** + **ARCHITECTURE_V2 §5/§4** dated corrections |
 | R15 | Round-2 owed-sections sweep (S2-C §7, S2-E §7 + §4 follow-up, S2-F §5) | This file (disposition table) + **THREAT_MODEL §9** (DC-21 + dated closure block) |
+| R16 | integration-w2r2 §6 **D1** — `github_mcp`'s pinned server is deprecated and advertises none of its four operation names (whole-tool ADR-034 drift refusal at first live boot; no merge tool exists there at all) + §6 **D4** — ARCH §5's stale `SUNIL_OPENHANDS_BASE_URL` caveat (round-2 review unblock, 2026-09-12, branch `task/integration-w2r2`) | This file (dormancy delta, applier named; w2r3 re-landing parcel + **ADR-034 Amendment 1 registered**, lands with the rows) + **ARCHITECTURE_V2 §5** dated line fix (done this commit) |
 
 ---
 
@@ -1102,3 +1103,389 @@ code (R2 steps 1–3, R3's lane move, R1's startup warning) name wave-2's wiring
 files touched — `docs/contracts/C1-tool-adapter.md` (→ v1.2.0) and this file, on
 `task/S2-rulings`. Still no application code and no tests; appliers are named per parcel inside
 each ruling.
+
+---
+
+## R16 — `github_mcp`: the deprecated pin retires this wave and the whole tool goes DORMANT; the maintained official server is the ruled successor behind a named verification gate (W2R2 §6 D1) · ARCH §5's stale `SUNIL_OPENHANDS_BASE_URL` caveat cleared (D4) — 2026-09-12, branch `task/integration-w2r2`
+
+**The defect, as found** (integration-w2r2 §6 D1 + the in-place note in `config/tools.yaml`):
+the pinned `@modelcontextprotocol/server-github@0.6.2` is upstream-deprecated ("no longer
+supported") and its `tools/list` — captured 2026-09-12 against the real `command:` — is exactly
+nine tools, **none** of which is `issues_list`, `issues_close`, `push_branch` or `merge_main`.
+Under ADR-034's startup drift check one unserved row refuses `start()` and the ENTIRE tool leaves
+the registry (Stream E's `run_workflow` lesson, twice now). Two further facts shape the ruling:
+the advertised set contains **no merge operation of any kind**, and the spawn itself hands
+`GITHUB_TOKEN` to an unmaintained package — every live-boot attempt, before the drift check even
+answers.
+
+### The ruling, four parts
+
+**(1) The deprecated pin retires THIS WAVE, and the whole `github_mcp` surface goes dormant** —
+commented out in place with the ruled end-state inside the comment (the S2-F compose-block
+pattern: the committed comment IS the decision, not an unfinished edit). No state that keeps the
+current `command:` is admissible (any live boot spawns dead code holding a live credential); no
+rename can save it (rejected (b) below: the dead server serves zero of the four); and a
+`command:` containing a placeholder is a boot error by construction. Dormancy is ADR-034's drift
+posture applied honestly — nothing is configured that nothing serves — and it is what the drift
+check exists to protect: the registry never carries an operation the live world cannot answer.
+Everything the wave's evidence shows stays green and stays TRUE: Stream F's 20 agent tests run on
+harness-injected adapters and `FakePermissionHook` (verified — `tests/unit/agents/harness.py:241`),
+the parked-merge evidence is real C4 against the real Tool Manager, and D9's mockup card keeps
+rendering `github_mcp.merge_main` because that is the ruled end-state name (part 3). Only
+execution is dormant — and it always was: nothing has ever executed these four operations.
+
+**(2) The ruled successor is the official `github/github-mcp-server`, as a PIN-ME with the
+verification step named** (F's precedent — `VENDOR_MAPPING_STATUS ==
+"unverified-until-first-live-boot"` — here made a **gate**, not a hope). Its existence and tool
+names are NOT verifiable offline from this tree (no vendored artifact, no lockfile, no captured
+`tools/list`; checked by search this ruling). So nothing lands against it until **step 0 of the
+w2r3 parcel: boot the candidate, capture its `tools/list` verbatim into the task file, transcribe
+it into the config comment and pin it in a test** — the same transcription discipline the W2R2
+engineer applied to the dead server, in the `tests/unit/n8n/test_mount.py` pattern. Expected
+shape, to be confirmed or corrected at capture: `list_issues` (→ `issues_list`), `update_issue`
+(→ `issues_close`, adapter fixes `state=closed`; the SUNIL params model still admits no `state`
+field, so the approval card keeps reading "close issue N"), `create_pull_request` +
+`merge_pull_request` (→ `merge_main`, part 3). **If the capture falsifies the candidate**
+(unobtainable, no stdio transport, verbs missing), the pre-made fallback is a **native adapter
+kind for the git operations** — the M1-proven `github` native-tool pattern, SUNIL-owned code over
+`GITHUB_TOKEN`, no MCP layer and therefore no drift check — NOT an MCP shim (rejected (d)).
+Either way w2r3 cannot stall on an unruled question.
+
+**(3) Naming law, and the merge gap named.** SUNIL's operation names are the governed vocabulary
+— permission rows, approval cards (D9; the mockups' `github_mcp.merge_main`), audit history, and
+ADR-030 §4's own text — and they never track a vendor. Therefore ADR-034 §1 gains, **landing
+together with the rows as ADR-034 Amendment 1** (R4/R10 precedent: the instrument moves when the
+change moves), a per-operation **`server_tool:` binding**: the drift check verifies every bound
+server tool is advertised; the adapter invokes the binding; default = the operation name. The
+amendment must also admit a **bounded composition** for `merge_main`, because no GitHub-API
+server anywhere advertises a branch-merge tool: the honest executable shape is
+`create_pull_request(branch → base)` then `merge_pull_request(number)` — ONE governed operation,
+ONE approval binding exactly `{project_key, branch, base_branch}` (the PR number is derived state
+minted inside the approved execution, never plan input; the drift check verifies BOTH bound
+tools). The composition is not a workaround, it is an upgrade: the owner's C4 decision gains a
+server-side reviewable PR trail. If the capture reveals a direct branch-merge tool, bind that
+instead — the composition is the ruled fallback shape.
+
+**(4) The push gap named, and its direction ruled.** No API-side executor — the dead server, the
+official server, or a native adapter — can serve `push_branch` as conceived, because the thing
+being pushed (the engine's commits) exists only in the OpenHands sandbox, and the run-report seam
+deliberately carries intents, never file contents (S2-F §1). `push_files` is an API
+content-commit — a different semantic that would require shipping the working tree through C1
+params and re-authoring the engine's commits under SUNIL's token. Direction ruled: **the engine
+pushes its own work branch under the sandbox-scoped token S2-F §4 already designs** (fine-grained,
+one repository, `contents:read/write`, protected `main` as the server-side backstop), and SUNIL's
+`push_branch` operation becomes **verify-and-record** — an API-side check that the reported branch
+exists at the reported head, bound to the validated `{project_key, branch, base_branch}`, minting
+the audit row that admits the branch into the governed flow. The final shape — including whether
+`read_only` flips and how ADR-030 §4's `push_branch: allow` prose is restated — belongs to the
+**engine-enablement ADR S2-F §4 already reserved** (R15's S2-F §4 row): the push-authority
+question and the runtime-isolation question are one decision about the same credential and land
+together. The alternative (widen the report seam to carry contents so SUNIL pushes API-side)
+stays available to that ADR; it is not the default for the reason above.
+
+### Rejected alternatives, by name
+
+- **(b) Keep the deprecated npm server and remap our names onto its real verbs.** Factually
+  serves **zero of four**: no issue-list tool, no issue-close/update tool, **no merge tool at
+  all**, and `push_files` is not a branch push (part 4). It would trade the governed vocabulary
+  for a dead vendor's verbs in exchange for nothing, on a package that will never see another
+  security patch while holding `GITHUB_TOKEN`.
+- **(d) A SUNIL-owned thin GitHub MCP shim.** Against ADR-030's integrate-not-build decision (and
+  its rejected "build everything from scratch" row); an MCP serialization/process/drift-check
+  detour for SUNIL to talk to code SUNIL wrote is the native-adapter fallback with extra failure
+  modes; and it swaps a maintained vendor's hardening for our own unhardened credential-holding
+  code.
+- **(c) as a permanent posture — drop the writes with no named successor.** Honest today,
+  rudderless tomorrow: it abandons THE showcase operation (D9's approval-gated merge) with no
+  path back, and leaves the drift check guarding an empty registry. Part 1 IS (c)'s honesty —
+  bounded by part 2's named gate and part 3's ruled end-state.
+- **Rename our operations to the official server's verbs now.** Moves the drift from four
+  unserved names to four UNVERIFIED names (nothing offline confirms them), bleeds vendor
+  vocabulary into permission rows, cards, mockups and ADR-030 §4 — churn on every future vendor
+  swap — and still cannot name a push tool (part 4).
+- **Leave the tree as-is until w2r3.** Keeps an executable path that spawns deprecated code with
+  a live credential on any live-boot attempt, and carries a ruled-dead pin across a merge
+  boundary. D2's precedent this same round: "would have refused to boot" defects are fixed in the
+  wave that finds them.
+
+### Engineer delta — THIS WAVE (applier: the integration/backend lane; lands before the w2r2 merge record closes)
+
+Four test modules and two config files; nothing else moves. `config/agents.yaml` — **NO change**
+(the developer's planning grants stay: structurally inert while the catalogue holds no
+`github_mcp` — R1's grounds, layer 4 checks the adapter-built catalogue first and the plan-schema
+enum is catalogue-built — and the file's own "Until they land … rejected at layer 4" comment is
+simply true again). `apps/api/sunil/tools/mcp/params.py` — **NO change** (all four models stay in
+the tree: the `RunWorkflowParams` precedent, R15). `apps/api/sunil/agents/developer/agent.py` —
+**NO change** (a live git intent now fails loud at the chokepoint as `unknown tool`, audited —
+the correct posture while the engine itself is also dormant behind its own ADR).
+
+**1. `config/tools.yaml`** — replace the whole `github_mcp:` block (from the
+`# --- mcp_stdio ---` banner through the OPEN DEFECT note, currently :35-97) with:
+
+```yaml
+  # ------------------------------------------------------------- mcp_stdio ---
+  # github_mcp — DORMANT by ruling R16 (2026-09-12,
+  # docs/tasks/integration-w1-rulings.md). Committed commented-out ON PURPOSE
+  # (the S2-F compose-block pattern): this is the ruled interim state, not an
+  # unfinished edit.
+  #
+  # WHY: the previous pin — npx @modelcontextprotocol/server-github@0.6.2 —
+  # is upstream-deprecated ("no longer supported") and advertised NONE of
+  # SUNIL's four operation names. tools/list, captured 2026-09-12:
+  #   create_branch, create_issue, create_or_update_file, create_pull_request,
+  #   create_repository, fork_repository, get_file_contents, push_files,
+  #   search_repositories
+  # Under ADR-034's drift check any one unserved row refuses start() and takes
+  # the ENTIRE tool out of the registry — and spawning a dead package with
+  # GITHUB_TOKEN in its environment is not an acceptable failure mode. So no
+  # executable github_mcp surface exists until a VERIFIED pin lands.
+  #
+  # RE-LANDING is ONE atomic parcel (w2r3 — R16 names every step): pin the
+  # official github/github-mcp-server (PIN-ME: unverifiable offline from this
+  # tree; parcel step 0 boots the candidate, captures tools/list verbatim into
+  # the task file and pins it in a test — the n8n post_update pattern), bind
+  # SUNIL's operation names to the captured verbs via ADR-034 Amendment 1
+  # (`server_tool:` bindings + the merge_main composition; operation names
+  # stay SUNIL's), and land this block + the permission rows + the pin test
+  # TOGETHER (R15's atomicity rule). The rows to restore, verbatim:
+  #
+  # github_mcp:
+  #   kind: mcp_stdio
+  #   display_name: GitHub MCP server
+  #   command: [PIN-ME — github/github-mcp-server, digest-pinned at capture]
+  #   version: PIN-ME
+  #   credential_env: ["GITHUB_TOKEN"]
+  #   operations:
+  #     issues_list:    # expected binding: list_issues — verify at capture
+  #       read_only: true
+  #       timeout_s: 30
+  #       params_ref: sunil.tools.mcp.params:IssuesListParams
+  #     issues_close:   # expected binding: update_issue(state=closed)
+  #       read_only: false
+  #       timeout_s: 30
+  #       params_ref: sunil.tools.mcp.params:IssuesCloseParams
+  #     push_branch:    # executor ruled toward the ENGINE's scoped token;
+  #       read_only: false   # final shape belongs to the engine-enablement
+  #       timeout_s: 30      # ADR (R16 part 4)
+  #       params_ref: sunil.tools.mcp.params:PushBranchParams
+  #     merge_main:     # expected binding: create_pull_request +
+  #       read_only: false   # merge_pull_request — ONE approval over
+  #       timeout_s: 30      # {project_key, branch, base_branch} (R16 part 3)
+  #       params_ref: sunil.tools.mcp.params:MergeMainParams
+```
+
+**2. `config/permissions.yaml`** — two edits.
+
+The `project_manager` block (:26-31) becomes:
+
+```yaml
+    # github_mcp is DORMANT — ruling R16 (2026-09-12,
+    # docs/tasks/integration-w1-rulings.md): the pinned server was deprecated
+    # and served none of these names. Rows return ONLY with the w2r3
+    # verified-pin parcel, TOGETHER with the tools.yaml block (R15 atomicity —
+    # a row here without that block is a startup cross-validation refusal).
+    # To restore verbatim (`issues_close` stays `ask_user` — ARCHITECTURE_V2
+    # §6's worked example; the call parks via C4):
+    # github_mcp:
+    #   issues_list: allow
+    #   issues_close: ask_user
+```
+
+The `developer` block (:55-67, keeping the existing lead comment above the key) becomes:
+
+```yaml
+  # The developer's two ADR-030 §4 rows — `push_branch: allow` (the one
+  # unattended write; narrow because agents/developer/agent.py refuses
+  # protected/base/wrong-prefix branches and the params model forbids a fourth
+  # field) and `merge_main: ask_user` (the owner decides, every time) — are
+  # DORMANT: ruling R16 (2026-09-12). They return only with the w2r3
+  # verified-pin parcel; until then the engine's structural default-deny is
+  # the decision of record. The agent stays as an empty mapping so the
+  # whole-file pins keep their shape. To restore verbatim:
+  #   github_mcp:
+  #     push_branch: allow
+  #     merge_main: ask_user
+  developer: {}
+```
+
+(`developer: {}` — an explicit empty flow mapping, verified legal against
+`core/permissions/registry.py:100-104`; a bare `developer:` loads as `None` and raises
+`PermissionsConfigError`. If yamllint objects to the flow mapping, `developer: {}` may carry a
+same-line disable comment; do not switch to a bare key.)
+
+**3. `tests/unit/agents/test_developer_mount.py`** — replace the module (12 tests pinning the
+active rows) with the dormant-state pins:
+
+```python
+"""The developer agent's MOUNT — DORMANT state (ruling R16, 2026-09-12).
+
+`github_mcp` is commented out of `config/tools.yaml`, and its permission rows
+out of `config/permissions.yaml`, until the w2r3 parcel lands a VERIFIED pin
+(docs/tasks/integration-w1-rulings.md R16): no live server advertises the four
+SUNIL operation names, so any executable row is a whole-tool startup refusal
+under ADR-034's drift check. This module pins the dormant state so it cannot
+half-return: the rows come back TOGETHER (R15's atomicity rule) or not at all.
+ADR-030 §4 is unchanged as policy; its decisions return with the parcel.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from sunil.core.permissions.engine import decide
+from sunil.core.permissions.registry import load_permissions
+from sunil.core.tool_framework.base import PermissionDecision
+from sunil.core.tool_framework.tools_config import (
+    cross_validate_permissions,
+    load_tools_config,
+)
+from sunil.tools.mcp.params import MergeMainParams, PushBranchParams
+
+from tests.unit.agents import harness
+
+REPO_ROOT = Path(__file__).resolve().parents[5]
+TOOLS_YAML = REPO_ROOT / "config" / "tools.yaml"
+PERMISSIONS_YAML = REPO_ROOT / "config" / "permissions.yaml"
+AGENTS_YAML = REPO_ROOT / "config" / "agents.yaml"
+
+#: The argument shape the w2r3 approval flow binds to (S2-F §2 control 3).
+EXPECTED_FIELDS = {"project_key", "branch", "base_branch"}
+
+
+def test_github_mcp_is_dormant_not_half_wired() -> None:
+    """Whole-surface dormancy: no tool block, no permission row anywhere. A
+    permission row returning without the tool block is the startup-refusal
+    state R15's atomicity rule forbids — this is the tripwire."""
+    tools = load_tools_config(TOOLS_YAML)
+    permissions = load_permissions(PERMISSIONS_YAML)
+
+    assert "github_mcp" not in tools.tools
+    assert not [
+        pair for pair in permissions.referenced_tool_operations() if pair[0] == "github_mcp"
+    ]
+    cross_validate_permissions(tools, permissions)
+
+
+def test_the_git_writes_are_default_deny_for_everyone_while_dormant() -> None:
+    """ADR-030 §4's decisions (`allow` / `ask_user`, developer only) return
+    with the w2r3 parcel; until then structural default-deny is the decision
+    of record, for the developer and everyone else alike."""
+    permissions = load_permissions(PERMISSIONS_YAML)
+
+    for agent_id in permissions.agent_ids():
+        for operation in ("push_branch", "merge_main"):
+            result = decide(
+                permissions, agent_id=agent_id, tool="github_mcp", operation=operation
+            )
+            assert result.decision is PermissionDecision.DENY
+            assert result.source == "default-deny"
+
+
+def test_no_unattended_write_exists_while_github_mcp_is_dormant() -> None:
+    """The W2R2 tripwire, dormant edition: ADR-030 §4's
+    `developer.github_mcp.push_branch` is the ONE ruled exception and it is out
+    of the matrix until the w2r3 parcel — so today the set is EMPTY, and any
+    `allow` on a `read_only: false` operation arriving before that parcel
+    trips here instead of arriving quietly."""
+    permissions = load_permissions(PERMISSIONS_YAML)
+    configured = load_tools_config(TOOLS_YAML).tools
+
+    unattended_writes = {
+        (agent_id, tool, operation)
+        for agent_id in permissions.agent_ids()
+        for tool, operation in permissions.referenced_tool_operations()
+        if permissions.grant_for(agent_id, tool, operation) == "allow"
+        and not configured[tool].operations[operation].read_only
+    }
+
+    assert unattended_writes == set()
+
+
+def test_the_dormant_params_models_keep_the_approved_shape() -> None:
+    """The args_hash shape survives dormancy: `sunil/tools/mcp/params.py`
+    stays in the tree (the `RunWorkflowParams` precedent, R15), and the
+    harness double every Stream F test runs against stays pinned to it."""
+    for model, pin in (
+        (PushBranchParams, harness.PushBranchParams),
+        (MergeMainParams, harness.MergeMainParams),
+    ):
+        assert model.model_config.get("extra") == "forbid"
+        assert set(model.model_fields) == EXPECTED_FIELDS
+        assert set(model.model_fields) == set(pin.model_fields)
+
+
+def test_the_developer_planning_grants_are_exactly_the_dormant_pair() -> None:
+    """`config/agents.yaml` keeps the two planning grants: structurally inert
+    while the catalogue holds no github_mcp (R1's grounds — layer 4 checks the
+    adapter-built catalogue first, and the plan-schema enum is
+    catalogue-built). A THIRD grant, or a grant on another tool, still trips
+    this before it can pass unreviewed."""
+    agents = yaml.safe_load(AGENTS_YAML.read_text("utf-8"))["agents"]
+
+    assert agents["developer"]["tools"] == {
+        "github_mcp": ["push_branch", "merge_main"]
+    }
+```
+
+**4. `tests/unit/test_real_seams.py`** — two sites. The credentials-absent test (:133/:138): both
+set assertions become `{"github", "n8n_mcp"}`, with the comment
+`# github_mcp is DORMANT (ruling R16): not configured, so neither built nor skipped.` The
+credentials-present test (:150-163): the subset assertion becomes
+`assert {"github", "n8n_mcp"} <= names`, and the whole-set `github_mcp` operations block
+(:151-163) is replaced by `assert "github_mcp" not in by_name` plus a comment that the whole-set
+pin returns with the w2r3 parcel (R16).
+
+**5. `tests/unit/core/permissions/test_engine.py`** — the repo-file test (:179-190): the
+`agent_ids` pin is UNCHANGED (`["project_manager", "developer"]` — the empty mapping keeps the
+agent in the file); the four `github_mcp` grant assertions flip to `is None` with a comment citing
+R16 (dormant until the w2r3 parcel), and `fix_and_pr` stays `is None` (its reason is unchanged —
+S2-F §2). The docstring's cross-reference to the only-unattended-write test updates to the new
+name `test_no_unattended_write_exists_while_github_mcp_is_dormant` and gains one sentence: the
+named exception returns with the w2r3 parcel.
+
+**6. `tests/unit/core/tool_framework/test_tools_config.py`** — the shipped-config test (:154-167)
+becomes `test_the_shipped_config_declares_the_two_live_adapter_kinds`: keep the `github` NATIVE
+and `n8n_mcp` MCP_HTTP assertions (including `base_url_env` / `auth_token_env`), replace the
+`github_mcp` assertions with `assert "github_mcp" not in config.tools` and a comment: the shipped
+`mcp_stdio` example is dormant (R16); the loader's stdio path stays covered by the module's own
+synthetic `GOOD_BLOCK`, which is a loader fixture and deliberately keeps its inert literal. The
+shipped-pair cross-validation test (:145-151) needs no edit and must stay green.
+
+**Gates for the applier:** full suite twice on both legs; `yamllint` clean; no compose, `.env` or
+`settings.py` movement (`GITHUB_TOKEN` and its `Settings` field stay — the native `github` tool
+reads them); mutation check — restore ONLY the two permission rows and confirm
+`test_github_mcp_is_dormant_not_half_wired` goes red via cross-validation.
+
+### The w2r3 re-landing parcel (registered; atomic per R15)
+
+0. **Verification gate:** obtain the official `github/github-mcp-server` (candidate artifact:
+   GitHub's own published binary/image), run it with a scoped token, capture `tools/list`
+   VERBATIM into the round's task file. Unobtainable or verbs missing → the native-adapter
+   fallback (part 2), same parcel discipline.
+1. **ADR-034 Amendment 1** (instrument lands with the rows): `server_tool:` bindings +
+   the bounded `merge_main` composition + the naming law (operation names are SUNIL's).
+2. `config/tools.yaml`: uncomment; `command:`/`version:` = the verified, digest-pinned artifact;
+   bindings per the capture. `config/permissions.yaml`: both blocks restored verbatim.
+3. Adapter/loader support for `server_tool:` (drift check verifies bindings; invocation uses
+   them), `issues_close`'s fixed-argument translation, and the `merge_main` composition executor.
+4. The pin test transcribing the captured advertised set (n8n mount pattern), plus reverting
+   deltas 3-6 above to active-state pins.
+5. `push_branch` lands in whatever shape the engine-enablement ADR ruled (part 4) — if that ADR
+   has not landed, `push_branch` stays dormant and the parcel lands the other three operations
+   without it; the parcel must not invent the push executor.
+
+### D4 — `ARCHITECTURE_V2.md` §5, one line (done this commit)
+
+The `SUNIL_OPENHANDS_BASE_URL` row still carried "**field not yet in `settings.py`**". False
+since this branch: `sunil_openhands_base_url` is in `settings.py` (:235) with its ADR-033
+validator (:298) and its `_NAMED_HOSTS` entry (:87) — W2R2 item 2c, ratified as ADR-033
+Amendment 1 (R14). The row now states the field is landed, dated 2026-09-12, citing R16-D4. The
+§5 dated append's historical sentence ("the row carries the flag until the applier lands it")
+stays — it is true as history.
+
+**R16 boundaries:** files touched — `docs/ARCHITECTURE_V2.md` (one §5 line) and this file, on
+branch `task/integration-w2r2`. No application code, no config, no tests: every delta above names
+the integration/backend lane as applier (this wave) or the w2r3 parcel, and the ruling author
+reviews, never applies.
