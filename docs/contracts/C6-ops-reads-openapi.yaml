@@ -1,0 +1,616 @@
+---
+openapi: 3.1.0
+info:
+  title: SUNIL Ops Reads API (C6)
+  version: 1.0.0
+  description: >
+    Read-only operational views for the owner dashboard: tasks, live agent
+    activity, and the audit browser. Frozen Phase 1 contract (2026-09-11,
+    owner Gate 2 ruling Q1 = freeze) of exactly the shapes proposed in
+    V2_DASHBOARD_SPEC.md section 13. Rationale, derivation rules, the
+    in-process store seam and the QA fake: C6-ops-reads.md. There are NO
+    mutating operations on this surface and no service-token lane
+    (ADR-035's bearer is structurally scoped to POST /api/v1/chat) - a
+    bearer credential on any C6 route is 401.
+  contact:
+    name: Solution Architect, SUNIL V2
+
+servers:
+  - url: http://localhost:8000
+    description: >-
+      dev API (uvicorn on 127.0.0.1:8000; browser addresses it as localhost)
+
+security:
+  - sessionCookie: []
+    clientHeader: []
+
+paths:
+  /api/v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks, newest first (Tasks view, dashboard tasks box)
+      description: >
+        Cursor-paged per the C4 section 6.5 law (QA-pinned literal reading,
+        F8): order is created_at desc then id desc with PLAIN STRING id
+        comparison; cursor is the last row's id (opaque); next_cursor is
+        null ONLY when the returned page is short - an exactly-full final
+        page returns a cursor and the client learns the end from the
+        following empty page. An unknown cursor is 422, never a silent
+        page one.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by task lifecycle status. Omit for all.
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+        - name: project_key
+          in: query
+          required: false
+          description: >-
+            Exact match on tasks.project_key (Q2 ruling: the column is
+            added in V2 - C6-ops-reads.md section 3).
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          description: >-
+            Server-side case-insensitive substring match over objective.
+          schema:
+            type: string
+        - name: order
+          in: query
+          required: false
+          description: >-
+            newest = created_at desc, id desc (default); oldest reverses
+            both keys. The only sort control (spec section 4.2).
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Page of tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/tasks/{task_id}:
+    get:
+      operationId: getTask
+      summary: One task with its status-transition history
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: The task with status_events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/activity:
+    get:
+      operationId: getActivity
+      summary: One-request live snapshot (Agent activity view, dashboard)
+      description: >
+        Running, parked and recently finished tasks with each task's latest
+        audit stage folded in - one request, because listing tasks and then
+        fetching a trace per task is an N+1 on a 10-second poll
+        (spec section 13.2). No parameters; recent is capped at 20
+        (spec section 7.1); running and parked are complete.
+      responses:
+        '200':
+          description: Activity snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+
+  /api/v1/audit:
+    get:
+      operationId: listAuditTurns
+      summary: Audit index - turns grouped from audit_events by request_id
+      description: >
+        Cursor-paged per the same C4 section 6.5 law with started_at desc,
+        request_id desc (plain string comparison); cursor is the last row's
+        request_id. from/to form a half-open interval on started_at
+        (from <= started_at < to).
+      parameters:
+        - name: request_id
+          in: query
+          required: false
+          description: Exact match; returns zero or one turn.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ok, failed, parked]
+        - name: agent
+          in: query
+          required: false
+          description: Exact match on the turn's planning agent key.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Page of turns.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditTurnListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/audit/{request_id}:
+    get:
+      operationId: getAuditTurn
+      summary: One turn's full event chain (trace timeline + continuation)
+      description: >
+        events carries the turn's own rows in seq order; approval_events
+        carries the approval episode (approval_requested, the decision row,
+        and every continuation row - the rows whose stage is an approval
+        lifecycle kind or whose detail carries resumed_from_approval_id),
+        also in seq order, and is null when the turn had no approval
+        episode (C6-ops-reads.md section 2.3). 404 when no audit row
+        exists for the request_id.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The turn detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditTurnDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenClient'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema:
+        type: string
+        description: Task id (opaque string).
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+        description: ULID request id shared by the turn's audit rows.
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: >-
+        Opaque pagination cursor from a previous response. Unknown cursor
+        values are 422 (the C4 fakes-round rule), never a silent page one.
+      schema:
+        type: string
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sunil_session
+      description: >-
+        Owner session (signed cookie, ADR-007). Every C6 read is
+        owner-only - the same lane as C4.
+    clientHeader:
+      type: apiKey
+      in: header
+      name: X-SUNIL-Client
+      description: Must be the literal value "web" (ADR-008 CSRF control).
+
+  responses:
+    Unauthenticated:
+      description: >-
+        No/invalid owner session - including any ADR-035 bearer token,
+        which is never valid on this surface.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ForbiddenClient:
+      description: Missing/invalid X-SUNIL-Client header or Origin mismatch.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: No row with that id.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: >-
+        Request shape invalid (FastAPI/Pydantic 422) - including an
+        unknown cursor or an out-of-enum filter value.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    TaskStatus:
+      type: string
+      description: >-
+        tasks.status - the M1 four plus V2's parked (ADR-031).
+      enum: [pending, in_progress, completed, failed, parked]
+
+    FailureKind:
+      type: [string, 'null']
+      description: >-
+        C5 ChatFailure.kind, echoed from tasks.failure_kind; null unless
+        the task failed. The set is C5's and does not fork here.
+      enum:
+        - provider_error
+        - tool_failed
+        - plan_rejected
+        - unknown_project
+        - approval_refused
+        - approval_expired
+        - continuation_interrupted
+        - null
+
+    Task:
+      type: object
+      description: >-
+        One row of the Tasks view (spec section 13.1). Every key is always
+        present; absence is expressed as null (house style, C5 envelope).
+      required:
+        - id
+        - objective
+        - status
+        - assigned_agent
+        - priority
+        - project_key
+        - request_id
+        - conversation_id
+        - approval_id
+        - created_at
+        - started_at
+        - completed_at
+        - failure_kind
+      properties:
+        id:
+          type: string
+        objective:
+          type: string
+          description: >-
+            UNTRUSTED - plan text derived from user/LLM strings (spec
+            section 7.2). Render as PLAIN TEXT ONLY, never HTML/markdown/
+            DOM markup, exactly the C4 section 4 containment rule. The
+            server returns it byte-faithful and MUST NOT sanitise it -
+            containment is a rendering duty (C6-ops-reads.md section 4).
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        assigned_agent:
+          type: string
+          description: Agent key from config/agents.yaml (trusted).
+        priority:
+          type: string
+          description: >-
+            tasks.priority; V2 writes "normal" (M1 schema default). A
+            string, not a frozen enum - values are SUNIL-written, trusted.
+        project_key:
+          type: [string, 'null']
+          description: >-
+            tasks.project_key (Q2 ruling - written once at task creation
+            from the ValidatedPlan; null when the plan carried no
+            project or for rows predating the column).
+        request_id:
+          type: string
+        conversation_id:
+          type: string
+        approval_id:
+          type: [string, 'null']
+          description: The linked C4 approval when the task parked.
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+        failure_kind:
+          $ref: '#/components/schemas/FailureKind'
+
+    TaskStatusEvent:
+      type: object
+      required: [from_status, to_status, at]
+      properties:
+        from_status:
+          type: [string, 'null']
+          description: Null on the creation event (task_status_events).
+        to_status:
+          type: string
+        at:
+          type: string
+          format: date-time
+
+    TaskDetail:
+      allOf:
+        - $ref: '#/components/schemas/Task'
+        - type: object
+          required: [status_events]
+          properties:
+            status_events:
+              type: array
+              description: >-
+                Ascending at (a timeline); ties keep write order.
+              items:
+                $ref: '#/components/schemas/TaskStatusEvent'
+
+    TaskListResponse:
+      type: object
+      required: [tasks, next_cursor]
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        next_cursor:
+          type: [string, 'null']
+
+    ActivityItem:
+      allOf:
+        - $ref: '#/components/schemas/Task'
+        - type: object
+          required: [latest_stage, latest_stage_at, latest_detail]
+          properties:
+            latest_stage:
+              type: [string, 'null']
+              description: >-
+                stage of the highest-seq audit_events row for the task's
+                request_id; null only if no audit row exists (defensive -
+                should not occur, a task is created by plan_created).
+            latest_stage_at:
+              type: [string, 'null']
+              format: date-time
+            latest_detail:
+              type: object
+              description: >-
+                The three contracted keys projected from that row's
+                detail; every key optional, other detail keys MUST NOT
+                leak through this projection. Values are trusted
+                (registry/config strings - spec section 7.2).
+              additionalProperties: false
+              properties:
+                project_display_name:
+                  type: string
+                tool:
+                  type: string
+                operation:
+                  type: string
+
+    ActivityResponse:
+      type: object
+      required: [running, parked, recent]
+      description: >-
+        Partition by tasks.status - running = pending + in_progress,
+        parked = parked, recent = the 20 most recent completed + failed.
+        All three lists order created_at desc, id desc (plain string).
+      properties:
+        running:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityItem'
+        parked:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityItem'
+        recent:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ActivityItem'
+
+    AuditTurn:
+      type: object
+      description: >-
+        One turn, grouped from audit_events by request_id
+        (spec section 13.3). Derivations: C6-ops-reads.md section 2.3.
+      required:
+        - request_id
+        - started_at
+        - ended_at
+        - stage_count
+        - outcome
+        - failure_kind
+        - agent
+        - conversation_id
+        - task_id
+      properties:
+        request_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          description: at of the turn's first audit row (seq order).
+        ended_at:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            at of the final_response row; null while the turn is in
+            flight.
+        stage_count:
+          type: integer
+          description: >-
+            Count of rows whose stage is one of the twelve NFR-020 spine
+            names - approval-episode rows are NOT counted, so the view's
+            "n of 12" reading (spec section 10.1) stays honest.
+        outcome:
+          type: [string, 'null']
+          description: >-
+            final_response.detail.outcome; null while in flight (open
+            question Q9 - a parked turn's stage count - changes counts,
+            never this shape).
+          enum: [ok, failed, parked, null]
+        failure_kind:
+          $ref: '#/components/schemas/FailureKind'
+        agent:
+          type: [string, 'null']
+          description: >-
+            plan_created.detail.agent (trusted registry key); null before
+            plan_created.
+        conversation_id:
+          type: [string, 'null']
+          description: >-
+            Resolved through the turn's task; null in the window before a
+            task exists.
+        task_id:
+          type: [string, 'null']
+
+    AuditTurnListResponse:
+      type: object
+      required: [turns, next_cursor]
+      properties:
+        turns:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditTurn'
+        next_cursor:
+          type: [string, 'null']
+
+    AuditEvent:
+      type: object
+      required: [seq, stage, actor, summary, detail, at, task_id]
+      properties:
+        seq:
+          type: integer
+          description: Unique per request_id (audit_events).
+        stage:
+          type: string
+          description: >-
+            One of the twelve NFR-020 spine names, an approval lifecycle
+            kind (approval_requested/approval_approved/approval_refused/
+            approval_expired/continuation_reconciled) or a later additive
+            kind - an open string, clients degrade to a generic label
+            (ARCHITECTURE_V1 section 3.4 rule; ADR-023).
+        actor:
+          type: string
+          description: Component name (trusted).
+        summary:
+          type: string
+          description: >-
+            UNTRUSTED-INFLUENCED - audit summaries embed
+            attacker-influenceable values (an approval_requested row
+            carries the C4 summary verbatim). PLAIN TEXT ONLY rendering,
+            the C4 section 4 rule; returned byte-faithful, never
+            server-sanitised.
+        detail:
+          type: [object, 'null']
+          additionalProperties: true
+          description: >-
+            May contain a truncated excerpt of UNTRUSTED content
+            (ARCHITECTURE_V1 section 3.4, T-32). Render every value under
+            the spec section 6.3 plain-text rules - no exception for
+            developer-facing screens; raw JSON goes in a pre as text.
+        at:
+          type: string
+          format: date-time
+        task_id:
+          type: [string, 'null']
+
+    AuditTurnDetail:
+      type: object
+      required: [events, approval_events]
+      properties:
+        events:
+          type: array
+          description: >-
+            The turn's own rows (everything that is not an
+            approval-episode row), ascending seq.
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        approval_events:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/AuditEvent'
+            - type: 'null'
+          description: >-
+            The approval episode's rows (lifecycle kinds + continuation
+            rows carrying resumed_from_approval_id in detail), ascending
+            seq; null when the turn had no approval episode. Rendered as
+            the spec section 10.2 second segment.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [kind, message]
+          properties:
+            kind:
+              type: string
+              enum:
+                - unauthenticated
+                - forbidden_client
+                - not_found
+                - validation_error
+            message:
+              type: string
