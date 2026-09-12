@@ -27,6 +27,10 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**▶ RESUMED — owner, 2026-09-12.** All five unfinished lanes re-dispatched, each instructed to
+reconstruct state from its own branch (task file + git log + wip diff + a ground-truth test run)
+before writing anything, and to merge origin/V2 first (brings C6). S-A-tools stays done+held.
+
 **⏸ PAUSED BY OWNER — 2026-09-11.** All five running wave-1 lanes stopped mid-task; every
 worktree wip-committed and pushed (nothing lost, nothing merged, nothing reviewed). Resume map:
 S-A-tools ✅ DONE (held for wave review) · S-spine ~60% (3 commits + wip: conversations/tasks/
