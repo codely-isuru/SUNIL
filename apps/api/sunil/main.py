@@ -85,7 +85,11 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     read_engine = engine if engine is not None else sessionmaker.kw.get("bind")
 
     provider = wiring.resolve_provider(settings, seams)
-    memory_provider = wiring.resolve_memory_provider(settings, seams)
+    # The APPLICATION's engine, for `resolve_memory_provider`'s reason: the audit
+    # row that names a memory is written on this connection, and a provider
+    # holding a second engine would file the memory in one database while its own
+    # trail lived in another.
+    memory_provider = wiring.resolve_memory_provider(settings, seams, engine=read_engine)
     approvals = wiring.resolve_approvals(settings, seams, engine=read_engine)
 
     # The tool registry is built ONCE, here: the plan catalogue the model is

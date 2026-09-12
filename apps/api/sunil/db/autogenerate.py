@@ -32,7 +32,24 @@ from typing import Any
 #: nor drops these — on either side of the comparison. Extending this set is a
 #: reviewed code change, and the reviewer's question is "does a hand-written
 #: revision own this table's whole lifecycle?".
-FENCED_TABLES: frozenset[str] = frozenset({"approvals"})
+#:
+#: Stream C's five (`0005_memory_and_entities`) answer it the same way `approvals`
+#: does: their one declaration is `core/memory/tables.py` on a private
+#: `MEMORY_METADATA`, absent from `Base.metadata`. Without the fence the next
+#: autogenerate would emit `op.drop_table` for all five — including `memories`,
+#: whose rows are the thing the assistant remembers. `memories.embedding` is also
+#: a `vector(1536)` column that Alembic's comparison cannot render, so an
+#: unfenced ALTER would be unreviewable as well as wrong.
+FENCED_TABLES: frozenset[str] = frozenset(
+    {
+        "approvals",
+        "memories",
+        "memory_entity_links",
+        "clients",
+        "projects",
+        "people",
+    }
+)
 
 
 def include_name(name: str | None, type_: str, parent_names: dict[str, Any]) -> bool:
