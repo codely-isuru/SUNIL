@@ -36,6 +36,7 @@ def _no_ambient_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SUNIL_LLM_PROVIDER_LANE",
         "SUNIL_LLM_GATEWAY_BASE_URL",
         "SUNIL_N8N_MCP_BASE_URL",
+        "SUNIL_OPENHANDS_BASE_URL",
         "SUNIL_APPROVAL_TTL_HOURS",
         "SUNIL_APPROVAL_CONSUME_GRACE_HOURS",
         "SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL",
@@ -65,7 +66,12 @@ def test_defaults_are_the_architecture_v2_section_5_inventory() -> None:
     assert settings.sunil_turn_deadline_s == 40
     assert settings.sunil_llm_provider_lane == "gateway"
     assert settings.sunil_llm_gateway_base_url == "http://localhost:4000"
-    assert settings.sunil_n8n_mcp_base_url == "http://localhost:5680/mcp"
+    # The workflow path, not the bare `/mcp` prefix (ADR-033 Amendment 1 item 2,
+    # from S2-E §7 item 1: `/mcp` is a prefix and answers 404 on the live n8n).
+    assert settings.sunil_n8n_mcp_base_url == "http://localhost:5680/mcp/sunil"
+    # ADR-033 Amendment 1 item 1. The ADR-032 port pair the commented Compose
+    # block already carries (127.0.0.1:3400 -> 3000).
+    assert settings.sunil_openhands_base_url == "http://localhost:3400"
     assert settings.sunil_approval_ttl_hours == 72
     assert settings.sunil_approval_consume_grace_hours == 1
     assert settings.sunil_approval_notify_webhook_url is None  # webhook off
@@ -127,6 +133,68 @@ def test_n8n_mcp_base_url_accepts_loopback_and_the_compose_host(url: str) -> Non
 def test_n8n_mcp_base_url_refuses_a_public_host() -> None:
     with pytest.raises(ValueError, match="sunil_n8n_mcp_base_url"):
         build(sunil_n8n_mcp_base_url="https://n8n.example.com/mcp")
+
+
+@pytest.mark.parametrize(
+    "url", ["http://localhost:3400", "http://127.0.0.1:3400", "http://openhands:3000"]
+)
+def test_openhands_base_url_accepts_loopback_and_the_compose_host(url: str) -> None:
+    """ADR-033 Amendment 1: `openhands` joins the named-host set for THIS field.
+
+    The field may be read by nothing yet — the Compose service is still
+    commented out pending the runtime-isolation ADR (S2-F §4) — and that is
+    fine: an unread validated setting is inert, and the alternative is landing
+    the guard in the same change that first sends bytes anywhere.
+    """
+    assert build(sunil_openhands_base_url=url).sunil_openhands_base_url == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://app.all-hands.dev",  # the vendor's hosted runtime
+        "http://openhands.evil.example:3000",  # substring of the named host
+        "http://192.168.1.40:3400",
+    ],
+)
+def test_openhands_base_url_refuses_anything_else(url: str) -> None:
+    """The engine receives a work order and returns a report SUNIL acts on. A
+    redirectable base URL would let anything that can influence process env
+    choose who writes that report."""
+    with pytest.raises(ValueError, match="sunil_openhands_base_url"):
+        build(sunil_openhands_base_url=url)
+
+
+def test_the_named_host_set_is_closed_literal_and_scoped_per_field() -> None:
+    """ADR-033: "a frozen constant in code, not configuration". Asserted WHOLE,
+    so a host added to it comes past this test — and asserted per field, because
+    the set is not one bag: `litellm` is not admissible for the n8n MCP URL and
+    `openhands` is not admissible for anything but its own field.
+    """
+    from sunil.settings import _NAMED_HOSTS
+
+    assert _NAMED_HOSTS == {
+        "sunil_llm_gateway_base_url": ("litellm",),
+        "sunil_n8n_mcp_base_url": ("n8n",),
+        "sunil_approval_notify_webhook_url": ("n8n",),
+        "sunil_openhands_base_url": ("openhands",),
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "url"),
+    [
+        ("sunil_llm_gateway_base_url", "http://openhands:3000"),
+        ("sunil_n8n_mcp_base_url", "http://openhands:3000/mcp/sunil"),
+        ("sunil_approval_notify_webhook_url", "http://openhands:3000/hook"),
+    ],
+)
+def test_the_new_named_host_widens_no_other_field(field: str, url: str) -> None:
+    """The failure mode a single shared set would have: adding `openhands` for
+    the developer seam must not make an approval notification — a redacted
+    summary of what an owner is being asked to authorise — postable to it."""
+    with pytest.raises(ValueError, match=field):
+        build(**{field: url})
 
 
 def test_notify_webhook_url_is_validated_when_set_and_optional_when_not() -> None:

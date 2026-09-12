@@ -150,7 +150,17 @@ def test_a_tool_whose_credentials_are_present_is_registered(engine) -> None:
     assert {"github_mcp", "n8n_mcp"} <= names
     # …and the operations are the FILE's, never the server's self-description.
     by_name = {adapter.name: adapter for adapter in registry.adapters}
-    assert set(by_name["github_mcp"].operations) == {"issues_list", "issues_close"}
+    # Asserted WHOLE, so the set cannot grow without this test seeing it: W2R2
+    # added Stream F's two git writes (ADR-030 §4). NOTE they are SUNIL's names
+    # and the pinned server advertises none of them — see the open defect
+    # recorded in config/tools.yaml; the adapter is built here, never started,
+    # so the ADR-034 drift check does not run in this test.
+    assert set(by_name["github_mcp"].operations) == {
+        "issues_list",
+        "issues_close",
+        "push_branch",
+        "merge_main",
+    }
 
 
 def test_the_real_chokepoint_carries_the_permission_engine_and_the_tx_seam(engine) -> None:

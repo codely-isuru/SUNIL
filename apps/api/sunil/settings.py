@@ -74,10 +74,17 @@ def _redact_validation_error(exc: ValidationError) -> ValidationError:
 #: ADR-033 — the named in-network hosts each outbound base URL may legally use
 #: (§5's "legal under ADR-033's named-host rule" for the container lane). Exact
 #: host equality, never a substring: `litellm.evil.example` is not `litellm`.
+#:
+#: Keyed BY FIELD, not one shared bag: `litellm` is not admissible for the n8n
+#: MCP URL, and `openhands` is admissible for nothing but its own field. A single
+#: set would make every addition a widening of every governed URL at once.
 _NAMED_HOSTS: dict[str, tuple[str, ...]] = {
     "sunil_llm_gateway_base_url": ("litellm",),
     "sunil_n8n_mcp_base_url": ("n8n",),
     "sunil_approval_notify_webhook_url": ("n8n",),
+    # ADR-033 Amendment 1 (2026-09-12, ruling R14) — the addition the original
+    # Decision anticipated by name ("`openhands` joins it in Phase V2-D").
+    "sunil_openhands_base_url": ("openhands",),
 }
 
 #: ADR-017 — the one canonical value per direct-lane provider base URL.
@@ -210,8 +217,22 @@ class Settings(BaseSettings):
         description="Injected into the github_mcp child env at spawn (C1 §5). Required only "
         "when a github server is configured — absence must not stop the app booting.",
     )
-    sunil_n8n_mcp_base_url: str = Field(default="http://localhost:5680/mcp")
+    # `/mcp/sunil`, not `/mcp`: the last segment is the MCP Server Trigger
+    # workflow's own path. `/mcp` is n8n's prefix and answers 404 — proven
+    # against the live 2.38.5 server (S2-E §7 item 1, ADR-033 Amendment 1
+    # item 2). The validator constrains the HOST and never the path, so this is
+    # a default correction, not a rule change.
+    sunil_n8n_mcp_base_url: str = Field(default="http://localhost:5680/mcp/sunil")
     sunil_n8n_mcp_auth_token: SecretStr | None = Field(default=None)
+
+    # -- developer execution engine (§5, ADR-033 Amendment 1) ---------------- #
+    # Read by `agents/developer`'s client wiring when the engine is enabled.
+    # Nothing reads it yet — the Compose service stays commented out until the
+    # runtime-isolation ADR (S2-F §4) — and the field lands first on purpose: a
+    # validated setting that nobody reads is inert, whereas landing the guard in
+    # the same change that first sends bytes somewhere is how a guard gets
+    # skipped. Host port 3400, ADR-032's frozen pair (127.0.0.1:3400 -> 3000).
+    sunil_openhands_base_url: str = Field(default="http://localhost:3400")
 
     # -- approvals (§5, C4) --------------------------------------------------- #
     sunil_approval_ttl_hours: int = Field(default=72, gt=0)
@@ -273,6 +294,11 @@ class Settings(BaseSettings):
     @classmethod
     def _check_n8n_mcp_base_url(cls, value: str) -> str:
         return _validate_named_host_url("sunil_n8n_mcp_base_url", value)
+
+    @field_validator("sunil_openhands_base_url")
+    @classmethod
+    def _check_openhands_base_url(cls, value: str) -> str:
+        return _validate_named_host_url("sunil_openhands_base_url", value)
 
     @field_validator("sunil_approval_notify_webhook_url")
     @classmethod

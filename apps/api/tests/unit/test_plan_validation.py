@@ -18,11 +18,16 @@ from sunil.core.orchestrator.guards import (
     require_validated_plan,
 )
 from sunil.core.orchestrator.plan_models import (
+    NO_TOOL,
     Plan,
     PlanStep,
     ValidatedPlan,
 )
-from sunil.core.orchestrator.plan_schema import build_plan_schema
+from sunil.core.orchestrator.plan_schema import (
+    NON_TOOL_ACTIONS,
+    TOOL_CALL_ACTION,
+    build_plan_schema,
+)
 from sunil.core.orchestrator.plan_validator import (
     MAX_PLAN_ATTEMPTS,
     PlanRejected,
@@ -248,3 +253,50 @@ def test_the_plan_schema_whitelists_the_live_registries(catalogue) -> None:
     # Every property in `required` — OpenAI's strict structured-output mode
     # rejects a schema where a property is merely absent from `required`.
     assert set(step["required"]) == set(step["properties"])
+
+
+def test_the_developers_work_order_is_an_action_a_planner_can_emit(catalogue) -> None:
+    """Stream F handover 6 (`docs/tasks/S2-F-openhands.md` §5).
+
+    Layer 4 already accepts a `fix_and_pr` step — it does not constrain `action`
+    on a non-tool step — but layer 1 IS the provider's grammar: an action absent
+    from this enum is an unreachable token sequence, so the work order could
+    only ever be built by SUNIL code, never planned. `tool`/`operation` stay
+    `NO_TOOL` because the delegation addresses an AGENT; the git writes that run
+    produces are separate, governed `tool_call` steps.
+    """
+    from sunil.agents.developer.agent import WORK_ORDER_ACTION
+
+    schema = build_plan_schema(agents=AGENTS, catalogue=catalogue)
+    step = schema["properties"]["steps"]["items"]
+
+    assert WORK_ORDER_ACTION in NON_TOOL_ACTIONS
+    assert TOOL_CALL_ACTION not in NON_TOOL_ACTIONS
+    assert WORK_ORDER_ACTION in step["properties"]["action"]["enum"]
+    assert NO_TOOL in step["properties"]["tool"]["enum"]
+    assert NO_TOOL in step["properties"]["operation"]["enum"]
+
+
+def test_a_work_order_step_survives_the_registry_re_check(catalogue) -> None:
+    """The same step through the REAL validator, so layer 1 and layer 4 are
+    shown to agree: a planner that emits this gets a ValidatedPlan rather than a
+    rejection one layer down."""
+    from sunil.agents.developer.agent import WORK_ORDER_ACTION
+
+    draft = {
+        **FIXED_PLAN,
+        "steps": [
+            {
+                "id": "step_1",
+                "action": WORK_ORDER_ACTION,
+                "tool": NO_TOOL,
+                "operation": NO_TOOL,
+                "params": {"project_key": "sunil", "instructions": "fix the failing test"},
+            }
+        ],
+    }
+
+    validated = validate_plan(draft, agents=AGENTS, catalogue=catalogue)
+
+    assert validated.steps[0].action == WORK_ORDER_ACTION
+    assert validated.steps[0].tool == NO_TOOL

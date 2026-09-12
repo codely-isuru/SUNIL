@@ -403,6 +403,10 @@ services:
   #     # (docs/tasks/S2-E-n8n.md §3, verified against the live 2.38.5 server).
   #     SUNIL_N8N_MCP_BASE_URL: http://n8n:5678/mcp/sunil
   #     SUNIL_N8N_MCP_AUTH_TOKEN: ${SUNIL_N8N_MCP_AUTH_TOKEN:?set in .env}
+  #     # Only meaningful with the `dev-agents` profile up (the openhands
+  #     # service below is still commented out — S2-F §4). Harmless before
+  #     # then: nothing reads it, and ADR-033 validates it either way.
+  #     SUNIL_OPENHANDS_BASE_URL: http://openhands:3000
   #     SUNIL_APPROVAL_TTL_HOURS: ${SUNIL_APPROVAL_TTL_HOURS:-72}
   #     SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL: ${SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL:-}
   #     SUNIL_SERVICE_TOKEN: ${SUNIL_SERVICE_TOKEN:?set in .env}
