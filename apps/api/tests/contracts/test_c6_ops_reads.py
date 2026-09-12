@@ -1170,51 +1170,82 @@ def test_c6_9_the_five_operations_are_read_only() -> None:
         )
 
 
-def test_c6_9_no_session_is_401_on_every_operation() -> None:
+#: The five C6 paths with their path parameters filled in. The ids name nothing
+#: that exists: every assertion below is about a refusal that must happen BEFORE
+#: the handler runs, so a 404 anywhere here would itself be the failure.
+C6_REQUESTS = [
+    path.replace("{task_id}", "task-1").replace("{request_id}", "req-1")
+    for path in C6_PATHS
+]
+
+
+async def test_c6_9_no_session_is_401_on_every_operation() -> None:
     """C6 §1/§6 test 9, clause 1 — no session → 401 (``unauthenticated``) on all
-    five operations."""
+    five operations.
+
+    Body completed at integration-w1 by the backend lane, to QA's embedded
+    assertion list, against the harness C6 §6 leaves to the implementer
+    (``tests/ops_harness.py`` — the real ``create_app``, the real session
+    middleware, the real dependencies; the cookie is absent because none was
+    ever minted, not because one was deleted).
+
+    ``Origin`` is sent, so this clause grades the SESSION check rather than the
+    Origin decision C6 deliberately does not fix.
+    """
     ops_lane("sunil.main", "sunil.api.deps", "fastapi.testclient")
-    pending(
-        "clause 1: no session → 401 on all five operations",
-        "with X-SUNIL-Client: web and a valid Origin but NO sunil_session "
-        "cookie, GET each of the five C6 paths and assert 401 with "
-        "error.kind == 'unauthenticated' (C4's ErrorResponse). Needs the app's "
-        "Origin handling and the session cookie's minting helper: ADR-008 puts "
-        "the client/Origin control BEFORE the session check, and whether an "
-        "ABSENT Origin is a mismatch is a route decision C6 does not fix — "
-        "guessing it would hard-code an API the implementer has not chosen",
-    )
+    from tests.ops_harness import WEB_HEADERS, ops_client
+
+    async with ops_client(sign_in=False) as (client, _app):
+        for path in C6_REQUESTS:
+            answered = await client.get(path, headers=WEB_HEADERS)
+            assert answered.status_code == 401, f"{path}: {answered.text}"
+            assert answered.json()["error"]["kind"] == "unauthenticated", path
 
 
-def test_c6_9_session_without_the_client_header_is_403_on_every_operation() -> None:
+async def test_c6_9_session_without_the_client_header_is_403_on_every_operation() -> None:
     """C6 §1/§6 test 9, clause 2 — a valid session without ``X-SUNIL-Client``
-    → 403 (``forbidden_client``), the ADR-008 CSRF control, on all five."""
+    → 403 (``forbidden_client``), the ADR-008 CSRF control, on all five.
+
+    Body completed at integration-w1 (see clause 1). The session is real: minted
+    by ``POST /api/v1/auth/login`` and signed by ADR-007's middleware, so the
+    403 is the header control refusing a request that WOULD otherwise have been
+    authorised — which is the only version of this test that proves anything.
+    """
     ops_lane("sunil.main", "sunil.api.deps", "fastapi.testclient")
-    pending(
-        "clause 2: session without X-SUNIL-Client → 403",
-        "mint a valid owner session, then GET each of the five C6 paths with no "
-        "X-SUNIL-Client header and assert 403 with "
-        "error.kind == 'forbidden_client'; repeat with X-SUNIL-Client set to a "
-        "value other than the literal 'web'. Needs the session-minting helper "
-        "(cookie name and signing are api/deps.py's, not C6's)",
-    )
+    from tests.ops_harness import WEB_ORIGIN, ops_client
+
+    async with ops_client(sign_in=True) as (client, _app):
+        for header in ({}, {"X-SUNIL-Client": "curl"}):
+            for path in C6_REQUESTS:
+                answered = await client.get(
+                    path, headers={**header, "Origin": WEB_ORIGIN}
+                )
+                assert answered.status_code == 403, f"{path} {header}: {answered.text}"
+                assert answered.json()["error"]["kind"] == "forbidden_client", path
 
 
-def test_c6_9_service_bearer_without_a_cookie_is_401_on_every_route() -> None:
+async def test_c6_9_service_bearer_without_a_cookie_is_401_on_every_route() -> None:
     """C6 §1/§6 test 9, clause 3 — a VALID ``SUNIL_SERVICE_TOKEN`` bearer with no
     cookie → 401 on each C6 route (the ADR-035 structural-scope probe at request
-    level, complementing C5 test 8 and the route-table walk above)."""
+    level, complementing C5 test 8 and the route-table walk above).
+
+    Body completed at integration-w1 (see clause 1). The token is the one the
+    app is configured with, so this grades the LANE and not a bad credential.
+    Asserted with and without the browser headers: C6 §1 says "a bearer-only
+    request is 401", and QA's list says never 403, so the bearer must be refused
+    by the absent machine lane rather than by the CSRF pair — which is what
+    ``routes/approvals.py::refuse_service_bearer`` now does.
+    """
     ops_lane("sunil.main", "sunil.api.deps", "fastapi.testclient")
-    pending(
-        "clause 3: valid bearer, no cookie → 401 on each C6 route",
-        "with SUNIL_SERVICE_TOKEN set, GET each of the five C6 paths with "
-        "Authorization: Bearer <the real token> and no cookie, and assert 401 "
-        "unauthenticated on every one (never 200, never 403) — a leaked service "
-        "token must not read tasks, activity or the audit trail. The structural "
-        "half already passes in "
-        "test_c6_9_no_c6_route_accepts_the_adr_035_service_bearer; this is the "
-        "request-level half, which needs the token-injection harness",
-    )
+    from tests.ops_harness import SERVICE_TOKEN, WEB_HEADERS, ops_client
+
+    bearer = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
+    async with ops_client(service_token=SERVICE_TOKEN, sign_in=False) as (client, _app):
+        for headers in (bearer, {**WEB_HEADERS, **bearer}):
+            for path in C6_REQUESTS:
+                answered = await client.get(path, headers=headers)
+                assert answered.status_code == 401, f"{path}: {answered.text}"
+                assert answered.json()["error"]["kind"] == "unauthenticated", path
 
 
 # --------------------------------------------------------------------------- #
