@@ -27,6 +27,16 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**✅ WAVE 2 ROUND 1 (WIRING) COMPLETE — 2026-09-12.** SUNIL boots with REAL seams. Delivered and
+merged: real ToolManager/permissions/approvals/providers wiring; security conditions C-1 + C-3
+CLOSED (adversarially re-verified); C4 v1.2.0 (service owns time) and C1 v1.2.0 (typed
+ApprovalRef, forge-proof) frozen + implemented end-to-end — a parked chat turn now carries its
+real approval reference; reconciliation rule 4 + lazy-expiry finalisation; the lying integration
+double RETIRED (real manager 14/14); all review residuals closed. Suite: 955/0/4 SQLite,
+1003+/0/4 Postgres. e2e evidence on real Postgres in docs/tasks/S2-wiring.md. OPEN: live-model
+turn awaits owner provider keys (infra/.env.litellm per SECRETS_SETUP.md). NEXT: round 2 —
+Streams C (Mem0), E (n8n), F (OpenHands) — budget gate with the owner.
+
 **✅ WAVE 1 MERGED TO `V2` — 2026-09-12 (c474baa).** The V2 core exists and is review-clean:
 spine (12-stage governed turn, live-proven against fakes), tool chokepoint + permission engine +
 GitHub tool + MCP adapters, model gateway (live-verified against real LiteLLM), approvals service
