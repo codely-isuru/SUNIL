@@ -4,8 +4,15 @@
 # here, and the C5 envelope's `failure.kind="unknown_project"` carries this list
 # as `known_projects` so the owner is told what IS configured rather than just
 # that they were wrong.
+#
+# `repo: owner/name` is what the native GitHub tool resolves a `project_key` to
+# (wave-2 wiring round). It lives in config because `list_recent_activity`'s only
+# parameter is the project key: a plan chooses which PROJECT to look at and never
+# which repository SUNIL reaches (M1's T-16 rule, ported with the adapter). A
+# project with no `repo:` has no GitHub reach — the safe default for a new entry.
 projects:
   sunil:
     display_name: SUNIL
     description: >-
       This system. The default project for work on SUNIL itself.
+    repo: codely-isuru/SUNIL
