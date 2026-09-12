@@ -180,6 +180,17 @@ class Task(Base):
     objective: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     assigned_agent: Mapped[str] = mapped_column(String(100), nullable=False)
+    # C6's `Task` shape (frozen 2026-09-11) requires `priority` and sources it
+    # from this column: "tasks.priority; V2 writes 'normal' (M1 schema default)".
+    # It is carried from M1's schema, not invented here — the V2 transcription of
+    # `ARCHITECTURE_V1.md` §7.3 dropped it, and a read route cannot project a
+    # column that does not exist (every C6 tasks/activity read was a 500 against
+    # the real schema until this line). Not an enum: the values are SUNIL-written
+    # and trusted, and C6 deliberately declares it a string rather than freeze a
+    # priority vocabulary a later agent would have to violate.
+    priority: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="normal", server_default="normal"
+    )
     # C6 §3 / ADR-036 (Q2 ruling): nullable, written ONCE at task creation from
     # the `ValidatedPlan`. Nothing updates it — see `core/tasks/service.py`. It
     # exists so `GET /api/v1/tasks?project_key=…` is a query rather than a

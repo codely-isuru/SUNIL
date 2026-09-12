@@ -33,18 +33,24 @@ from sunil.api.errors import (
     ApiError,
     api_error_handler,
     http_exception_handler,
+    ops_api_error_handler,
     validation_error_handler,
 )
 from sunil.api.middleware import install_middleware
+from sunil.api.routes import activity as activity_routes
+from sunil.api.routes import approvals as approvals_routes
+from sunil.api.routes import audit as audit_routes
 from sunil.api.routes import auth as auth_routes
 from sunil.api.routes import chat as chat_routes
 from sunil.api.routes import health as health_routes
+from sunil.api.routes import tasks as tasks_routes
 from sunil.api.wiring import Seams
 from sunil.agents.project_manager import ProjectManagerAgent
 from sunil.core.conversations.resolver import DbConversationResolver
 from sunil.core.memory.service import MemoryService
 from sunil.core.orchestrator.plan_validator import ToolCatalogue
 from sunil.core.orchestrator.turn import GovernedTurnExecutor
+from sunil.core.approvals.sweeper import ApprovalSweeper
 from sunil.core.registry.loader import load_registries
 from sunil.db.session import get_engine, get_sessionmaker
 from sunil.logging import configure_logging, get_logger
@@ -138,16 +144,42 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     app.state.turn_executor = turn_executor
     app.state.logger = logger
 
+    # The three names Stream D's routers read off app state. They are set here,
+    # in the factory, rather than by whoever mounts the routers, because each has
+    # a failure mode that is invisible at the route:
+    #   * `approvals_service` — a 500 if missing (C4's own choice: an unwired
+    #     route is a deployment bug, and a 404 would hide it).
+    #   * `ops_engine` — a RuntimeError if missing, deliberately, because an
+    #     unwired ops route answering `{"tasks": []}` looks like a quiet system.
+    #     Derived from the sessionmaker when a caller injected one, so the reads
+    #     and the writes are guaranteed to be the same database rather than two.
+    #   * `web_origin` — Stream D's `require_web_client` SKIPS the Origin
+    #     comparison when this is unset. Unset is not lenient, it is absent: the
+    #     ADR-008 CSRF pair would silently be down to one header.
+    app.state.approvals_service = approvals
+    app.state.ops_engine = engine if engine is not None else sessionmaker.kw.get("bind")
+    app.state.web_origin = settings.web_origin
+
     install_middleware(app, settings)
 
     app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(approvals_routes.ApiError, ops_api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 
     # Explicit, one at a time, with no router-level dependencies — see
-    # `routes/__init__.py` for why that matters.
+    # `routes/__init__.py` for why that matters. Stream D's routers are factories
+    # (a fresh router per app, so two apps in one process cannot share route
+    # objects); the spine's are module-level singletons. Both mount flat.
     for router in (health_routes.router, auth_routes.router, chat_routes.router):
         _mount(app, router)
+    for factory in (
+        approvals_routes.create_router,
+        tasks_routes.create_router,
+        activity_routes.create_router,
+        audit_routes.create_router,
+    ):
+        _mount(app, factory())
 
     return app
 

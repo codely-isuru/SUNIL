@@ -152,8 +152,52 @@ def get_approvals_service(request: Request):
     return service
 
 
+def refuse_service_bearer(request: Request) -> None:
+    """ADR-035 — the machine lane does not exist on the owner-only routes, so a
+    request that presents a bearer is refused as unauthenticated, before the
+    CSRF pair is considered → 401 ``unauthenticated``.
+
+    Two frozen contracts require this answer and neither is satisfied by a 403:
+    C6 §1 ("a bearer-only request is 401") and C5 contract test 5 (a valid
+    ``SUNIL_SERVICE_TOKEN`` on ``GET /api/v1/approvals`` → 401 once Stream D
+    lands). Before it, a bearer-only request answered 403 ``forbidden_client``
+    because ADR-008's client-header check ran first and a machine caller sends
+    no ``X-SUNIL-Client``.
+
+    403 would also be the wrong *thing to say*. It names the client header as the
+    obstacle, which invites the caller to add one — and no header makes this lane
+    accept a bearer. 401 is the true answer and the one that discloses nothing.
+
+    The token is **not validated here** and never reaches
+    ``deps.require_service_token``: on this lane a bearer is refused whether it
+    is real or forged, so there is no comparison to time and no path on which a
+    valid machine credential is treated as more interesting than an invalid one.
+
+    ADR-008's ordering is untouched for the case it exists to cover. A browser
+    cross-site request cannot set ``Authorization`` at all, so a forged request
+    still meets the client-header check first and is still refused 403 before
+    anything session-backed runs (``test_routes.py::
+    test_the_client_header_is_checked_before_the_session``).
+    """
+    if request.headers.get("Authorization") is not None:
+        raise ApiError(
+            401, "unauthenticated", "this endpoint has no service-token lane"
+        )
+
+
+async def require_owner_lane(request: Request) -> None:
+    """The owner lane's gate, in contract order: ADR-035 first (above), then
+    ADR-008's CSRF pair. Composed rather than merged so ``require_web_client``
+    keeps its single meaning and its own tests."""
+    refuse_service_bearer(request)
+    await require_web_client(request)
+
+
 OwnerSession = Annotated[str, Depends(require_owner_session)]
-WebClient = Annotated[None, Depends(require_web_client)]
+#: Every C4 and C6 route takes this one annotation, so the lane cannot be
+#: half-applied: a route that forgets it has no owner check at all, rather than
+#: one control out of two.
+WebClient = Annotated[None, Depends(require_owner_lane)]
 
 
 # --------------------------------------------------------------------------- #

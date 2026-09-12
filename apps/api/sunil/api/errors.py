@@ -47,6 +47,36 @@ async def api_error_handler(request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def ops_api_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """The same envelope for Stream D's separate `ApiError` class.
+
+    `routes/approvals.py` declares its own `ApiError` (it was built in a worktree
+    with no spine module to import one from), and every C4 and C6 route raises
+    THAT class. Registering only the handler above would leave each Stream D
+    refusal unhandled — a 500 on an authentication refusal, which is an outage
+    rather than a denial, and one that returns a stack trace where a 401 belongs.
+
+    Handled here rather than by calling Stream D's own `install_error_handlers`,
+    because that function ALSO rebinds `RequestValidationError` and would
+    silently replace the C5-contracted 422 text for every route in the app.
+
+    `X-Content-Type-Options: nosniff` is set on the error path too (C4 §4): the
+    message can carry a path parameter the caller chose, and "it is only an error
+    body" is exactly how a JSON response comes to be rendered as HTML.
+    """
+    from sunil.api.routes.approvals import ApiError as OpsApiError  # noqa: PLC0415
+
+    assert isinstance(exc, OpsApiError)
+    _logger.info(
+        "api_error", kind=exc.kind, status=exc.status_code, path=request.url.path
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_payload(exc.kind, exc.message),
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
 async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """422 in C5's shape, with the offending input NEVER reflected."""
     del request
