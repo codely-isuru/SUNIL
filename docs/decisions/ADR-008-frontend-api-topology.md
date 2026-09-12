@@ -61,3 +61,46 @@ cookie (ADR-007) and, per ADR-009, the browser also opens an `EventSource`.
   the frontend sees an opaque network error. Called out in the code comment and in §3.3.
 - L-001 is satisfied: `ARCHITECTURE_V1.md` §9.5 walks one mutating request across all four boundaries
   at real ports, and every mechanism it relies on appears in the config inventory.
+
+## Amendment 1 — an absent `Origin` is a mismatch, on every route that applies the CSRF pair (2026-09-12, wave-1 rulings, owner: Solution Architect)
+
+**Driven by:** Security wave-1 LOW — two Origin semantics coexist in the merged tree. The Decision
+above only says a **present** `Origin` that is not `WEB_ORIGIN` is rejected; it left the absent case
+open. The spine closed it fail-closed (`sunil/api/deps.py::require_client_header`: "an absent
+`Origin` is a mismatch", recorded there as the route decision C5 §3 left open); Stream D implemented
+the letter (`sunil/api/routes/approvals.py::require_web_client` tolerates absence and additionally
+soft-skips the whole comparison when `app.state.web_origin` is unset, via a `getattr(..., None)`
+default). Same cookie-lane credential shape, different answer per route — `cookie + X-SUNIL-Client:
+web + no Origin` is 403 on `/api/v1/chat` and 200 on `/api/v1/approvals` and the five C6 reads.
+
+**Rule (one, for every route that applies the ADR-008 pair):**
+
+1. **An absent `Origin` is a mismatch → `403 forbidden_client`.** The pair is two controls; a
+   request that cannot say `Origin: WEB_ORIGIN` does not get the cookie lane's authority. The only
+   legitimate cookie-lane caller is the browser app, which is cross-origin (`localhost:3001` →
+   `localhost:8000`) and therefore always sends `Origin` — on GET too, since CORS governs every
+   cross-origin fetch. Dev `curl` against owner routes must send the full browser sentence
+   (`-H "Origin: http://localhost:3001"`); machine callers have the ADR-035 bearer lane and were
+   never entitled to this one.
+2. **The comparison must not soft-skip on unset state.** `web_origin` is required wiring, not an
+   optional attribute: unset means the request is refused (locked door), never that the check is
+   waived — the failure integration-w1 §2.2 gap 3 already demonstrated once.
+
+**Which lane moves, and when:** Stream D's `require_web_client` (the single move point — `tasks.py`,
+`audit.py`, `activity.py` all import the lane from `routes/approvals.py`), in the **wave-2 wiring
+round**, by the backend lane — not in wave 1; that file is under concurrent edit in the wave-1 close.
+The spine's `require_client_header` is already conformant and does not change. Blast radius: exactly
+one observable row of QA's credential×route matrix changes (`cookie + header + absent Origin`:
+200 → 403 on the C4/C6 routes); `tests/ops_harness.py` already sends `Origin` and sets `web_origin`,
+so the contract suites are unaffected; Stream D's hand-built-app route tests must set `web_origin`
+and send `Origin` on their authorised-path requests, and the ordering pin
+(`test_the_client_header_is_checked_before_the_session`) is untouched. No contract version moves:
+C4 §5 names `403 forbidden_client (header/Origin)` without fixing the absent case, and C6 §1 defers
+to "the exact C4 lane" — both defer here, and this amendment closes the open point for both.
+
+**Rejected alternative:** harmonising on the tolerant reading (the Decision's letter — reject only a
+present-and-mismatched `Origin`). Rejected because it silently degrades the two-control pair to one
+header for every caller that simply omits the second control, loosens the spine's shipped,
+C5-§3-recorded posture (a downgrade of a tested control needs stronger cause than a tightening),
+and keeps the `getattr` soft-skip class of failure alive. The cost of the strict rule is one `-H`
+flag in dev; the cost of the tolerant rule is that the pair's second factor is optional forever.
