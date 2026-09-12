@@ -1,6 +1,6 @@
 # C4 — Approvals: rationale, in-process seam, and fake
 
-**Version:** 1.1.0 · **Status:** FROZEN (Phase 0, 2026-09-10) · **Owner:** Solution Architect
+**Version:** 1.2.0 · **Status:** FROZEN (Phase 0, 2026-09-10; last ruling 2026-09-12) · **Owner:** Solution Architect
 **OpenAPI:** [`C4-approvals-openapi.yaml`](C4-approvals-openapi.yaml) (the HTTP surface).
 **Consumers:** Stream D (dashboard + service), Stream A (the Tool Manager's injected
 `ApprovalsService` seam, C1 §2.2), Streams E/F (their write operations park here).
@@ -82,6 +82,20 @@ Argued in ADR-031 (+ Amendment 1); the contract facts:
   a deterministic (non-LLM) assistant message records the refusal in the conversation.
 - **Expire** → identical to refuse with `failure.kind="approval_expired"`.
 
+**Post-decision hooks (normative — v1.2.0, ruling R7).** The bullets above state the approve/refuse
+after-effects without naming an actor; this names the hook points without widening §4's protocol. A
+service that can run an effect exposes it under the conventional name: an awaitable
+`finalise_refusal(approval_id)` for the refuse effect (the real service's wrapper over its
+`TaskGateway` collaborator) and an awaitable `scheduler.schedule(approval_id)` attribute for the
+approve effect (ADR-031's `ContinuationScheduler`). Both are **optional-by-wiring** — present iff
+the corresponding collaborator is wired. The HTTP layer invokes each opportunistically after the
+decide CAS reports a win; an absent hook is a logged WARNING naming the effect that did not run
+(never a failed response — a missing collaborator must not turn the owner's committed decision into
+an outage), and a hook that raises is logged with the 200 standing, because the CAS has committed
+and the startup reconciliation below (rules 1 and 4) re-derives the effect on the next boot. The §6
+fake offers neither hook, and that is conformant: a fake deployment has no task gateway and no
+scheduler, and the warning is the honest record of it.
+
 **Startup reconciliation (normative — Security review 2026-09-10 items 1–2).** The ADR-031 startup
 re-scan applies exactly these rules, each transition audited:
 
@@ -94,6 +108,12 @@ re-scan applies exactly these rules, each transition audited:
    the two-phase audit attempt row (C1 §2.1 step 4) is the record of what was attempted; the
    reconciliation NEVER re-executes, because the consume CAS is spent and single-use is the
    property that must survive a crash.
+4. `refused` or `expired` + unfinalised task → finalise the task `failed` with the matching kind
+   (`approval_refused` / `approval_expired`), audited. (v1.2.0, ruling R7 — closes the two windows
+   the post-decision hooks leave open: a crash or missing task gateway after a refuse CAS, and a
+   decide-time lazy `pending → expired`, whose row leaves the sweeper's pending/approved WHERE
+   clauses before the sweep's finalisation pass can ever see it. Idempotent by the same
+   `is_finalised` guard as rule 3.)
 
 ## 4. In-process seam (injected into the Tool Manager — C1 §2.2)
 
@@ -129,6 +149,21 @@ Both methods have exactly one caller: the Tool Manager (C1 §2.1 step 3). `consu
 binding check and the `approved → consumed` CAS (grace-bounded, §1) in one transaction; `ok=False`
 maps to C1 `approval_invalid`. A stale-approved consume (past grace) lazily expires the row and
 returns `not_approved`.
+
+**The protocol is closed; reads are a read model (normative — v1.2.0, ruling R7).** This §4
+protocol is the Tool Manager's seam and it stays exactly these two methods. `decide` (§6.2) is a
+service-layer decision seam invoked by the HTTP surface — not a protocol method — and the HTTP
+reads are not service methods at all: `GET /api/v1/approvals` and `GET /api/v1/approvals/{id}` are
+served by a read model over the `approvals` table (`core/approvals/read_model.py`), resolved on the
+same engine as C6's reads (one engine resolver, so the queue and the ops reads cannot point at two
+databases). §6.5 is a listing **law**: it binds whatever implements a listing — the §6 fake and the
+read model alike — and licenses no `list_approvals`/`get` on any protocol. A service implementation
+MAY offer convenience reads by delegating to the read model (the real service does), but they are
+not contract surface, and no future lane may satisfy a route by widening this protocol — QA wave-1
+B1 (`integration-w1.md` §8) is the recorded counter-example: a surface awaiting methods the
+contract does not grant answers a conformant service with a 500. The `continuation` column is
+structurally excluded from the read model's row mapping, so "never leaves this service over HTTP"
+holds for both callers through one column list.
 
 **Provenance (v1.1.0, backend review F3):** `summary` and `continuation` are the two fields the
 Tool Manager cannot derive from its own frozen inputs; the orchestrator supplies them through C1
@@ -181,15 +216,20 @@ Exact behaviours:
    provenance against it; the real service persists `continuation` inside the park transaction,
    §1). Empty `summary`/`continuation` are rejected by the `ParkRequest` model itself (§4) — the
    fake inherits that structurally and MUST NOT relax it.
-2. `decide(approval_id, decision, reason, now)` (used by the fake HTTP layer) returns
-   `Approval | StateConflict | None` — normative for the real service layer too (v1.0.1; the QA
-   fakes-build implemented this shape and it is hereby blessed — Stream D builds on it):
-   unknown `approval_id` → `None`, which the HTTP layer maps to §5's `404 not_found` (already in
-   the YAML); `pending` + `now < expires_at` → transition, set `decided_at=now`,
-   `decided_by="owner"`, return the row; `pending` + `now >= expires_at` → transition to `expired`
-   first, then return `StateConflict(current_status="expired")` → 409; any other status →
-   `StateConflict` carrying it → 409. `decide` never raises for absence or conflict — both are
-   return values, so status-code mapping lives in the HTTP layer and nowhere else.
+2. `await decide(approval_id, decision, reason=None)` → `Approval | StateConflict | None` — the
+   decision seam, the HTTP layer's one mutating call: **awaitable, and the service reads its own
+   injected clock** (`now` is not a parameter — clock-ownership rule below). Normative for the
+   fake and the real service layer alike (v1.2.0, ruling R7; supersedes v1.0.1's blessing of the
+   fake's synchronous caller-supplied-`now` shape, which left the seam uncallable by its only
+   production caller — `integration-w1.md` §8.3). Semantics unchanged from v1.0.1: unknown
+   `approval_id` → `None`, which the HTTP layer maps to §5's `404 not_found` (already in the
+   YAML); `pending` + clock < `expires_at` → transition, set `decided_at` from the clock,
+   `decided_by="owner"`, return the row; `pending` + clock >= `expires_at` → transition to
+   `expired` first, then return `StateConflict(current_status="expired")` → 409; any other status
+   → `StateConflict` carrying it → 409. `decide` never raises for absence or conflict — both are
+   return values, so status-code mapping lives in the HTTP layer and nowhere else. An
+   implementation MAY accept additional keyword-only parameters with defaults (the real service's
+   `decided_by="owner"`); the HTTP layer passes none of them.
 3. `consume(approval_id, binding)`: unknown id → `not_found`; status ≠ `approved` →
    `not_approved`; status `approved` but `now >= decided_at + consume_grace_hours` → transition to
    `expired` (lazy) and return `not_approved`; binding tuple ≠ stored tuple (compare all four
@@ -199,6 +239,19 @@ Exact behaviours:
    `decided_at + consume_grace_hours <= now` to `expired`; returns the total count.
 5. Listing: filter by status, order `created_at` desc then id desc; cursor = the last row's id
    (opaque string); `next_cursor=null` when the page is short.
+
+**Clock ownership (normative — v1.2.0, ruling R7).** Time enters an approvals service exactly once:
+the clock injected at construction (the fake's `FakeClock`; the real service's
+`clock: Callable[[], datetime]`, defaulting to `datetime.now(UTC)` and bound as `:now` into §1's
+CAS statements — one clock, one truth for what "expired" means). No HTTP request carries or implies
+a clock: the HTTP layer owns none, and a `now` it invented would silently override the service's —
+wall-clock time passed into a `FakeClock`-wired service corrupts test determinism, and in
+production a caller's clock would re-author the very guard (`expires_at > now`) the decide CAS
+exists to enforce. This is the rule §4's `consume` has always embodied (its frozen signature never
+carried `now`); v1.2.0 aligns `decide` with it. `sweep(now)` (§6.4) is unchanged and is not an
+exception: its `now` is a scheduling/test affordance supplied by an in-process actor (the sweeper
+loop, a test) — never an HTTP caller — and the real service accepts it as optional, defaulting to
+its own clock.
 
 Contract tests (`apps/api/tests/contracts/test_c4_approvals.py`):
 1. park → pending; decide approve → approved; consume with matching binding → consumed; second
@@ -222,6 +275,71 @@ Contract tests (`apps/api/tests/contracts/test_c4_approvals.py`):
    precondition (C1 §2.1 / C1 test 8).
 
 ## Changelog
+
+- **v1.2.0 — 2026-09-12 (wave-2 opening ruling — R7 in `docs/tasks/integration-w1-rulings.md`,
+  resolving `integration-w1.md` §8.3).** **§6.2: the decision seam is
+  `await decide(approval_id, decision, reason=None) -> Approval | StateConflict | None` —
+  awaitable, service-owned clock; the caller-supplied `now` and the synchronous form are
+  removed.** §6: clock-ownership paragraph (one clock per service, injected at construction; no
+  HTTP caller supplies time; `sweep(now)` unchanged as a scheduling/test affordance). §3:
+  post-decision hooks named normatively (`finalise_refusal(approval_id)` /
+  `scheduler.schedule(approval_id)` — optional-by-wiring, warn-don't-fail after a committed CAS,
+  blessing the wave-1 route's posture) and startup-reconciliation **rule 4** added
+  (`refused`/`expired` + unfinalised task → finalise, closing the refuse-crash and
+  decide-lazy-expiry windows). §4: protocol-closure + read-model paragraph — list/get are
+  read-model operations, never protocol methods (the normative reading of the QA wave-1 B1 fix,
+  so no future lane re-widens the protocol).
+
+  **Why MINOR, not MAJOR.** C4's consumer-facing surfaces are the §4 protocol (Stream A's
+  Tool-Manager seam: `park`/`consume`) and the OpenAPI HTTP surface — both byte-unchanged, and
+  the HTTP decision path becomes implementable exactly as the YAML specifies (the
+  extra-contractual 501 posture retires). What moves is §6.2, whose v1.0.1 shape was blessed
+  FROM the fake and has exactly one production caller — the HTTP layer — which **could not call
+  it** (the recorded 501): a seam uncallable by its only caller has no working consumer for a
+  MAJOR bump to protect. The §6.2 clauses consumers do rely on — the return union, never-raise,
+  status mapping living in the HTTP layer — are preserved verbatim. Every in-repo caller of the
+  old fake shape is enumerated and migrated by the parcels below; version numbers are for
+  consumers, and signalling Stream A or the dashboard that something they consume moved would be
+  false.
+
+  **Migration (v1.1.0 → v1.2.0) — two parcels, and one ordering rule: the ATOMIC SET (parcel 1
+  + parcel 2's two test edits) must enter the integration tree together; parcel 2's route
+  deletion lands any time AFTER the atomic set** (the current route's `iscoroutinefunction`
+  probe starts using the fake's new awaitable `decide` the moment it lands — turning the fake-
+  wired 501 into contract answers — so the 501 branch is dead code from that commit on, but the
+  old harness line and the 501-asserting test go red at the same moment and must move with it).
+
+  *Parcel 1 — QA (its ownership: `tests/fakes/`, `tests/contracts/`).*
+  `tests/fakes/fake_approvals.py::FakeApprovalsService.decide` becomes
+  `async def decide(self, approval_id: str, decision: Literal["approve", "refuse"], reason: str | None = None) -> Approval | StateConflict | None`
+  with `now = self.clock.now()` as the body's first read of time — otherwise byte-identical
+  (full replacement body in ruling R7); rewrite the module-docstring bullet claiming `decide`
+  is synchronous with caller-`now` (sweep's half stays true). Call sites, mechanical —
+  `X.decide(a, d, r, <clock>.now())` → `await X.decide(a, d, r)`, every enclosing test already
+  `async`: `tests/contracts/test_c4_approvals.py` lines 108, 134, 135, 142, 143, 149, 158, 183,
+  220, 241, 242, 292, 300, 311, 325, 332, 349 (17); `tests/contracts/test_c1_tool_adapter.py`
+  lines 557, 797 (2).
+
+  *Parcel 2 — wiring engineer (backend estate).*
+  `sunil/core/approvals/service.py`: **no change** — `DatabaseApprovalsService.decide`
+  (`service.py:446`) already implements the ruled shape (awaitable, `self._now()`, keyword-only
+  `decided_by="owner"` permitted by §6.2). Atomic-set test edits:
+  `tests/unit/approvals/harness.py:63` → `return await self.service.decide(approval_id,
+  decision, reason)` (FakeHarness.decide becomes identical to DbHarness.decide — that identity
+  is the parity point); `tests/unit/approvals/test_mounted_surface.py::
+  test_the_mounted_decision_names_the_gap_when_the_seam_has_no_service_decide` (:259) is deleted
+  and replaced by the fake-wired green decision test (body in R7) — closing QA's recorded "no
+  green coverage on the bootable configuration's decision path". Route deletion (after the
+  atomic set): in `sunil/api/routes/approvals.py` delete `service_decide` (:291-318),
+  `DECISION_SEAM_MISSING` + its comment block (:321-333), the now-unused
+  `from inspect import iscoroutinefunction` (:60), and the module docstring's 501 status-table
+  row (:41); in `decide_approval`, replace the probe + 501 branch (:461-467) with
+  `service = get_approvals_service(request)` then
+  `result = await service.decide(approval_id, body.decision, body.reason)` — a wired seam whose
+  `decide` is not awaitable is henceforth a wiring defect (same 500 class as
+  `approvals_service` unset, per `get_approvals_service`'s recorded posture). Same-wave
+  follow-up owed: implement §3 reconciliation rule 4 in
+  `DatabaseApprovalsService.reconcile_on_startup` (+ a `ReconciliationReport` bucket + test).
 
 - **v1.1.0 — 2026-09-10 (backend fakes-review round, F3).** §4: provenance paragraph —
   `summary`/`continuation` are supplied by the orchestrator via C1 §2.2 `ParkContext` and copied
