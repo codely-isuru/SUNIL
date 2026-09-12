@@ -118,10 +118,24 @@ async def require_web_client(request: Request) -> None:
     after the session check would still be safe, but it would mean a forged
     request's session was looked up and audited as an authentication attempt.
 
-    A missing ``Origin`` is not rejected here — non-browser callers (curl in
-    dev, the test client) legitimately omit it, and the header check is the
-    control that matters. A PRESENT Origin that disagrees with ``WEB_ORIGIN``
-    is rejected: that is a real cross-origin attempt, not an omission.
+    **An absent ``Origin`` is a mismatch** — ADR-008 **Amendment 1** (2026-09-12,
+    wave-1 ruling R3), applied here in the wave-2 wiring round. This function
+    previously implemented the Decision's letter: tolerate absence, and
+    additionally soft-skip the whole comparison when ``app.state.web_origin`` was
+    unset. Two consequences, both now closed:
+
+    * ``cookie + X-SUNIL-Client: web + no Origin`` answered 200 on the C4/C6
+      routes and 403 on ``/api/v1/chat`` (``deps.require_client_header``, already
+      conformant) — one credential shape, two answers, so the pair's second
+      factor was optional for anyone who simply omitted it. The only legitimate
+      cookie-lane caller is the browser app, which is cross-origin
+      (``localhost:3001`` → ``localhost:8000``) and therefore always sends
+      ``Origin``, on GET too. Dev ``curl`` sends the full browser sentence;
+      machine callers have ADR-035's bearer lane and were never entitled to this
+      one.
+    * the ``getattr(..., None)`` default meant **unset wiring waived the check**.
+      ``web_origin`` is required wiring, not an optional attribute: unset is a
+      locked door (403), never a control quietly removed.
     """
     if request.headers.get(CLIENT_HEADER) != CLIENT_VALUE:
         raise ApiError(
@@ -131,7 +145,10 @@ async def require_web_client(request: Request) -> None:
         )
     origin = request.headers.get("origin")
     allowed = getattr(request.app.state, "web_origin", None)
-    if origin is not None and allowed is not None and origin != allowed:
+    if allowed is None or origin != allowed:
+        # One message for both halves: naming which of "no Origin", "wrong
+        # Origin" or "this app has no configured origin" applied would tell an
+        # unauthorised caller about the deployment's wiring.
         raise ApiError(403, "forbidden_client", "Origin is not the allowed web origin")
 
 

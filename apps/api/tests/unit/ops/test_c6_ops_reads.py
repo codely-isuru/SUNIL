@@ -30,7 +30,10 @@ from tests.unit.approvals.test_real_service_contract import park_request
 from tests.unit.ops import fixture
 from tests.unit.ops.fixture import UNTRUSTED_OBJECTIVE
 
-AUTH = {CLIENT_HEADER: CLIENT_VALUE}
+#: ADR-008 Amendment 1 (wave-1 ruling R3): the CSRF pair is two controls, and an
+#: absent `Origin` is now a mismatch on every route that applies it — so an
+#: authorised request in this suite sends the full browser sentence.
+AUTH = {CLIENT_HEADER: CLIENT_VALUE, "Origin": "http://localhost:3001"}
 
 #: C6 Task — every key always present, absence expressed as null.
 TASK_KEYS = {

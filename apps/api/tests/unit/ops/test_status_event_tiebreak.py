@@ -35,7 +35,10 @@ from sunil.api.routes.approvals import CLIENT_HEADER, CLIENT_VALUE, install_erro
 from sunil.db.base import Base
 from sunil.db.models import Conversation, Task, TaskStatusEvent
 
-AUTH = {CLIENT_HEADER: CLIENT_VALUE}
+#: ADR-008 Amendment 1 (wave-1 ruling R3): the CSRF pair is two controls, and an
+#: absent `Origin` is now a mismatch on every route that applies it — so an
+#: authorised request in this suite sends the full browser sentence.
+AUTH = {CLIENT_HEADER: CLIENT_VALUE, "Origin": "http://localhost:3001"}
 
 #: One instant, shared by every event — so `at` cannot break any tie and the
 #: id is the only thing left that can.

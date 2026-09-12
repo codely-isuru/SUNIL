@@ -11,6 +11,11 @@ The child gets **only** those variables plus :data:`BOOTSTRAP_ENV_NAMES`, never
 the parent's environment (ARCHITECTURE_V2 TB4). That ordering matters: SUNIL's
 own process env holds the session secret, the service token and (in the direct
 lane) provider keys, none of which an MCP server has any business reading.
+
+**And `credential_env:` itself is bounded** — :data:`GRANTABLE_CREDENTIAL_NAMES`
+(Security wave-1 condition C-3). Filtering the parent environment is worth
+nothing if the config file can name any `Settings` field it likes and have the
+value handed over anyway.
 """
 
 from __future__ import annotations
@@ -40,7 +45,49 @@ BOOTSTRAP_ENV_NAMES: tuple[str, ...] = (
 )
 
 
+#: **The grantable-field allowlist** (Security wave-1 condition C-3,
+#: `docs/THREAT_MODEL.md` §9). Every name a tool may legally be handed, and
+#: nothing else.
+#:
+#: Without it, `_settings_value` resolved ANY lowercase-matching `Settings`
+#: field, so `credential_env: [SESSION_SECRET]` — or `SUNIL_SERVICE_TOKEN`, or
+#: `DATABASE_URL` — in `config/tools.yaml` handed the cookie-signing key, the
+#: ADR-035 machine credential or the Postgres password to a spawned child **by a
+#: config change alone**. ADR-016 makes `config/*.yaml` deployment-free and
+#: mounted, which is exactly what made that one-line edit a full privilege
+#: escalation with no code review anywhere on its path.
+#:
+#: A frozen CODE constant, deliberately, for the same reason ADR-033's named-host
+#: set is one: a control that can be widened from the environment it is meant to
+#: constrain is not a control. Adding a name here is a reviewed code change, and
+#: the reviewer's question is a single one — "is this a credential belonging to a
+#: TOOL, or a secret belonging to SUNIL?"
+#:
+#: Contents are the `credential_env:` / `auth_token_env:` entries of
+#: `config/tools.yaml`, and they are asserted by name in
+#: `tests/unit/tools/test_mcp_credentials.py`.
+GRANTABLE_CREDENTIAL_NAMES: frozenset[str] = frozenset(
+    {
+        "GITHUB_TOKEN",  # config/tools.yaml: github_mcp.credential_env
+        "SUNIL_N8N_MCP_AUTH_TOKEN",  # config/tools.yaml: n8n_mcp.auth_token_env
+    }
+)
+
+
 def _settings_value(settings: Any, name: str) -> str:
+    # The allowlist is checked FIRST — before the `Settings` lookup — so an
+    # ungrantable name is refused for being ungrantable rather than for
+    # happening not to resolve on this deployment's `Settings`. A lookup-first
+    # order would silently start granting a name the day the field was added.
+    if name not in GRANTABLE_CREDENTIAL_NAMES:
+        raise ToolAdapterStartupError(
+            f"credential_env names {name!r}, which is not grantable to a tool. "
+            f"Only {sorted(GRANTABLE_CREDENTIAL_NAMES)} may be injected into a "
+            "tool's environment (THREAT_MODEL §9 condition C-3): SUNIL's own "
+            "secrets — the session signing key, the service token, the database "
+            "URL — are not tool credentials, and config must not be able to grant "
+            "them. Refusing to start the adapter."
+        )
     field = name.lower()
     if not hasattr(settings, field):
         raise ToolAdapterStartupError(
