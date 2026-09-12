@@ -30,7 +30,10 @@ They are now placed where the contract puts them:
 
 Status mapping lives here and nowhere else, which is why
 ``ApprovalsService.decide`` returns ``Approval | StateConflict | None`` instead
-of raising (C4 §6.2, normative since v1.0.1):
+of raising (C4 §6.2, normative since v1.0.1; **awaitable and service-clocked
+since v1.2.0** — wave-1 ruling R7, which retired this module's extra-contractual
+501 posture: a wired seam whose ``decide`` is not awaitable is now a wiring
+defect of the same class as an unset ``app.state.approvals_service``):
 
 | service returns | HTTP |
 |---|---|
@@ -38,7 +41,6 @@ of raising (C4 §6.2, normative since v1.0.1):
 | ``StateConflict`` | 409, body carries ``current_status`` |
 | ``None`` | 404 ``not_found`` |
 | ``ValueError`` from a bad cursor | 422 ``validation_error`` |
-| no service-layer ``decide`` at all | 501, the gap named (:func:`service_decide`) |
 
 **No decision idempotency** (C4 §5): repeating a decision returns 409 with the
 true state rather than a comforting echo, so the UI cannot show a user a
@@ -57,7 +59,6 @@ remains the dashboard's to honour; the API's job is to not make it impossible.
 from __future__ import annotations
 
 import logging
-from inspect import iscoroutinefunction
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
@@ -305,51 +306,6 @@ def install_error_handlers(app) -> None:
 # --------------------------------------------------------------------------- #
 # The one seam call, and the post-decision effects that are not on any protocol
 # --------------------------------------------------------------------------- #
-def service_decide(service: object):
-    """C4 §6.2's decision method on whichever C4 service the app was wired with,
-    or ``None`` when this deployment has no such seam.
-
-    ``decide`` is the one HTTP operation the contract puts on the service layer:
-    §6.2 declares its return shape — ``Approval | StateConflict | None``, never
-    a raise for absence or conflict — as "normative for the real service layer
-    too", precisely so that status mapping lives in this module and nowhere
-    else. It is a compare-and-swap, so it cannot move to the read model: a
-    second implementation of a transition is a second way to lose one.
-
-    **The gap this function refuses to paper over.** C4 declares that method with
-    no ``async`` marker and with a ``now`` argument (§6.2), which is the shape
-    the frozen fake implements — a synchronous ``decide(id, decision, reason,
-    now)`` whose caller owns the clock. A real HTTP layer cannot be that caller:
-    it owns no clock, and one it invented would override the service's own and
-    silently decide what "expired" means. The database service therefore reads
-    its injected clock, exactly as C4 §4's ``consume`` does, and exposes an
-    awaitable ``decide(id, decision, reason)``.
-
-    So a wired service either offers that awaitable form — used here — or it
-    offers only the fake's clock-parameterised one, in which case this surface
-    answers :data:`DECISION_SEAM_MISSING` (501, the gap named), never a 500
-    ``TypeError`` and never a guess at the clock. Recorded for the architect in
-    ``docs/tasks/integration-w1.md`` §8.
-    """
-    method = getattr(service, "decide", None)
-    return method if iscoroutinefunction(method) else None
-
-
-#: The 501 body, built here rather than raised as an :class:`ApiError`, because
-#: the spine renders that class through the wave's shared ``ErrorBody``, whose
-#: ``kind`` is the closed set C4 §5 declares (401/403/404/422). A 501 is by
-#: construction outside the contract — it says "this deployment has no seam for
-#: an operation the contract has" — so it must not widen the vocabulary every
-#: other route answers with. When the architect rules the seam, this constant
-#: and its branch disappear together.
-DECISION_SEAM_MISSING = error_body(
-    "not_implemented",
-    "the wired approvals service exposes no asynchronous service-layer "
-    "decide(approval_id, decision, reason) — C4 §6.2's decision seam is "
-    "unavailable in this deployment",
-)
-
-
 async def run_post_decision_effect(
     service: object, approval_id: str, decision: str
 ) -> None:
@@ -476,12 +432,7 @@ def create_router() -> APIRouter:
         race schedules nothing and finalises nothing.
         """
         service = get_approvals_service(request)
-        decide = service_decide(service)
-        if decide is None:
-            return JSONResponse(
-                status_code=501, content=DECISION_SEAM_MISSING, headers=NOSNIFF
-            )
-        result = await decide(approval_id, body.decision, body.reason)
+        result = await service.decide(approval_id, body.decision, body.reason)
 
         if result is None:
             raise ApiError(404, "not_found", f"no approval with id {approval_id}")

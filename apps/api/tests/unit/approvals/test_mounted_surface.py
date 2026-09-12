@@ -260,29 +260,47 @@ async def test_the_mounted_decision_refuses_and_does_not_500_without_a_task_gate
         assert refused.json()["status"] == "refused"
 
 
-async def test_the_mounted_decision_names_the_gap_when_the_seam_has_no_service_decide() -> None:
-    """C4 §6's fake implements `decide` as the FAKE HTTP layer's store helper:
-    synchronous, and taking `now` from its caller because its clock is injected.
-    A real HTTP layer cannot supply that — it owns no clock, and one that did
-    would override the service's. So on a seam without an awaitable service-layer
-    `decide` (C4 §6.2) the route answers **501 naming the gap**, never a 500
-    `TypeError`: the surface is missing a contract, and it says so.
+async def test_the_mounted_decision_answers_the_contract_codes_end_to_end() -> None:
+    """**C4 v1.2.0 (wave-1 ruling R7): the 501 is gone.**
 
-    Recorded for the architect in `docs/tasks/integration-w1.md` §8.
+    The wave-1 surface probed the wired seam for an awaitable service-layer
+    `decide` and answered 501 when it found none, because C4 §6.2's v1.0.1 shape
+    was the fake's — synchronous, with `now` supplied by its caller — and a real
+    HTTP layer owns no clock. R7 moved the contract to the shape the database
+    service already implements, so the probe is dead code and this is what
+    replaces its test: the full status map (200 / 409 / 404) through the mounted
+    route on a REAL, bootable wiring, where the seam and the read model are one
+    database.
+
+    The fake-wired half of the ruling's replacement (the same request against
+    C4 §6's fake) lands with QA's parcel 1, which makes the fake's `decide`
+    awaitable — it is their file, and asserting it here before that would fail on
+    a shape nobody has changed yet.
     """
-    async with mounted() as (client, _app, engine):
-        parked = await real_service(engine).park(park_request())
+    async with mounted(approvals_factory=real_service) as (client, _app, _engine):
+        service = _app_service(_app)
+        parked = await service.park(park_request())
+        path = f"/api/v1/approvals/{parked.approval_id}/decision"
 
-        answered = await client.post(
-            f"/api/v1/approvals/{parked.approval_id}/decision",
+        decided = await client.post(
+            path, json={"decision": "approve"}, headers=WEB_HEADERS
+        )
+        assert decided.status_code == 200, decided.text
+        assert decided.json()["status"] == ApprovalStatus.APPROVED.value
+
+        repeated = await client.post(
+            path, json={"decision": "refuse"}, headers=WEB_HEADERS
+        )
+        assert repeated.status_code == 409, repeated.text
+        assert repeated.json()["error"]["current_status"] == "approved"
+
+        missing = await client.post(
+            "/api/v1/approvals/apr-nope/decision",
             json={"decision": "approve"},
             headers=WEB_HEADERS,
         )
-
-        assert answered.status_code == 501, answered.text
-        error = answered.json()["error"]
-        assert error["kind"] == "not_implemented"
-        assert "C4 §6.2" in error["message"]
+        assert missing.status_code == 404, missing.text
+        assert missing.json()["error"]["kind"] == "not_found"
 
 
 def _app_service(app):
