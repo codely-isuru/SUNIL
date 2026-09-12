@@ -192,11 +192,18 @@ async def test_a_parked_turn_persists_a_resumable_continuation(
         "/api/v1/chat", json={"message": "PLAN: write the demo item"}, headers=WEB_HEADERS
     )
 
-    parked = approvals.approvals[response.json()["approval"]["approval_id"]]
-    assert parked.status == "pending"
-    assert parked.continuation["cursor"] == 0
-    assert parked.continuation["plan"]["steps"]
-    assert parked.args_hash
+    approval_id = response.json()["approval"]["approval_id"]
+    row = approvals.approvals[approval_id]
+    # `continuation` is deliberately ABSENT from the `Approval` row: it never
+    # leaves the service over HTTP (C4 §4), so the park material is asserted on
+    # the retained `ParkRequest` instead — which is also the only place that can
+    # show the manager copied the caller's `ParkContext` verbatim.
+    park_request = approvals.parked[approval_id]
+
+    assert row.status == "pending"
+    assert park_request.continuation["cursor"] == 0
+    assert park_request.continuation["plan"]["steps"]
+    assert park_request.args_hash == row.args_hash
 
 
 async def test_a_parked_turn_still_writes_the_whole_spine(app_client, permissions) -> None:

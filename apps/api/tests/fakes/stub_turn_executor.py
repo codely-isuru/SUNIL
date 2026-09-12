@@ -7,20 +7,37 @@ fixture in this module.
 **Delivered here: ``FakeConversationStore``** — the lane-scoping fixture, whose
 rules are pure data and therefore testable without a route.
 
-**Deferred: ``StubTurnExecutor``.** Its six behaviours are envelope-shaped
-(``outcome``/``message``/``task``/``failure``/``approval``/``trace``/``usage``),
-so it can only be written against the C5 envelope models, which live in
-``sunil/api/schemas.py`` — "generated-checked against C5 OpenAPI"
-(ARCHITECTURE_V2 §2) and owned by the engineer building the chat route. Writing
-those models here would fork the source of truth for the envelope. Recorded as
-debt in ``docs/tasks/P0-fakes.md``; the skipped C5 tests in
-``tests/contracts/test_c5_chat.py`` name it.
+**``StubTurnExecutor`` — delivered 2026-09-12 by the chat-lane engineer**
+(backend_engineer, Stream S-spine), which is exactly who this module's previous
+revision deferred it to: its six behaviours are envelope-shaped, so it could
+only be written once the turn seam existed. It is written against
+``sunil.core.orchestrator.result.TurnResult`` rather than the pydantic envelope,
+because the route's seam returns that and ``sunil/api/envelope.py`` performs the
+single mapping onto the C5 wire shape (the import law keeps ``core`` off
+``sunil.api``). The observable behaviour is C5 §4's table byte-for-byte — the
+same envelope a JSON client sees.
+
+**Additive only.** No assertion, rule or seeded value in this module was changed.
+Flagged for QA re-review because this is a contract-suite fixture.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from datetime import timedelta
+from typing import Any, Literal
+
+from sunil.core.orchestrator.result import (
+    TurnApproval,
+    TurnFailure,
+    TurnMessage,
+    TurnResult,
+    TurnTask,
+    TurnTraceEntry,
+    TurnUsage,
+)
+
+from tests.fakes.clock import FakeClock, to_iso
 
 #: C5 §2.3 — the two authentication lanes. "cookie" is the owner's browser
 #: session (+ X-SUNIL-Client + Origin); "bearer" is ADR-035's machine lane.
@@ -92,3 +109,143 @@ class FakeConversationStore:
         )
         self.conversations[created.id] = created
         return created
+
+
+class FakeConversationResolver:
+    """The `ConversationResolver` seam over `FakeConversationStore`.
+
+    The route resolves conversations BEFORE any turn machinery runs (a 404 is an
+    authorisation answer), so the C5 suite needs the store behind that seam's
+    async shape. It adds no rule of its own: every decision is the store's.
+
+    The one translation it performs is the exception type. The seam's error
+    contract is `core.conversations.gateway.ConversationNotFound` (what the real
+    resolver raises and what the route maps to 404); this module's own
+    `ConversationNotFound` above is the store-level class the frozen C5 fixture
+    defines. Re-raising as the seam's type is what makes the route's 404 mapping
+    the thing under test, rather than the fake's class identity.
+    """
+
+    def __init__(self, store: FakeConversationStore | None = None) -> None:
+        self.store = store if store is not None else FakeConversationStore()
+
+    async def resolve(
+        self,
+        *,
+        lane: str,
+        conversation_id: str | None,
+        user_id: str | None = None,
+        channel_label: str | None = None,
+    ) -> Any:
+        from sunil.core.conversations.gateway import (  # noqa: PLC0415
+            ConversationNotFound as SeamConversationNotFound,
+        )
+
+        del user_id, channel_label  # the store scopes by lane alone (C5 §2.3)
+        try:
+            return self.store.resolve(lane=lane, conversation_id=conversation_id)
+        except ConversationNotFound as exc:
+            raise SeamConversationNotFound(str(exc)) from exc
+
+
+#: C5 §4 — "common to every response".
+STUB_USAGE = TurnUsage(input_tokens=100, output_tokens=25, cost_usd=0.000125)
+STUB_TRACE = (
+    TurnTraceEntry(stage="request_received", offset_ms=0, detail=None),
+    TurnTraceEntry(stage="plan_created", offset_ms=10, detail=None),
+    TurnTraceEntry(stage="final_response", offset_ms=20, detail=None),
+)
+#: C5 §4's `PARK:` row.
+STUB_APPROVAL_ID = "apr-stub-1"
+STUB_APPROVAL_TTL_HOURS = 72
+STUB_APPROVAL_SUMMARY = "fake_tool.write_item requires approval"
+
+
+class StubTurnExecutor:
+    """C5 §4's deterministic turn executor, keyed on the request `message`.
+
+    It exists so the C5 suite runs against the REAL route — auth dependencies,
+    body validation, conversation resolution, the envelope builder — without the
+    orchestrator, the provider or a database being involved. The six behaviours
+    are the contract's table exactly; nothing here is inferred.
+    """
+
+    def __init__(self, clock: FakeClock | None = None) -> None:
+        self.clock = clock if clock is not None else FakeClock()
+        #: Every call, so a test can prove the route did (or did not) reach it.
+        self.calls: list[dict[str, Any]] = []
+
+    async def run(
+        self,
+        *,
+        message: str,
+        conversation: Any,
+        request_id: str,
+        lane: str,
+        user_id: str | None,
+        channel_label: str | None,
+    ) -> TurnResult:
+        self.calls.append(
+            {
+                "message": message,
+                "conversation_id": conversation.id,
+                "lane": lane,
+                "channel_label": channel_label,
+                "user_id": user_id,
+            }
+        )
+        common = {
+            "request_id": request_id,
+            "conversation_id": conversation.id,
+            "usage": STUB_USAGE,
+            "trace": STUB_TRACE,
+        }
+
+        if message.startswith("PARK:"):
+            expires = to_iso(self.clock.now() + timedelta(hours=STUB_APPROVAL_TTL_HOURS))
+            return TurnResult(
+                outcome="parked",
+                approval=TurnApproval(
+                    approval_id=STUB_APPROVAL_ID,
+                    expires_at=expires,
+                    summary=STUB_APPROVAL_SUMMARY,
+                ),
+                task=TurnTask(id="task-1", status="parked", assigned_agent="project_manager"),
+                **common,
+            )
+
+        if message.startswith("FAILP:"):
+            return TurnResult(
+                outcome="failed", failure=TurnFailure(kind="provider_error"), **common
+            )
+
+        if message.startswith("FAILT:"):
+            return TurnResult(
+                outcome="failed",
+                failure=TurnFailure(kind="tool_failed"),
+                task=TurnTask(id="task-1", status="failed", assigned_agent="project_manager"),
+                **common,
+            )
+
+        if message.startswith("REJECT:"):
+            return TurnResult(
+                outcome="failed", failure=TurnFailure(kind="plan_rejected"), **common
+            )
+
+        if message.startswith("NOPROJ:"):
+            return TurnResult(
+                outcome="failed",
+                failure=TurnFailure(
+                    kind="unknown_project", known_projects=(("sunil", "SUNIL"),)
+                ),
+                **common,
+            )
+
+        return TurnResult(
+            outcome="ok",
+            message=TurnMessage(
+                id="msg-1", content=f"STUB: {message}", created_at=self.clock.iso()
+            ),
+            task=TurnTask(id="task-1", status="completed", assigned_agent="project_manager"),
+            **common,
+        )

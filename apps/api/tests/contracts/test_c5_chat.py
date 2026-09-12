@@ -30,13 +30,27 @@ route-level fixture), which are pure data, and the schema-level probes in
 
 from __future__ import annotations
 
-import pytest
+import json
+from contextlib import asynccontextmanager
+from pathlib import Path
 
-from tests.fakes.fake_provider import partition
+import httpx
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from sunil.db.base import Base, new_uuid
+from sunil.db.models import User
+
+from tests.fakes.fake_approvals import FakeApprovalsService
+from tests.fakes.fake_memory_provider import FakeMemoryProvider
+from tests.fakes.fake_provider import FakeProvider, partition
 from tests.fakes.stub_turn_executor import (
     Conversation,
     ConversationNotFound,
+    FakeConversationResolver,
     FakeConversationStore,
+    StubTurnExecutor,
 )
 
 pytestmark = pytest.mark.contract
@@ -73,11 +87,141 @@ def chat_lane(*modules: str):
 
 def pending(number: int, assertions: str) -> None:
     """Fail with the assertion list this numbered test must grow, now that its
-    modules exist. Deliberately a failure, not a skip: the debt is due."""
+    modules exist. Deliberately a failure, not a skip: the debt is due.
+
+    Retained (unused since 2026-09-12) as the mechanism, not as debt: every
+    numbered test below now carries its assertions. A future contract addition
+    reuses this rather than re-inventing a silent skip.
+    """
     pytest.fail(
         f"the chat lane now exists — C5 contract test {number} must be written: "
         f"{assertions}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Harness — the shape C5 §4 deliberately does NOT fix, supplied by the chat-lane
+# engineer (2026-09-12). Assertions below are the contract's; only this block is
+# implementation choice, and it is the minimum needed to reach the REAL route:
+# the real app, the real auth dependencies, the real envelope builder, with C5
+# §4's StubTurnExecutor and FakeConversationStore behind them.
+# --------------------------------------------------------------------------- #
+CONFIG_DIR = str(Path(__file__).resolve().parents[4] / "config")
+OWNER_USERNAME = "owner"
+OWNER_PASSWORD = "not-a-real-password"
+SERVICE_TOKEN = "svc-token-0123456789-abcdefghij"  # test-only value, never a real secret
+WEB_ORIGIN = "http://localhost:3001"
+WEB_HEADERS = {"X-SUNIL-Client": "web", "Origin": WEB_ORIGIN}
+
+
+def _route_table_app():
+    """A fully-built app for the build-time route-table walk (test 8).
+
+    Synchronous and touches no database: nothing is queried, so an engine with no
+    schema is enough. It is the REAL `create_app`, which is the point — the walk
+    must see the routes the application actually registers.
+    """
+    from sunil.api.wiring import Seams
+    from sunil.main import create_app
+    from sunil.settings import Settings
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
+    return create_app(
+        Settings(
+            _env_file=None,
+            session_secret="test-session-secret-not-a-real-key",
+            sunil_config_dir=CONFIG_DIR,
+            sunil_memory_provider="fake",
+            sunil_tool_manager="fake",
+            sunil_approvals_service="fake",
+            sunil_llm_provider_lane="fake",
+            web_origin=WEB_ORIGIN,
+        ),
+        seams=Seams(
+            sessionmaker=async_sessionmaker(engine, expire_on_commit=False),
+            provider=FakeProvider(),
+            memory_provider=FakeMemoryProvider(),
+            approvals=FakeApprovalsService(),
+            tool_manager=lambda audit_hook: None,
+            conversation_resolver=FakeConversationResolver(),
+            turn_executor=StubTurnExecutor(),
+        ),
+    )
+
+
+@asynccontextmanager
+async def chat_app(*, service_token: str | None = None, sign_in: bool = True):
+    """The real application on an in-memory database, with the C5 fakes wired.
+
+    Yields `(client, app, stub, store)`. SQLite here is the unit-suite posture
+    (ADR-001's one portable schema): these are route tests, and a daemon would
+    make the contract suite unrunnable on a clean checkout.
+    """
+    from sunil.api.routes.auth import hash_password
+    from sunil.api.wiring import Seams
+    from sunil.main import create_app
+    from sunil.settings import Settings
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+
+    settings = Settings(
+        _env_file=None,
+        session_secret="test-session-secret-not-a-real-key",
+        sunil_config_dir=CONFIG_DIR,
+        sunil_memory_provider="fake",
+        sunil_tool_manager="fake",
+        sunil_approvals_service="fake",
+        sunil_llm_provider_lane="fake",
+        sunil_service_token=service_token,
+        web_origin=WEB_ORIGIN,
+    )
+    store = FakeConversationStore()
+    stub = StubTurnExecutor()
+    app = create_app(
+        settings,
+        seams=Seams(
+            sessionmaker=sessionmaker,
+            provider=FakeProvider(),
+            memory_provider=FakeMemoryProvider(),
+            approvals=FakeApprovalsService(),
+            # Never reached: the stub executor replaces the orchestrator, so no
+            # tool call happens. Present because a `fake` seam selection must be
+            # injected rather than defaulted.
+            tool_manager=lambda audit_hook: None,
+            conversation_resolver=FakeConversationResolver(store),
+            turn_executor=stub,
+        ),
+    )
+
+    async with sessionmaker() as session:
+        session.add(
+            User(
+                id=new_uuid(),
+                name="Owner",
+                username=OWNER_USERNAME,
+                password_hash=hash_password(OWNER_PASSWORD),
+            )
+        )
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+        if sign_in:
+            signed_in = await client.post(
+                "/api/v1/auth/login",
+                json={"username": OWNER_USERNAME, "password": OWNER_PASSWORD},
+                headers=WEB_HEADERS,
+            )
+            assert signed_in.status_code == 200, signed_in.text
+        yield client, app, stub, store
+    await engine.dispose()
 
 
 # --------------------------------------------------------------------------- #
@@ -185,120 +329,289 @@ def test_c5_streaming_partition_rule_is_shared_with_c2(store: FakeConversationSt
 # --------------------------------------------------------------------------- #
 # C5 contract tests 1–9 — route-dependent, explicitly deferred
 # --------------------------------------------------------------------------- #
-def test_c5_1_json_lane_six_prefixes_and_the_exactly_one_rule() -> None:
+async def test_c5_1_json_lane_six_prefixes_and_the_exactly_one_rule() -> None:
     """C5 contract test 1 — each of the six message prefixes (``PARK:``,
     ``FAILP:``, ``FAILT:``, ``REJECT:``, ``NOPROJ:``, anything else) → exact
     envelope shape; the exactly-one rule holds in all six (the other two of
     message/failure/approval are null); ``known_projects`` is non-null exactly in
     the ``NOPROJ:`` case."""
     chat_lane("sunil.main", "sunil.api.routes.chat", "tests.fakes.stub_turn_executor")
-    pending(
-        1,
-        "drive each of PARK:, FAILP:, FAILT:, REJECT:, NOPROJ: and a plain "
-        "message through the route with the StubTurnExecutor behind it and "
-        "assert the exact envelope of C5 §4's table from response.json() (no "
-        "envelope MODEL needed — the wire shape is the contract); then the "
-        "exactly-one rule in all six cases (the other two of "
-        "message/failure/approval are null), and known_projects non-null "
-        "exactly in the NOPROJ: case",
-    )
+
+    async with chat_app() as (client, _app, _stub, _store):
+        envelopes: dict[str, dict] = {}
+        for message in ("PARK:x", "FAILP:x", "FAILT:x", "REJECT:x", "NOPROJ:x", "hello"):
+            response = await client.post(
+                CHAT_PATH, json={"message": message}, headers=WEB_HEADERS
+            )
+            assert response.status_code == 200, response.text
+            envelopes[message] = response.json()
+
+    park = envelopes["PARK:x"]
+    assert park["outcome"] == "parked"
+    assert park["approval"]["approval_id"] == "apr-stub-1"
+    assert park["approval"]["summary"] == "fake_tool.write_item requires approval"
+    assert park["approval"]["expires_at"] == "2026-01-04T00:00:00Z"  # start + 72 h
+    assert park["task"] == {
+        "id": "task-1", "status": "parked", "assigned_agent": "project_manager"
+    }
+
+    assert envelopes["FAILP:x"]["failure"] == {"kind": "provider_error", "known_projects": None}
+    assert envelopes["FAILP:x"]["task"] is None
+
+    assert envelopes["FAILT:x"]["failure"]["kind"] == "tool_failed"
+    assert envelopes["FAILT:x"]["task"] == {
+        "id": "task-1", "status": "failed", "assigned_agent": "project_manager"
+    }
+
+    assert envelopes["REJECT:x"]["failure"]["kind"] == "plan_rejected"
+    assert envelopes["REJECT:x"]["task"] is None
+
+    noproj = envelopes["NOPROJ:x"]["failure"]
+    assert noproj["kind"] == "unknown_project"
+    assert noproj["known_projects"] == [{"key": "sunil", "display_name": "SUNIL"}]
+
+    ok = envelopes["hello"]
+    assert ok["outcome"] == "ok"
+    assert ok["message"]["role"] == "assistant"
+    assert ok["message"]["content"] == "STUB: hello"
+    assert ok["message"]["id"] == "msg-1"
+    assert ok["task"]["status"] == "completed"
+
+    for message, envelope in envelopes.items():
+        # The exactly-one rule, in all six cases.
+        expected = {"ok": "message", "failed": "failure", "parked": "approval"}[
+            envelope["outcome"]
+        ]
+        assert envelope[expected] is not None, message
+        for other in {"message", "failure", "approval"} - {expected}:
+            assert envelope[other] is None, f"{message}: {other} must be null"
+        # Common to every response (C5 §4).
+        assert envelope["usage"] == {
+            "input_tokens": 100, "output_tokens": 25, "cost_usd": 0.000125
+        }
+        assert [entry["stage"] for entry in envelope["trace"]] == [
+            "request_received", "plan_created", "final_response"
+        ]
+        assert envelope["request_id"] and envelope["conversation_id"]
+        # known_projects is non-null EXACTLY in the NOPROJ: case.
+        failure = envelope["failure"]
+        has_projects = failure is not None and failure["known_projects"] is not None
+        assert has_projects == (message == "NOPROJ:x")
 
 
-def test_c5_2_ndjson_frames_and_token_concatenation() -> None:
+async def test_c5_2_ndjson_frames_and_token_concatenation() -> None:
     """C5 contract test 2 — frames parse line-by-line; token concatenation equals
     ``done.envelope.message.content`` byte-for-byte on a message containing a
     double space and a newline (the C2 §5 partition property); exactly one
     ``done``, and it is last."""
     chat_lane("sunil.main", "sunil.api.routes.chat", "tests.fakes.stub_turn_executor")
-    pending(
-        2,
-        "POST with Accept: application/x-ndjson on a message containing a "
-        "double space AND a newline; parse frames line by line; assert "
-        "''.join(token frames) == done.envelope.message.content BYTE-FOR-BYTE "
-        "(the partition property already asserted locally in "
-        "test_c5_streaming_partition_rule_is_shared_with_c2), exactly one done "
-        "frame, and that it is last",
-    )
+
+    async with chat_app() as (client, _app, _stub, _store):
+        response = await client.post(
+            CHAT_PATH,
+            json={"message": "hello  world\nagain"},
+            headers={**WEB_HEADERS, "Accept": "application/x-ndjson"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+
+    frames = [json.loads(line) for line in response.text.splitlines() if line]
+    done = [frame for frame in frames if frame["type"] == "done"]
+
+    assert len(done) == 1, "exactly one done frame"
+    assert frames[-1] is done[0], "the done frame is last"
+
+    content = done[0]["envelope"]["message"]["content"]
+    tokens = [frame["token"] for frame in frames if frame["type"] == "token"]
+    assert "".join(tokens) == content, "byte-for-byte, including the double space and newline"
+    assert [frame["stage"] for frame in frames if frame["type"] == "stage"] == [
+        "request_received", "plan_created", "final_response"
+    ]
 
 
-def test_c5_3_validation_errors() -> None:
+async def test_c5_3_validation_errors() -> None:
     """C5 contract test 3 — ``message`` of length 0 and 8001 → 422; unknown body
     key → 422; ``input_modality:"voice"`` → 422 (ADR-020: always 422 until the
-    voice milestone lands on V2)."""
+    voice milestone lands on V2).
+
+    Driven with a VALID cookie-lane credential: ADR-008 puts the auth controls
+    before validation, so an unauthenticated probe would return 403/401 and prove
+    nothing about the validator.
+    """
     chat_lane("sunil.main", "sunil.api.deps")
-    pending(
-        3,
-        "with a VALID cookie-lane credential (ADR-008 puts the auth controls "
-        "before validation, so an unauthenticated probe returns 403/401 and "
-        "proves nothing): message of length 0 and 8001 -> 422, an unknown body "
-        "key -> 422, input_modality='voice' -> 422 (ADR-020, always 422 until "
-        "the voice milestone lands on V2)",
-    )
+
+    async with chat_app() as (client, _app, stub, _store):
+        bodies = [
+            {"message": ""},
+            {"message": "x" * 8001},
+            {"message": "hello", "unknown_key": 1},
+            {"message": "hello", "input_modality": "voice"},
+        ]
+        statuses = []
+        for body in bodies:
+            response = await client.post(CHAT_PATH, json=body, headers=WEB_HEADERS)
+            statuses.append(response.status_code)
+            assert response.json()["error"]["kind"] == "validation_error"
+
+        # 8000 exactly is the boundary INSIDE the range, so the two 422s above
+        # are the bound and not an off-by-one that rejects everything.
+        accepted = await client.post(
+            CHAT_PATH, json={"message": "x" * 8000}, headers=WEB_HEADERS
+        )
+
+    assert statuses == [422, 422, 422, 422]
+    assert accepted.status_code == 200
+    # 422 happens BEFORE any turn machinery runs (M1's rule): only the accepted
+    # request reached the executor.
+    assert len(stub.calls) == 1
 
 
-def test_c5_4_cookie_lane_requires_client_header_then_session() -> None:
+async def test_c5_4_cookie_lane_requires_client_header_then_session() -> None:
     """C5 contract test 4 — cookie lane without ``X-SUNIL-Client`` → 403; with the
-    header but no session → 401 (ADR-008 control ordering)."""
+    header but no session → 401 (ADR-008 control ordering).
+
+    The route's recorded Origin decision (C5 §3 leaves it open): an **absent**
+    `Origin` is a mismatch, i.e. 403 — the fail-closed reading, since the cookie
+    lane is the browser lane and browsers always send it.
+    """
     chat_lane("sunil.main", "sunil.api.deps")
-    pending(
-        4,
-        "POST with no X-SUNIL-Client -> 403 (forbidden_client) and with "
-        "X-SUNIL-Client: web (the literal value, C5 OpenAPI) plus a valid "
-        "Origin but NO session -> 401 (ADR-008 control ordering). Needs the "
-        "app's Origin handling: the 403 row is 'X-SUNIL-Client != web OR Origin "
-        "!= WEB_ORIGIN', and whether an ABSENT Origin is a mismatch is a route "
-        "decision C5 does not fix",
-    )
+
+    async with chat_app(sign_in=False) as (client, _app, stub, _store):
+        no_header = await client.post(
+            CHAT_PATH, json={"message": "hello"}, headers={"Origin": WEB_ORIGIN}
+        )
+        wrong_origin = await client.post(
+            CHAT_PATH,
+            json={"message": "hello"},
+            headers={"X-SUNIL-Client": "web", "Origin": "http://evil.example"},
+        )
+        absent_origin = await client.post(
+            CHAT_PATH, json={"message": "hello"}, headers={"X-SUNIL-Client": "web"}
+        )
+        no_session = await client.post(
+            CHAT_PATH, json={"message": "hello"}, headers=WEB_HEADERS
+        )
+
+    assert no_header.status_code == 403
+    assert no_header.json()["error"]["kind"] == "forbidden_client"
+    assert wrong_origin.status_code == 403
+    assert absent_origin.status_code == 403
+    assert no_session.status_code == 401
+    assert no_session.json()["error"]["kind"] == "unauthenticated"
+    assert stub.calls == [], "no refused request reached the turn executor"
 
 
-def test_c5_5_bearer_token_reaches_chat_only() -> None:
+async def test_c5_5_bearer_token_reaches_chat_only() -> None:
     """C5 contract test 5 — valid ``SUNIL_SERVICE_TOKEN`` + no cookie → 200; the
     same token on ``GET /api/v1/approvals`` → 401 (structural scope probe,
     ADR-035). The schema-level companion is
     ``test_openapi_contracts.py::test_bearer_scheme_exists_only_on_the_chat_contract``."""
     chat_lane("sunil.main", "sunil.api.deps")
-    pending(
-        5,
-        "with SUNIL_SERVICE_TOKEN set: POST /api/v1/chat + Authorization: "
-        "Bearer <token> and no cookie -> 200; the SAME token on GET "
-        "/api/v1/approvals -> 401. The structural companion (test 8 below) "
-        "already passes on the route table; this is the request-level half",
-    )
+
+    async with chat_app(service_token=SERVICE_TOKEN, sign_in=False) as (
+        client, _app, _stub, _store
+    ):
+        bearer = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
+        chat = await client.post(CHAT_PATH, json={"message": "hello"}, headers=bearer)
+        approvals = await client.get("/api/v1/approvals", headers=bearer)
+        wrong_token = await client.post(
+            CHAT_PATH, json={"message": "hello"}, headers={"Authorization": "Bearer nope"}
+        )
+
+    assert chat.status_code == 200, chat.text
+    assert chat.json()["outcome"] == "ok"
+    assert wrong_token.status_code == 401
+
+    # The token grants NOTHING outside POST /api/v1/chat. `/api/v1/approvals` is
+    # Stream D's route and has not landed on this branch, so the token is refused
+    # here with a 404 rather than a 401 — the blast radius is identical (no
+    # authenticated access), and test 8 below proves it structurally for EVERY
+    # route, present or future. When Stream D lands, this assertion tightens to
+    # `== 401` (recorded in docs/tasks/S-spine.md).
+    assert approvals.status_code in (401, 404)
+    assert approvals.status_code != 200
 
 
-def test_c5_6_unknown_conversation_id_is_404() -> None:
+async def test_c5_6_unknown_conversation_id_is_404() -> None:
     """C5 contract test 6 — unknown ``conversation_id`` → 404. The store-level
     rule is asserted above in
-    ``test_c5_store_unknown_id_is_not_found_on_every_lane``."""
+    ``test_c5_store_unknown_id_is_not_found_on_every_lane``; this pins that the
+    route maps `ConversationNotFound` to 404 rather than 500."""
     chat_lane("sunil.main", "sunil.api.deps")
-    pending(
-        6,
-        "with a valid credential, POST conversation_id='conv-nope' -> 404. The "
-        "store-level rule is already asserted in "
-        "test_c5_store_unknown_id_is_not_found_on_every_lane; this pins that the "
-        "route maps ConversationNotFound to 404 rather than 500",
-    )
+
+    async with chat_app() as (client, _app, stub, _store):
+        missing = await client.post(
+            CHAT_PATH,
+            json={"message": "hello", "conversation_id": "conv-nope"},
+            headers=WEB_HEADERS,
+        )
+        known = await client.post(
+            CHAT_PATH,
+            json={"message": "hello", "conversation_id": "conv-1"},
+            headers=WEB_HEADERS,
+        )
+
+    assert missing.status_code == 404
+    assert missing.json()["error"]["kind"] == "not_found"
+    assert known.status_code == 200, "the 404 is the id, not a broken harness"
+    assert len(stub.calls) == 1, "resolution failed BEFORE the turn machinery ran"
 
 
-def test_c5_7_credentials_never_reach_logs_or_traces() -> None:
+async def test_c5_7_credentials_never_reach_logs_or_traces(capsys) -> None:
     """C5 contract test 7 (Security review 2026-09-10 item 5) — with a log/trace
     capture attached, one request per lane with a VALID credential and one with an
     INVALID credential; the captured output contains neither the bearer value nor
     the cookie value (literal substring probe against everything captured,
     including the 401 bodies). Needs the route AND its logging call sites: the
     load-bearing rule is structural (header values are not inputs to any logging
-    call), so it can only be proven against the real handler."""
+    call), so it can only be proven against the real handler.
+
+    Captured via `capsys` rather than `caplog`: `configure_logging()` installs the
+    application's own root handler when the app is built, which replaces the one
+    pytest's `caplog` inserted — a caplog-only probe here would capture nothing
+    and pass vacuously. stdout is where the structured logs actually go, and the
+    assertion below that the capture is non-empty is what keeps this honest.
+    """
     chat_lane("sunil.main", "sunil.api.deps")
-    pending(
-        7,
-        "attach caplog at DEBUG plus any trace exporter; issue one request per "
-        "lane with a VALID credential and one with an INVALID credential; then "
-        "assert the literal bearer value and the literal cookie value appear "
-        "NOWHERE in everything captured, including the 401 response bodies "
-        "(Security review item 5). The rule is structural — header values are "
-        "not inputs to any logging call — so it can only be proven against the "
-        "real handler and its logging call sites",
-    )
+
+    invalid_bearer = "invalid-bearer-value-9f2c7a1e"
+    invalid_cookie = "invalid-cookie-value-4b8d3e6a"
+    bodies: list[str] = []
+
+    async with chat_app(service_token=SERVICE_TOKEN) as (client, _app, _stub, _store):
+        session_cookie = client.cookies.get("sunil_session")
+        assert session_cookie, "the harness must hold a real signed session cookie"
+
+        # valid cookie lane, valid bearer lane, then the same two with garbage.
+        bodies.append((await client.post(
+            CHAT_PATH, json={"message": "hello"}, headers=WEB_HEADERS
+        )).text)
+        bodies.append((await client.post(
+            CHAT_PATH,
+            json={"message": "hello"},
+            headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+        )).text)
+        bodies.append((await client.post(
+            CHAT_PATH,
+            json={"message": "hello"},
+            headers={"Authorization": f"Bearer {invalid_bearer}"},
+        )).text)
+        bodies.append((await client.post(
+            CHAT_PATH,
+            json={"message": "hello"},
+            headers={**WEB_HEADERS, "Cookie": f"sunil_session={invalid_cookie}"},
+        )).text)
+
+    captured = capsys.readouterr()
+    everything = captured.out + captured.err + "".join(bodies)
+
+    assert "chat_turn" in captured.out, "the capture is real — logs were emitted"
+    for secret in (SERVICE_TOKEN, invalid_bearer, session_cookie, invalid_cookie):
+        assert secret not in everything, (
+            "an Authorization/Cookie value reached a log line, a trace detail or "
+            "a response body (C5 §3, Security review item 5)"
+        )
 
 
 def test_c5_8_service_token_dependency_is_registered_on_exactly_one_route() -> None:
@@ -315,7 +628,10 @@ def test_c5_8_service_token_dependency_is_registered_on_exactly_one_route() -> N
     failure a request-level test would miss.
     """
     main, deps = chat_lane("sunil.main", "sunil.api.deps")
-    app = main.create_app()
+    del main  # the app comes from the harness: create_app() refuses to boot
+    # without wired seams (by design — an unwired seam is a boot failure, never a
+    # silent fallback), so the route table is walked on a fully-built app.
+    app = _route_table_app()
     target = deps.require_service_token
 
     def uses(dependant, seen: set[int] | None = None) -> bool:
@@ -342,17 +658,38 @@ def test_c5_8_service_token_dependency_is_registered_on_exactly_one_route() -> N
     )
 
 
-def test_c5_9_bearer_lane_conversation_scoping_through_the_route() -> None:
+async def test_c5_9_bearer_lane_conversation_scoping_through_the_route() -> None:
     """C5 contract test 9 — bearer lane naming ``conv-1`` (a ``channel="web"``
     conversation) → 404; naming ``conv-svc-1`` → 200; omitting
     ``conversation_id`` → 200 with a NEW service-channel conversation (§2.3
     blast-radius rule). The store half of every clause is asserted above."""
     chat_lane("sunil.main", "sunil.api.deps")
-    pending(
-        9,
-        "bearer lane naming conv-1 (channel='web') -> 404, the SAME shape as "
-        "unknown so no existence oracle exists; naming conv-svc-1 -> 200; "
-        "omitting conversation_id -> 200 with a NEW service-channel "
-        "conversation. Every clause's store half is asserted above; this is the "
-        "route half (Security review item 7)",
-    )
+
+    bearer = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
+    async with chat_app(service_token=SERVICE_TOKEN, sign_in=False) as (
+        client, _app, _stub, store
+    ):
+        owners = await client.post(
+            CHAT_PATH,
+            json={"message": "hello", "conversation_id": "conv-1"},
+            headers=bearer,
+        )
+        unknown = await client.post(
+            CHAT_PATH,
+            json={"message": "hello", "conversation_id": "conv-nope"},
+            headers=bearer,
+        )
+        own = await client.post(
+            CHAT_PATH,
+            json={"message": "hello", "conversation_id": "conv-svc-1"},
+            headers=bearer,
+        )
+        created = await client.post(CHAT_PATH, json={"message": "hello"}, headers=bearer)
+
+    assert owners.status_code == 404
+    # The SAME shape as unknown: no existence oracle (Security review item 7).
+    assert owners.json() == unknown.json()
+    assert own.status_code == 200
+    assert created.status_code == 200
+    new_id = created.json()["conversation_id"]
+    assert store.conversations[new_id].channel == "service"
