@@ -165,6 +165,70 @@ flag needs clearing so the inventory does not carry a stale caveat into the next
 **D5 — FIXED, recorded above:** the untrue "no `allow` on a write" claim in `test_engine.py`'s
 docstring, replaced by an enforced repo-wide tripwire.
 
+### Disposition append — D1 RULED AND APPLIED, D4 CLEARED (2026-09-12, same branch)
+
+**D1 → ruling R16** (`docs/tasks/integration-w1-rulings.md`, SA commit `18e835c`): the deprecated
+pin retires this wave and the WHOLE `github_mcp` surface goes **DORMANT** — commented out in
+place, the committed comment carrying the ruled end-state (the S2-F compose-block pattern). The
+successor (the official `github/github-mcp-server`) is a PIN-ME behind a named verification gate,
+and re-landing is one atomic w2r3 parcel. Applied by this lane, verbatim, exactly as R16's
+engineer delta specifies:
+
+| File | Disposition |
+|---|---|
+| `config/tools.yaml` | **APPLIED** — the whole `github_mcp:` block (:34-97) replaced by R16's dormancy comment, verbatim: the captured `tools/list`, the WHY, and the four rows to restore |
+| `config/permissions.yaml` | **APPLIED** — the PM block's two rows and the developer's two ADR-030 §4 rows commented out; `developer: {}` is an explicit empty flow mapping. Verified against `core/permissions/registry.py:100-104`: a bare `developer:` loads as `None`, is not a `dict`, and raises `PermissionsConfigError`. yamllint accepts the flow mapping with no disable comment |
+| `config/agents.yaml`, `sunil/tools/mcp/params.py`, `sunil/agents/developer/agent.py` | **NO CHANGE**, per R16 (the planning grants are structurally inert with no catalogue entry; the params models stay by the `RunWorkflowParams` precedent; a live git intent now fails loud at the chokepoint as `unknown tool`) |
+| `tests/unit/agents/test_developer_mount.py` | **REPLACED** with R16's module — 12 active-state tests → **5** dormant-state pins |
+| `tests/unit/test_real_seams.py` | **APPLIED** — both credential sets become `{"github", "n8n_mcp"}`; the whole-set operations pin becomes `assert "github_mcp" not in by_name` (it returns with the parcel) |
+| `tests/unit/core/permissions/test_engine.py` | **APPLIED** — agent-list pin UNCHANGED (`["project_manager", "developer"]`, which is what `developer: {}` preserves); four `github_mcp` grants flip to `is None`; `fix_and_pr` unchanged; docstring re-points at the renamed tripwire |
+| `tests/unit/core/tool_framework/test_tools_config.py` | **APPLIED** — renamed `…declares_the_two_live_adapter_kinds`; `github_mcp` becomes `not in config.tools`; the loader's stdio coverage stays on the module's synthetic `GOOD_BLOCK`. The shipped-pair cross-validation test needed no edit and stayed green |
+| compose / `.env.example` / `settings.py` | **UNTOUCHED**, per R16 — `GITHUB_TOKEN` and its `Settings` field stay, because the native `github` tool reads them |
+
+**Red steps.** The replacement module was written and run BEFORE the config change: **3 of 5 red**
+against the pre-dormancy tree (`github_mcp` present in `tools.tools`; the developer decided
+`ALLOW`/`ASK_USER` instead of default-deny; the unattended-write set held
+`('developer', 'github_mcp', 'push_branch')`). The other two pin what R16 leaves unchanged (the
+params shape, the `agents.yaml` planning grants) and could not go red — stated rather than
+implied. The four follower pins were then watched red against the committed dormancy, one failure
+per site R16 names, before being updated.
+
+**Mutation check** (R16's, run after the gates): restoring ONLY the permission rows — both
+blocks, `tools.yaml` left dormant — turned `test_github_mcp_is_dormant_not_half_wired` red, and
+the same pair put through the production check raised the startup refusal itself:
+
+```
+ToolsConfigError: config/permissions.yaml grants triples that config/tools.yaml
+does not declare: ['github_mcp (no such tool)', x4]
+```
+
+Reverted with `git checkout --`; the suite is green as committed. That is R15's atomicity rule
+enforced by a test rather than by memory: a permission row cannot come back without its tool
+block.
+
+**Gates, this delta** (baselines in §5 for comparison):
+
+| Gate | Result |
+|---|---|
+| Suite, SQLite leg, run 1 / run 2 | **1085 passed, 47 skipped** (both) — was 1092/47 |
+| Suite, Postgres leg, run 1 / run 2 | **1177 passed, 4 skipped** (both) — was 1184/4 |
+| Delta explained | **−7 on both legs**, exactly the mount module's 12 → 5. No other module's count moved |
+| `yamllint -c .yamllint.yml config/ infra/ .github/workflows/` | clean, zero warnings |
+| Scope | 6 files; `git diff` against the pre-delta commit shows no movement in compose, `.env.example`, `settings.py`, `agents.yaml`, `params.py` or `developer/agent.py` |
+
+Throwaway Postgres, blessed pattern: `pgvector/pgvector:0.8.6-pg17` published on
+`127.0.0.1:5436`, password generated into the environment and never written to the repository,
+container discarded at the end.
+
+**D4 → CLEARED by the SA** in the same ruling (R16-D4): `ARCHITECTURE_V2.md` §5's
+`SUNIL_OPENHANDS_BASE_URL` row now states the field is landed. Nothing for this lane to apply.
+
+**Open, and owned by w2r3:** the re-landing parcel R16 registers — step 0's verification gate
+(boot the candidate, capture `tools/list` verbatim), ADR-034 Amendment 1's `server_tool:`
+bindings and the `merge_main` composition, then the config blocks + permission rows + pin test
+together, with deltas 4-6 above reverted to active-state pins. `push_branch` lands only in the
+shape the engine-enablement ADR rules.
+
 ---
 
 ## 7. Files
@@ -173,16 +237,17 @@ docstring, replaced by an enforced repo-wide tripwire.
 |---|---|
 | `.env.example` | n8n MCP path, the auth-token note, new `SUNIL_OPENHANDS_BASE_URL` row |
 | `infra/docker-compose.yml` | api-stub: n8n MCP path, `SUNIL_OPENHANDS_BASE_URL`, memory default `mem0` → `pgvector` |
-| `config/tools.yaml` | `github_mcp` + `push_branch` / `merge_main`; the D1 defect note |
-| `config/permissions.yaml` | the `developer` agent's two rows |
+| `config/tools.yaml` | `github_mcp` + `push_branch` / `merge_main`; the D1 defect note — then, per R16, the whole block commented out (DORMANT) |
+| `config/permissions.yaml` | the `developer` agent's two rows — then, per R16, both `github_mcp` blocks commented out; `developer: {}` |
 | `config/agents.yaml` | the over-long ruling comment wrapped (content unchanged) |
 | `apps/api/sunil/settings.py` | `sunil_openhands_base_url` + validator + `_NAMED_HOSTS` entry; n8n default path |
 | `apps/api/sunil/tools/mcp/params.py` | `PushBranchParams`, `MergeMainParams` |
 | `apps/api/sunil/core/orchestrator/plan_schema.py` | `fix_and_pr` in `NON_TOOL_ACTIONS` |
 | `apps/api/tests/unit/test_env_template_parity.py` | new (9) |
-| `apps/api/tests/unit/agents/test_developer_mount.py` | new (12) |
+| `apps/api/tests/unit/agents/test_developer_mount.py` | new (12) — then replaced by R16's 5 dormant-state pins |
 | `apps/api/tests/unit/test_settings.py` | +9, inventory default moved |
 | `apps/api/tests/unit/test_plan_validation.py` | +2 |
-| `apps/api/tests/unit/test_real_seams.py`, `tests/unit/core/permissions/test_engine.py` | growth pins moved with their config |
+| `apps/api/tests/unit/test_real_seams.py`, `tests/unit/core/permissions/test_engine.py` | growth pins moved with their config — moved again for R16's dormancy |
+| `apps/api/tests/unit/core/tool_framework/test_tools_config.py` | R16: the shipped-kinds test drops the dormant `mcp_stdio` example |
 | `docs/ENVIRONMENT.md` | §9 first-boot: the stale `n8n_data` volume trap |
 | `docs/tasks/integration-w2r2.md` | this file |
