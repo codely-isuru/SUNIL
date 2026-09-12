@@ -180,6 +180,11 @@ class Task(Base):
     objective: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     assigned_agent: Mapped[str] = mapped_column(String(100), nullable=False)
+    # C6 §3 / ADR-036 (Q2 ruling): nullable, written ONCE at task creation from
+    # the `ValidatedPlan`. Nothing updates it — see `core/tasks/service.py`. It
+    # exists so `GET /api/v1/tasks?project_key=…` is a query rather than a
+    # per-row join against `audit_events`.
+    project_key: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     privacy_level: Mapped[str] = mapped_column(String(20), nullable=False, default="internal")
     created_at: Mapped[datetime] = mapped_column(_TZ_TIMESTAMP, nullable=False, default=utc_now)
     started_at: Mapped[datetime | None] = mapped_column(_TZ_TIMESTAMP, nullable=True)
