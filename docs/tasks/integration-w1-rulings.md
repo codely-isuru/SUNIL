@@ -1,4 +1,4 @@
-# integration-w1-rulings — wave-1 rulings batch (six items)
+# integration-w1-rulings — wave-1 rulings batch (six items) + R7 (wave-2 opening ruling)
 
 **Branch:** `task/integration-w1` · **Lane:** solution_architect · **Date:** 2026-09-12
 **Scope:** the six non-blocking items accumulated by the wave-1 reviews (`qa-wave-w1.md`,
@@ -16,6 +16,7 @@ fix round.
 | R4 | Web D-F3 — audit view renders raw `conversation_id` | This file + closure note in `S-D-web.md` §5 |
 | R5 | QA N1 — frozen suite imports lane-owned `ops_harness.py` | **`P0-contracts.md` freeze-scope ruling** (dated append) |
 | R6 | ARCH §5 inventory gaps (QA S1) + security wave C-1/C-3 | **ARCHITECTURE_V2 §5** dated append + **THREAT_MODEL §9** (DC-20 + conditions block) |
+| R7 | integration-w1 §8.3 — `decide`'s callable shape / clock ownership (wave-2 opening, 2026-09-12, branch `task/S2-rulings`) | **C4 v1.2.0** (§6.2 + §3 + §4 + clock paragraph + changelog migration) |
 
 ---
 
@@ -187,6 +188,214 @@ answers an unreviewed-drift risk with a file move instead of a review rule.
 **Rejected alternative:** waiting for the reviews mirror before registering anything — leaves the
 conditions as chat history across the wave boundary, which is the exact failure the register
 exists to prevent.
+
+---
+
+## R7 — the decision seam is `await decide(approval_id, decision, reason=None)`; the service owns its clock (wave-2 opening ruling, 2026-09-12)
+
+**Question** (recorded in `integration-w1.md` §8.3 — this is the architect ask the wave-1 batch's
+scope note deferred, descending from QA B1): C4 §6.2 declared
+`decide(approval_id, decision, reason, now)` — synchronous, caller-supplied `now` — a shape blessed
+in v1.0.1 *from the fake*, which the HTTP layer cannot call: it owns no clock, and one it invented
+would override the service's. The wave-1 route therefore answered 501 on a seam without an
+awaitable `decide`, leaving the C4 decision path with no green coverage in the bootable
+configuration (QA's recorded observation).
+
+**Ruling — option (a) + async, now C4 v1.2.0 §6.2:**
+
+```python
+async def decide(
+    approval_id: str,
+    decision: Literal["approve", "refuse"],
+    reason: str | None = None,
+) -> Approval | StateConflict | None
+```
+
+The service reads its constructor-injected clock (`FakeClock` in the fake; `datetime.now(UTC)`
+default in `DatabaseApprovalsService`, bound as `:now` into §1's CAS). Return-shape semantics —
+the union, never-raise, status mapping in the HTTP layer — are preserved verbatim from v1.0.1.
+Implementations may add keyword-only defaults (the real service's `decided_by="owner"`); the HTTP
+layer passes none.
+
+**Grounds.** (1) *Single-clock truth*: the decide CAS guards `expires_at > now` — that `now` must
+have one author, and C4 already chose the author when §4's `consume` was frozen without a `now`
+parameter and when the service's injectable-clock design bound one clock into the SQL. A
+caller-supplied `now` is a second authority over "expired". (2) *Fake determinism is preserved by
+the same mechanism, not lost*: the fake's clock is injected precisely so the service can own time
+deterministically — its `consume` has always read it; `decide` now does the same, and tests steer
+time via `clock.advance(...)` exactly as they already do for consume/sweep. (3) *The evidence was
+already in the tree*: `DatabaseApprovalsService.decide` (`service.py:446`) has implemented the
+ruled shape since wave 1 — this ruling moves the contract to the sound implementation, not the
+reverse — and every frozen-suite call site passes `<the fake's own clock>.now()` as the fourth
+argument, i.e. the caller-`now` was never information, only ceremony. (4) The 501 posture was the
+correct wave-1 refusal to guess; ruling the shape is what deletes it.
+
+**Rejected alternatives, by name:**
+
+- **(b) keep caller-supplied `now` and define whose clock the HTTP layer passes.** Any clock the
+  HTTP layer could name is the system wall clock — which desynchronises from a `FakeClock`-wired
+  service in every test (the exact corruption §8.3 records) and re-authors the CAS guard in
+  production. There is no third clock to nominate; the option reduces to "two clocks, pick per
+  call", which is the defect class.
+- **(c-sync) a synchronous protocol shape.** The real service's decide is necessarily async (a CAS
+  over an async engine); a sync contract would force either a thread hop in the decision hot path
+  or the fake's accident onto the production service. The protocol names one shape and it is the
+  one the production implementation must have.
+- **(c-both) bless both shapes behind an awaitable-normalising seam** (keep `service_decide`
+  forever). Rejected: the two shapes differ in *meaning* (who owns time), not just in marker, so a
+  normaliser must also invent a `now` — the thing being rejected. Two blessed shapes is a permanent
+  adapter in the mutating path and a contract that names no single truth; the wave-1 route already
+  refused to normalise for exactly this reason.
+- **(d) widen §4's `ApprovalsService` protocol with `decide`** (QA's wave-1 "natural answer",
+  §8.3's recorded temptation). §4 is the Tool Manager's seam and the Tool Manager never decides;
+  QA B1 is the recorded cost of a surface demanding protocol methods its contract never granted.
+  §4 gains the closure paragraph instead (see below).
+
+**Version: v1.2.0, MINOR — defended.** The consumer-facing surfaces (§4 protocol, OpenAPI) are
+byte-unchanged; §6.2's only production caller could not call the old shape (the 501), so no working
+consumer exists for a MAJOR bump to protect; the in-repo callers of the old fake shape are
+enumerated (19 call sites + 1 harness line) and migrated in-wave. Full defense in the C4 changelog.
+
+### R7.1 Migration deltas (verbatim; ordering rule in the C4 changelog — atomic set first, route deletion after)
+
+**Parcel 1 — QA** (`tests/fakes/fake_approvals.py` + 19 frozen call sites listed in the C4
+changelog). Replacement method, byte-exact:
+
+```python
+    async def decide(
+        self,
+        approval_id: str,
+        decision: Literal["approve", "refuse"],
+        reason: str | None = None,
+    ) -> Approval | StateConflict | None:
+        """C4 §6.2 (v1.2.0, ruling R7) — awaitable; the service reads its OWN
+        injected clock, so ``now`` is no longer a parameter (clock ownership,
+        C4 §6). ``pending`` + clock < ``expires_at`` → transition, set
+        ``decided_at`` from the clock, ``decided_by="owner"``, return the row.
+        ``pending`` + clock >= ``expires_at`` → transition to ``expired`` first,
+        then ``state_conflict(current_status="expired")``. Any other status →
+        ``state_conflict`` with it. Unknown id → ``None`` (HTTP 404)."""
+        row = self.approvals.get(approval_id)
+        if row is None:
+            return None
+
+        if row.status == ApprovalStatus.PENDING:
+            now = self.clock.now()
+            if now >= from_iso(row.expires_at):
+                row.status = ApprovalStatus.EXPIRED
+                return self._conflict(row)
+            row.status = (
+                ApprovalStatus.APPROVED
+                if decision == "approve"
+                else ApprovalStatus.REFUSED
+            )
+            row.decided_at = to_iso(now)
+            row.decided_by = "owner"
+            row.decision_reason = reason
+            return row
+
+        return self._conflict(row)
+```
+
+Call-site rule: `X.decide(a, d, r, <clock>.now())` → `await X.decide(a, d, r)` (every enclosing
+test is already `async def`). Module docstring: the first "deliberate design notes" bullet now
+applies to `sweep` only; `decide`'s bullet states the v1.2.0 shape and cites the clock-ownership
+paragraph.
+
+**Parcel 2 — wiring engineer.**
+
+*`sunil/core/approvals/service.py`: NO CHANGE.* `DatabaseApprovalsService.decide`
+(`service.py:446-526`) already implements the ruled shape.
+
+*Atomic-set test edits (land with parcel 1):*
+
+`tests/unit/approvals/harness.py:63`:
+
+```python
+        return self.service.decide(approval_id, decision, reason, self.clock.now())
+```
+→
+```python
+        return await self.service.decide(approval_id, decision, reason)
+```
+
+`tests/unit/approvals/test_mounted_surface.py:259-281` — delete
+`test_the_mounted_decision_names_the_gap_when_the_seam_has_no_service_decide` (the scenario is now
+non-conformant-by-contract, and its 501 assertion goes red the moment parcel 1 lands) and replace
+with:
+
+```python
+async def test_the_mounted_decision_runs_on_the_fake_wired_app() -> None:
+    """C4 v1.2.0 (ruling R7): the fake's `decide` is the awaitable,
+    service-clocked form, so the bootable (fake-wired) configuration's decision
+    path answers the contract's codes — the coverage gap `integration-w1.md`
+    §8.3 recorded is closed. The row is parked INTO the fake because on a
+    fake-wired app the fake is the decision store while the reads are the
+    database read model (a test-only split; §5 item 3)."""
+    async with mounted() as (client, _app, _engine):
+        fake = _app_service(_app)
+        parked = await fake.park(park_request())
+
+        decided = await client.post(
+            f"/api/v1/approvals/{parked.approval_id}/decision",
+            json={"decision": "approve"},
+            headers=WEB_HEADERS,
+        )
+
+        assert decided.status_code == 200, decided.text
+        assert decided.json()["status"] == "approved"
+```
+
+*Route deletion (any time after the atomic set is in the integration tree)* — in
+`sunil/api/routes/approvals.py`: delete `service_decide` (:291-318), `DECISION_SEAM_MISSING` and
+its comment block (:321-333), the unused `from inspect import iscoroutinefunction` (:60), and the
+module docstring's `| no service-layer decide at all | 501 ... |` table row (:41); in
+`decide_approval` replace
+
+```python
+        service = get_approvals_service(request)
+        decide = service_decide(service)
+        if decide is None:
+            return JSONResponse(
+                status_code=501, content=DECISION_SEAM_MISSING, headers=NOSNIFF
+            )
+        result = await decide(approval_id, body.decision, body.reason)
+```
+with
+```python
+        service = get_approvals_service(request)
+        result = await service.decide(approval_id, body.decision, body.reason)
+```
+
+A wired seam whose `decide` is not awaitable is henceforth a wiring defect — the same 500 class as
+`app.state.approvals_service` unset.
+
+*Same-wave follow-up owed (small):* implement §3 reconciliation rule 4 in
+`DatabaseApprovalsService.reconcile_on_startup` (+ `ReconciliationReport` bucket + test) — see
+R7.2.
+
+### R7.2 The two v1.1.x verification points the wave surfaced (deliverable 4)
+
+- **Effect hooks — blessed AND specified.** C4 §3 named the approve/refuse effects with no actor;
+  the route's optional-with-logged-warning treatment is now the contract's (§3 "Post-decision
+  hooks"): conventional names `finalise_refusal(approval_id)` / `scheduler.schedule(approval_id)`,
+  optional-by-wiring, warning names the unrun effect, a hook failure logs and the 200 stands (the
+  CAS committed; the owner's decision must not be reported failed). Blessing "warn and stand"
+  without a recovery path would be a data-loss shrug, so **reconciliation rule 4** was added in the
+  same ruling: `refused`/`expired` + unfinalised task → finalise with the matching kind. Rule 4
+  also closes a second window found while verifying: the decide-time lazy `pending → expired`
+  (`service.py:509-520`) audits but never finalises the task, and only `sweep` calls
+  `_finalise_expired_tasks` (`service.py:577`) — an expired row is invisible to the sweep's
+  pending/approved WHERE clauses, so without rule 4 that task stays unfinalised forever.
+  Implementation is the named same-wave engineer follow-up above.
+- **Read-model precedent — recorded normative** (C4 §4 "The protocol is closed; reads are a read
+  model"): list/get stay OFF the service protocol permanently; §6.5 is a listing law binding the
+  fake and the read model alike; convenience reads on a service are delegation, not contract;
+  `continuation` exclusion is structural through the one column list. No future lane may satisfy a
+  route by widening the protocol.
+
+**R7 boundaries:** files touched — `docs/contracts/C4-approvals.md` and this file, on branch
+`task/S2-rulings`. No code, no tests, no ADRs; appliers are named per parcel above.
 
 ---
 
