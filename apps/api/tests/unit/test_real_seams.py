@@ -209,6 +209,53 @@ def test_a_real_chokepoint_over_an_in_memory_c4_seam_gets_no_tx_collaborator(eng
     assert manager._transaction is None
 
 
+def test_a_database_c4_seam_with_a_non_conforming_audit_hook_refuses_to_boot(
+    engine,
+) -> None:
+    """Security residual R-1a — the SILENT-DOWNGRADE combination, named.
+
+    The two conditions in the old guard meant two different things and had two
+    different correct answers. `approvals` without an `engine` is a legitimate
+    configuration (the in-memory fake above): there is no transaction to share,
+    and building without the collaborator is right. An audit hook without
+    `attempt_on` while the C4 service IS database-backed is not a configuration
+    at all — it is a broken deployment, and `and`-ing the two made it boot
+    QUIETLY on the non-transactional path, reopening the exact window Security
+    condition C-1 closed: a crash between the consume CAS and the audit write
+    leaves the approval spent with no `tool_calls` row.
+
+    So the factory guards on the engine alone and lets `TransactionalApprovals`'
+    constructor raise, which is what it was written to do ("checked at
+    construction, so a misconfiguration is a boot failure rather than a silently
+    non-transactional call path")."""
+
+    class _HookWithoutAttemptOn:
+        """A two-phase C1 §2.2 hook that cannot write on a caller's connection."""
+
+        async def attempt(self, record):  # pragma: no cover - never reached
+            raise AssertionError("boot should have failed before any call")
+
+        async def finalise(self, audit_id, **kwargs):  # pragma: no cover
+            raise AssertionError("boot should have failed before any call")
+
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    resolved = settings(sunil_tool_manager="real", github_token=None)
+    approvals = wiring.resolve_approvals(
+        settings(sunil_approvals_service="real"), Seams(), engine=engine
+    )
+
+    factory = wiring.resolve_tool_manager(
+        resolved,
+        Seams(),
+        approvals=approvals,
+        sessionmaker=sessionmaker,
+        registry=wiring.build_tool_registry(resolved),
+    )
+
+    with pytest.raises(TypeError, match="attempt_on"):
+        factory(_HookWithoutAttemptOn())
+
+
 # --------------------------------------------------------------------------- #
 # R1 follow-up — the grants-vs-catalogue startup warning
 # --------------------------------------------------------------------------- #

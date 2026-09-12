@@ -9,8 +9,11 @@ with `outcome="parked"` and a C4 `ApprovalRef`.
 Nothing is mocked that the architecture names as a seam: the provider is C2 §5's
 `FakeProvider`, the tool is C1 §6.3's `FakeToolAdapter` behind
 `FakePermissionHook`, the approvals service is C4 §6's `FakeApprovalsService`.
-The one double is the Tool Manager itself (Stream A's file — see
-`tool_manager_double.py` for why the spine must not write it).
+Nothing is a double either, since ruling R8's follow-up: the Tool Manager is the
+REAL `core/tool_framework/manager.py` chokepoint. The interim double was retired
+the moment the park exit's typed `ApprovalRef` landed — it had invented an
+`approval_id` in `data` that the real manager never sets, which is how every
+assertion here stayed green against behaviour the shipped code did not have.
 """
 
 from __future__ import annotations
@@ -151,7 +154,7 @@ async def test_a_second_turn_continues_the_same_conversation(app_client) -> None
 # The parked path — ADR-031 / L-001 legs 3 and 4
 # --------------------------------------------------------------------------- #
 async def test_an_ask_user_tool_parks_the_turn_with_an_approval_ref(
-    app_client, permissions
+    app_client, permissions, approvals
 ) -> None:
     client, app = app_client
     permissions.grants.clear()
@@ -169,6 +172,17 @@ async def test_an_ask_user_tool_parks_the_turn_with_an_approval_ref(
     assert envelope["approval"]["expires_at"]
     assert "fake_tool.write_item" in envelope["approval"]["summary"]
     assert envelope["task"]["status"] == "parked"
+
+    # Ruling R8 / C1 v1.2.0: the id in the C5 envelope is the REAL one the C4
+    # service minted, not `turn.py`'s `or ""` poison. The whole point of D9 is
+    # that the dashboard can navigate from this parked turn to its approval
+    # card, which an empty string cannot do — and a truthiness assertion alone
+    # would not have caught the wave-2 defect either, because the double filled
+    # it in from a channel the real manager never populates.
+    assert envelope["approval"]["approval_id"] != ""
+    assert envelope["approval"]["approval_id"] in approvals.parked
+    parked_row = approvals.approvals[envelope["approval"]["approval_id"]]
+    assert envelope["approval"]["expires_at"] == parked_row.expires_at
 
     async with app.state.sessionmaker() as session:
         task = (await session.execute(select(Task))).scalar_one()

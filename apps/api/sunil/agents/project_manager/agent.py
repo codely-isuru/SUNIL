@@ -171,7 +171,13 @@ class ProjectManagerAgent:
             park_context=park_context,
         )
 
-        data = tool_result.data or {}
+        # C1 v1.2.0 (ruling R8): the park exit's reference is a TYPED field the
+        # manager minted, read here directly. It was previously mined out of
+        # `data`, which C1 §2 freezes to None on every error result — so the id
+        # was always None and `turn.py` minted `approval_id=""` into the C5
+        # envelope for an entire wave. `data` remains the §3 untrusted channel
+        # and is never a source of chrome the owner's UI navigates by.
+        ref = tool_result.approval
         return {
             "step_id": step.id,
             "tool": step.tool,
@@ -179,10 +185,10 @@ class ProjectManagerAgent:
             "ok": tool_result.ok,
             "error_kind": tool_result.error_kind,
             "permission_decision": _decision_of(ctx, step),
-            "approval_id": data.get("approval_id"),
-            "expires_at": data.get("expires_at"),
+            "approval_id": ref.approval_id if ref is not None else None,
+            "expires_at": ref.expires_at if ref is not None else None,
             "summary": park_context.summary,
-            "data": None if not tool_result.ok else data,
+            "data": tool_result.data if tool_result.ok else None,
         }
 
     async def _compose_answer(self, ctx: AgentContext, results: list[dict[str, Any]]) -> str:

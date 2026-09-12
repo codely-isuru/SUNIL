@@ -196,10 +196,14 @@ def resolve_tool_manager(
     * the permission hook — the REAL `PermissionEngineHook` over
       `config/permissions.yaml`, whose default-deny is structural;
     * whether the C-1 transactional seam is available. It needs a database C4
-      service and an audit hook that can write on its connection; when either is
-      missing the manager is built without it rather than with a collaborator
-      that cannot honour C1 §2.1 step 4. That decision is made HERE so the
-      request path never sniffs a seam for capabilities.
+      service; when that is absent (an injected in-memory fake) the manager is
+      built without the collaborator rather than with one that cannot honour
+      C1 §2.1 step 4. The audit hook is NOT part of that question — a hook
+      without `attempt_on` alongside a database C4 service is a broken
+      deployment, and `TransactionalApprovals` raises on it (R-1a: the previous
+      `and` turned that into a silent downgrade to the non-transactional path).
+      The decision is made HERE, once, so the request path never sniffs a seam
+      for capabilities.
     """
     selected = settings.sunil_tool_manager
     if selected == "fake":
@@ -222,11 +226,26 @@ def resolve_tool_manager(
         )
     permission_hook = PermissionEngineHook(registry.permissions)
     adapters = list(registry.adapters)
+    # A boot literal (R-1b): the resolved C4 seam cannot change shape between
+    # plan executions, so asking once here keeps the per-plan closure free of
+    # capability sniffing — the property `transaction.py` states as reason 1 for
+    # existing at all, now true of the wiring's own hot path too.
+    transactional_c4 = hasattr(approvals, "engine")
 
     def factory(audit_hook: Any) -> ToolManager:
-        transaction = None
-        if hasattr(approvals, "engine") and callable(getattr(audit_hook, "attempt_on", None)):
-            transaction = TransactionalApprovals(approvals=approvals, audit=audit_hook)
+        # The guard is the C4 seam ALONE (security residual R-1a). An in-memory
+        # C4 fake has no transaction to share, so building without the
+        # collaborator is the correct answer; a database-backed C4 service with
+        # an audit hook that cannot write on a caller's connection is a broken
+        # deployment, and `and`-ing the two conditions made it boot QUIETLY on
+        # the non-transactional path — reopening the window Security condition
+        # C-1 closed. `TransactionalApprovals`' constructor already raises with
+        # the reason; let it, rather than degrading in silence.
+        transaction = (
+            TransactionalApprovals(approvals=approvals, audit=audit_hook)
+            if transactional_c4
+            else None
+        )
         return ToolManager(
             adapters, permission_hook, approvals, audit_hook, transaction=transaction
         )

@@ -90,6 +90,12 @@ AUDIT_CONSUMED = "approval_consumed"
 AUDIT_EXPIRED = "approval_expired"
 AUDIT_RECONCILED = "continuation_reconciled"
 AUDIT_RESCHEDULED = "continuation_rescheduled"
+#: Rule 4's own kind (C4 §3 rule 4, v1.2.0 ruling R7). Deliberately NOT
+#: ``AUDIT_RECONCILED``: nothing about a refused or expired row is a
+#: continuation event, and C4 §3 rule 3 names that kind for the consumed case
+#: specifically — one kind for two different facts would make the audit trail
+#: unable to answer which rule wrote the row.
+AUDIT_TASK_RECONCILED = "task_finalisation_reconciled"
 
 # The `Approval` projection (`ROW_COLUMNS`) and the row → model mapper now live
 # in `read_model.py`, because C4's two GET routes read the table directly (the
@@ -144,24 +150,31 @@ AttemptAudit = Callable[[AsyncConnection], Awaitable[None]]
 
 
 class ReconciliationReport:
-    """What a startup re-scan did, per C4 §3's three rules — returned rather
+    """What a startup re-scan did, per C4 §3's four rules — returned rather
     than only logged so a boot check can assert on it."""
 
-    __slots__ = ("rescheduled", "expired", "interrupted")
+    __slots__ = ("rescheduled", "expired", "interrupted", "finalised")
 
     def __init__(self) -> None:
         self.rescheduled: list[str] = []
         self.expired: list[str] = []
         self.interrupted: list[str] = []
+        self.finalised: list[str] = []
 
     @property
     def total(self) -> int:
-        return len(self.rescheduled) + len(self.expired) + len(self.interrupted)
+        return (
+            len(self.rescheduled)
+            + len(self.expired)
+            + len(self.interrupted)
+            + len(self.finalised)
+        )
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics
         return (
             f"ReconciliationReport(rescheduled={self.rescheduled!r}, "
-            f"expired={self.expired!r}, interrupted={self.interrupted!r})"
+            f"expired={self.expired!r}, interrupted={self.interrupted!r}, "
+            f"finalised={self.finalised!r})"
         )
 
 
@@ -463,11 +476,20 @@ class DatabaseApprovalsService:
         the UPDATE already failed, so there is nothing left to lose — and every
         status it can report is terminal except ``pending``, which the lazy
         expiry then settles with another CAS.
+
+        That lazy expiry also FINALISES the task, after the commit (R7.2Δ): the
+        row it just expired can never again match the sweep's
+        ``pending``/``approved`` WHERE clauses, so this call is the last actor
+        guaranteed to see the transition and owns the finalisation exactly as
+        ``sweep()`` owns its own. Outside the transaction, so a slow or failing
+        task gateway neither holds the lock nor undoes a correct expiry — the
+        409 stands either way, and reconciliation rule 4 is the retry.
         """
         now = self._now()
         target = (
             ApprovalStatus.APPROVED if decision == "approve" else ApprovalStatus.REFUSED
         )
+        lazily_expired = False
         async with self.engine.begin() as conn:
             decided = (
                 await conn.execute(
@@ -506,24 +528,42 @@ class DatabaseApprovalsService:
                 # Pending but past expires_at: expire it first, then conflict
                 # with `expired` — C4 §6.2, and §5's rule that expiry at
                 # decision time is a 409, never a 410.
-                await conn.execute(
-                    update(T)
-                    .where(
-                        T.c.id == approval_id,
-                        T.c.status == ApprovalStatus.PENDING.value,
-                        T.c.expires_at <= now,
+                #
+                # `.returning` (R7.2Δ): the audit row is conditioned on the CAS
+                # actually transitioning. Without it, an UPDATE that a
+                # concurrent sweep/decide had already raced away still wrote a
+                # `decide_past_ttl` row for a transition this call never made.
+                expired_row = (
+                    await conn.execute(
+                        update(T)
+                        .where(
+                            T.c.id == approval_id,
+                            T.c.status == ApprovalStatus.PENDING.value,
+                            T.c.expires_at <= now,
+                        )
+                        .values(status=ApprovalStatus.EXPIRED.value)
+                        .returning(T.c.id)
                     )
-                    .values(status=ApprovalStatus.EXPIRED.value)
-                )
-                await self._audit(
-                    AUDIT_EXPIRED, approval_id, {"cause": "decide_past_ttl"}, conn
-                )
+                ).first()
+                if expired_row is not None:
+                    lazily_expired = True
+                    await self._audit(
+                        AUDIT_EXPIRED, approval_id, {"cause": "decide_past_ttl"}, conn
+                    )
                 current = (
                     await conn.execute(
                         select(T.c.id, T.c.status).where(T.c.id == approval_id)
                     )
                 ).first()
-            return self._conflict(current)
+            conflict = self._conflict(current)
+        if lazily_expired:
+            # This call is the LAST actor guaranteed to see the transition (the
+            # row just left the sweeper's WHERE clauses for good), so it owns
+            # the finalisation exactly as sweep() owns its own at :577 — after
+            # commit, is_finalised-guarded, failure logged-not-raised (the 409
+            # must stand; rule 4 retries on the next boot).
+            await self._finalise_expired_tasks([approval_id])
+        return conflict
 
     # ------------------------------------------------------------------ #
     # C4 §6.4 — the sweeper's transition pair
@@ -670,7 +710,7 @@ class DatabaseApprovalsService:
     async def reconcile_on_startup(
         self, now: datetime | None = None
     ) -> ReconciliationReport:
-        """C4 §3's three rules, exactly, each transition audited.
+        """C4 §3's four rules, exactly, each transition audited.
 
         1. ``approved`` + unfinalised task + within grace → re-schedule the
            continuation.
@@ -684,6 +724,10 @@ class DatabaseApprovalsService:
            committed in the same transaction as that CAS — is the record of what
            was attempted. Re-running it would turn a crash into a double side
            effect, which is the one outcome an approval exists to prevent.
+        4. ``refused``/``expired`` + unfinalised task → finalise the task
+           ``failed`` with the matching kind and write a
+           ``task_finalisation_reconciled`` audit row (C4 §3 rule 4, v1.2.0
+           ruling R7).
         """
         at = now or self._now()
         report = ReconciliationReport()
@@ -729,6 +773,24 @@ class DatabaseApprovalsService:
                     )
                 )
             ).fetchall()
+            # Scan posture, recorded: this reads every refused/expired row ever,
+            # exactly as rule 3 already reads every consumed row — acceptable at
+            # this system's approval volumes (every row cost a human decision),
+            # and if it ever hurts the fix is one bulk `unfinalised_task_ids()`
+            # question on TaskGateway serving all four rules, never a rule-4
+            # special case.
+            terminal = (
+                await conn.execute(
+                    select(T.c.id, T.c.task_id, T.c.status).where(
+                        T.c.status.in_(
+                            [
+                                ApprovalStatus.REFUSED.value,
+                                ApprovalStatus.EXPIRED.value,
+                            ]
+                        )
+                    )
+                )
+            ).fetchall()
 
         # Rule 1 — approved, in grace, task not finalised → resume.
         for row in live:
@@ -753,6 +815,31 @@ class DatabaseApprovalsService:
                     "failure_kind": FAILURE_CONTINUATION_INTERRUPTED,
                     "re_executed": False,
                 },
+            )
+
+        # Rule 4 — refused/expired + unfinalised task → finalise with the
+        # matching kind (C4 §3 rule 4, v1.2.0 ruling R7). Closes the two windows
+        # the post-decision hooks leave open: a crash (or absent task gateway)
+        # after a refuse CAS, and the decide-time lazy `pending → expired`,
+        # whose row leaves the sweeper's WHERE clauses before the sweep's
+        # finalisation pass can ever see it. Rows rule 2 expired THIS pass are
+        # re-seen here with their tasks already finalised, so the is_finalised
+        # guard skips them — and a rule-2 finalisation that FAILED last boot is
+        # retried, which rules 1-3 never did for anything.
+        for row in terminal:
+            if self.tasks is None or await self.tasks.is_finalised(row.task_id):
+                continue
+            kind = (
+                FAILURE_APPROVAL_REFUSED
+                if row.status == ApprovalStatus.REFUSED.value
+                else FAILURE_APPROVAL_EXPIRED
+            )
+            report.finalised.append(row.id)
+            await self._finalise(row.task_id, kind)
+            await self._audit(
+                AUDIT_TASK_RECONCILED,
+                row.id,
+                {"task_id": row.task_id, "failure_kind": kind},
             )
         return report
 

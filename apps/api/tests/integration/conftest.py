@@ -3,9 +3,10 @@ why they are imported by name and not registered as a plugin.
 
 `app_client` builds the REAL application against the frozen fakes: C2 §5's
 `FakeProvider`, C1 §6.3's `FakeToolAdapter` behind §6.1's `FakePermissionHook`,
-C4 §6's `FakeApprovalsService`, and C3 §5's `FakeMemoryProvider`. The single
-double is the Tool Manager (`tool_manager_double.py` explains why the spine must
-not write the chokepoint).
+C4 §6's `FakeApprovalsService`, and C3 §5's `FakeMemoryProvider`. Since ruling R8's
+follow-up there is no double at all: the Tool Manager is the REAL
+`sunil/core/tool_framework/manager.py` chokepoint, so these tests assert against
+the shape the shipped code actually has.
 
 The owner session is REAL: the fixture seeds a `users` row and signs in through
 `POST /api/v1/auth/login`, so every turn below runs behind the same cookie +
@@ -34,7 +35,7 @@ from tests.fakes.fake_hooks import FakePermissionHook
 from tests.fakes.fake_memory_provider import FakeMemoryProvider
 from tests.fakes.fake_provider import FakeProvider
 from tests.fakes.fake_tool_adapter import FakeToolAdapter
-from tests.integration.tool_manager_double import ToolManagerDouble
+from sunil.core.tool_framework.manager import ToolManager
 from tests.spine_harness import (  # noqa: F401 - re-exported as fixtures
     _clean_redaction_registry,
     build_settings,
@@ -92,13 +93,16 @@ async def app_client(
 ) -> AsyncIterator[tuple[httpx.AsyncClient, object]]:
     """The real app + a signed-in owner, over an in-process ASGI transport."""
 
-    def tool_manager_factory(audit_hook: DbToolAuditHook) -> ToolManagerDouble:
+    def tool_manager_factory(audit_hook: DbToolAuditHook) -> ToolManager:
         """C1 §2.1's constructor shape. The manager is built PER PLAN EXECUTION
-        because its audit hook is bound to that plan's id (ADR-004 Amendment 1) —
-        when Stream A's `ToolManager` lands, this line becomes
-        `ToolManager(adapters, permission_hook, approvals, audit_hook)` and
-        nothing else here changes."""
-        return ToolManagerDouble([adapter], permissions, approvals, audit_hook)
+        because its audit hook is bound to that plan's id (ADR-004 Amendment 1).
+
+        This is the REAL chokepoint (ruling R8's same-wave follow-up): the
+        double is retired, exactly the one-line swap its own charter promised.
+        No `transaction=` is passed — the C4 seam here is `FakeApprovalsService`,
+        which has no engine to share, and wiring's factory makes that same
+        decision at boot rather than letting the pipeline sniff for it."""
+        return ToolManager([adapter], permissions, approvals, audit_hook)
 
     settings = build_settings(sunil_config_dir=CONFIG_DIR)
     app = create_app(

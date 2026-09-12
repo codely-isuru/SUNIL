@@ -17,10 +17,12 @@ from datetime import timedelta
 
 import pytest
 
-from sunil.core.approvals.base import ApprovalStatus
+from sunil.core.approvals.base import ApprovalStatus, StateConflict
 from sunil.core.approvals.service import (
     AUDIT_RECONCILED,
+    AUDIT_TASK_RECONCILED,
     FAILURE_APPROVAL_EXPIRED,
+    FAILURE_APPROVAL_REFUSED,
     FAILURE_CONTINUATION_INTERRUPTED,
 )
 
@@ -35,11 +37,18 @@ class RecordingTasks:
     def __init__(self, finalised: set[str] | None = None) -> None:
         self.finalised: set[str] = set(finalised or ())
         self.calls: list[tuple[str, str]] = []
+        #: The failure valve (R7.2Δ): the next N calls raise instead of
+        #: recording, so a test can reproduce "the CAS committed, the gateway
+        #: call failed and was swallowed" — the crash window rule 4 retries.
+        self.fail_next = 0
 
     async def is_finalised(self, task_id: str) -> bool:
         return task_id in self.finalised
 
     async def finalise_failed(self, task_id: str, *, failure_kind: str) -> None:
+        if self.fail_next:
+            self.fail_next -= 1
+            raise RuntimeError("task gateway down")
         self.calls.append((task_id, failure_kind))
         self.finalised.add(task_id)
 
@@ -299,3 +308,77 @@ async def test_grace_window_boundary_is_exclusive_for_resume(wired) -> None:
     assert scheduler.scheduled == []
     assert tasks.calls == [("task-boundary", FAILURE_APPROVAL_EXPIRED)]
     assert timedelta(hours=1) == timedelta(hours=service.config.consume_grace_hours)
+
+
+# --------------------------------------------------------------------------- #
+# Rule 4 — refused/expired + unfinalised task → finalised with the matching kind
+# --------------------------------------------------------------------------- #
+async def test_rule_4_finalises_a_refused_row_whose_hook_never_ran(wired) -> None:
+    """park → refuse → crash before finalise_refusal → startup reconciles.
+    The decide CAS committed REFUSED; the process died before the post-decision
+    hook ran (C4 §3 "Post-decision hooks"). Without rule 4 this task stays open
+    for ever — no sweep clause and no other rule can ever see it."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-refused-crash")
+    await service.decide(approval_id, "refuse", "no")
+    # deliberately NO finalise_refusal(): the crash window under test
+
+    report = await service.reconcile_on_startup()
+
+    assert report.finalised == [approval_id]
+    assert tasks.calls == [("task-refused-crash", FAILURE_APPROVAL_REFUSED)]
+    assert scheduler.scheduled == []
+    assert AUDIT_TASK_RECONCILED in audit.kinds_for(approval_id)
+
+
+async def test_rule_4_leaves_a_hook_finalised_refusal_alone(wired) -> None:
+    """The non-crash case: the hook ran, the task is closed. Rule 4 must be a
+    no-op or every clean boot re-finalises history."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-refused-ok")
+    await service.decide(approval_id, "refuse")
+    await service.finalise_refusal(approval_id)
+
+    report = await service.reconcile_on_startup()
+
+    assert report.finalised == []
+    assert len(tasks.calls) == 1
+    assert AUDIT_TASK_RECONCILED not in audit.kinds_for(approval_id)
+
+
+async def test_rule_4_retries_a_finalisation_the_gateway_failed(wired) -> None:
+    """expired + unfinalised at boot — the lazy-expiry crash window: the CAS
+    committed, the gateway call failed (logged, 409 stood), the process moved
+    on. Rule 4 is the retry."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-lazy-crash")
+    clock.advance(hours=73)  # past the 72 h TTL
+    tasks.fail_next = 1  # see the RecordingTasks delta below
+    outcome = await service.decide(approval_id, "approve")
+
+    assert isinstance(outcome, StateConflict)
+    assert tasks.calls == []  # the one attempt failed and was swallowed
+
+    report = await service.reconcile_on_startup()
+
+    assert report.finalised == [approval_id]
+    assert tasks.calls == [("task-lazy-crash", FAILURE_APPROVAL_EXPIRED)]
+
+
+# --------------------------------------------------------------------------- #
+# The decide-time lazy expiry finalises (sweep parity)
+# --------------------------------------------------------------------------- #
+async def test_lazy_expiry_at_decide_time_finalises_the_task(wired) -> None:
+    """decide's `pending → expired` CAS (cause `decide_past_ttl`) takes the row
+    out of the sweeper's pending/approved WHERE clauses for good, so decide owns
+    the finalisation exactly as sweep owns its own — no restart required."""
+    service, clock, tasks, scheduler, audit = wired
+    approval_id = await _park(service, clock, "task-lazy")
+    clock.advance(hours=73)  # past the 72 h TTL
+
+    outcome = await service.decide(approval_id, "approve")
+
+    assert isinstance(outcome, StateConflict)
+    assert outcome.error.current_status == ApprovalStatus.EXPIRED
+    assert tasks.calls == [("task-lazy", FAILURE_APPROVAL_EXPIRED)]
+    assert await service.sweep() == 0  # nothing left for the sweep to notice
