@@ -119,13 +119,88 @@ def _operations(raw: Any, *, where: str) -> dict[str, McpOperationConfig]:
         if not isinstance(timeout_s, (int, float)) or isinstance(timeout_s, bool) or timeout_s <= 0:
             raise ToolsConfigError(f"{where}.{name}: timeout_s must be a positive number")
         model = _resolve_params_model(spec.get("params_ref"), where=f"{where}.{name}")
-        operations[name] = McpOperationConfig(
-            name=name,
-            params_model=model,
-            read_only=read_only,
-            timeout_s=float(timeout_s),
-        )
+        try:
+            operations[name] = McpOperationConfig(
+                name=name,
+                params_model=model,
+                read_only=read_only,
+                timeout_s=float(timeout_s),
+                server_tools=_server_tools(spec.get("server_tool"), where=f"{where}.{name}"),
+                fixed_arguments=_fixed_arguments(
+                    spec.get("fixed_arguments"), where=f"{where}.{name}"
+                ),
+                composition=_composition(spec.get("composition"), where=f"{where}.{name}"),
+            )
+        except ValueError as exc:
+            raise ToolsConfigError(f"{where}.{name}: {exc}") from exc
     return operations
+
+
+def _server_tools(raw: Any, *, where: str) -> tuple[str, ...]:
+    """``server_tool:`` — ADR-034 Amendment 1's binding (R16 part 3).
+
+    Absent means "bind to the operation's own name", which is what every
+    pre-Amendment row relies on. A string is one bound tool; a list is an ORDERED
+    composition. An empty list is refused rather than treated as absent: it would
+    bind an operation to nothing, and the drift check would then pass vacuously
+    over a row the live server has never heard of.
+    """
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        names: list[Any] = [raw]
+    elif isinstance(raw, list):
+        names = list(raw)
+    else:
+        raise ToolsConfigError(
+            f"{where}: server_tool must be a string or a list of strings, found {raw!r}"
+        )
+    if not names:
+        raise ToolsConfigError(
+            f"{where}: server_tool must name at least one advertised tool — an empty "
+            "binding would make the ADR-034 drift check vacuous"
+        )
+    for entry in names:
+        if not isinstance(entry, str) or not entry.strip():
+            raise ToolsConfigError(
+                f"{where}: server_tool entries must be non-empty strings, found {entry!r}"
+            )
+    return tuple(str(entry) for entry in names)
+
+
+def _fixed_arguments(raw: Any, *, where: str) -> dict[str, Any]:
+    """``fixed_arguments:`` — constants the ADAPTER supplies, never the plan.
+
+    Kept in config rather than code so the translation is reviewable in the same
+    diff as the binding it belongs to; kept OUT of the params model because a
+    plan must not be able to send them at all. The collision rule that protects
+    the ``args_hash`` lives on :class:`McpOperationConfig`, where every
+    construction path passes through it.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ToolsConfigError(f"{where}: fixed_arguments must be a mapping, found {raw!r}")
+    for key in raw:
+        if not isinstance(key, str):
+            raise ToolsConfigError(f"{where}: fixed_arguments keys must be strings, found {key!r}")
+    return dict(raw)
+
+
+def _composition(raw: Any, *, where: str) -> str | None:
+    """``composition:`` — the NAME of a code-implemented bounded composition.
+
+    A composition is CODE, not configuration, for the reason ``wiring._native()``
+    gives about native tools: deriving a PR number from one call's result and
+    feeding it to the next is logic, and logic expressed as data is logic nobody
+    reviews. Config chooses WHICH composition; the composition declares which
+    server tools it needs; the mismatch is a startup refusal.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ToolsConfigError(f"{where}: composition must be a non-empty string, found {raw!r}")
+    return raw
 
 
 def load_tools_config(path: Path | str) -> ToolsConfig:
