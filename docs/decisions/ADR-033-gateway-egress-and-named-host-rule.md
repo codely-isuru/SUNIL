@@ -85,6 +85,8 @@ valid(url) ⇔ url == canonical(field)            # ADR-017, unchanged (direct-p
    serves an MCP trigger only at its workflow path; the live endpoint was proven at `/mcp/sunil`).
    The **rule is unchanged**: the validator constrains the *host*, never the path, so both the old
    and new values pass it — this is a default-value correction, not a validator change.
-   **Appliers:** `.env.example:193` and the `infra/docker-compose.yml` api-stub line
+   **Appliers:** `.env.example` (its `SUNIL_N8N_MCP_BASE_URL` line *[cited by key, not line
+   number, since 2026-09-17 — QA w2r2 F-5: line numbers rot]*) and the
+   `infra/docker-compose.yml` api-stub line
    (`http://n8n:5678/mcp` → `http://n8n:5678/mcp/sunil`) — integration engineer.
 3. `ARCHITECTURE_V2.md` §5 rows updated the same day (dated inventory append there).
