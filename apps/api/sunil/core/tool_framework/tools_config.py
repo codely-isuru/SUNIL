@@ -51,6 +51,10 @@ class ToolBlock:
     base_url_env: str | None = None
     auth_token_env: str | None = None
     credential_env: tuple[str, ...] = ()
+    #: ``credential_env_as:`` — the NAME each granted credential arrives under in
+    #: the child's environment (ADR-034 Amendment 1). A rename, never a grant:
+    #: condition C-3's allowlist is checked on the key, not the value.
+    credential_env_as: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -231,6 +235,9 @@ def load_tools_config(path: Path | str) -> ToolsConfig:
         operations = _operations(block.get("operations"), where=where)
         command = block.get("command")
         credential_env = tuple(block.get("credential_env") or ())
+        credential_env_as = block.get("credential_env_as") or {}
+        if not isinstance(credential_env_as, dict):
+            raise ToolsConfigError(f"{where}: credential_env_as must be a mapping")
 
         if kind is AdapterKind.MCP_STDIO:
             if not isinstance(command, list) or not command:
@@ -256,6 +263,9 @@ def load_tools_config(path: Path | str) -> ToolsConfig:
             base_url_env=block.get("base_url_env"),
             auth_token_env=block.get("auth_token_env"),
             credential_env=tuple(str(name) for name in credential_env),
+            credential_env_as=tuple(
+                (str(source), str(child)) for source, child in credential_env_as.items()
+            ),
         )
 
     return ToolsConfig(tools=tools)

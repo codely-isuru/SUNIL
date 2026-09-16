@@ -151,7 +151,7 @@ def test_cross_validation_passes_for_the_shipped_pair() -> None:
     cross_validate_permissions(config, registry)
 
 
-def test_the_shipped_config_declares_the_two_live_adapter_kinds() -> None:
+def test_the_shipped_config_declares_the_three_live_adapter_kinds() -> None:
     config = load_tools_config(REPO_ROOT / "config" / "tools.yaml")
 
     assert config.tools["github"].kind is AdapterKind.NATIVE
@@ -161,12 +161,23 @@ def test_the_shipped_config_declares_the_two_live_adapter_kinds() -> None:
     # ADR-033 validator).
     assert config.tools["n8n_mcp"].base_url_env == "SUNIL_N8N_MCP_BASE_URL"
     assert config.tools["n8n_mcp"].auth_token_env == "SUNIL_N8N_MCP_AUTH_TOKEN"
-    # The shipped `mcp_stdio` example is DORMANT — ruling R16 (2026-09-12): the
-    # pinned server was deprecated and advertised none of SUNIL's operation
-    # names, so the block is commented out until the w2r3 verified-pin parcel.
-    # The loader's stdio path stays covered by this module's own synthetic
-    # GOOD_BLOCK, which is a loader fixture and keeps its inert literal.
-    assert "github_mcp" not in config.tools
+    # The shipped `mcp_stdio` tool, re-landed by the w2r3 parcel behind R16's
+    # capture gate. Digest-pinned, not tag-pinned: `:latest` would let an image
+    # swap change what SUNIL's operation names are bound to between two boots,
+    # which is precisely the drift ADR-034 pins versions to make visible.
+    github_mcp = config.tools["github_mcp"]
+    assert github_mcp.kind is AdapterKind.MCP_STDIO
+    assert github_mcp.version == "v1.12.2"
+    assert "@sha256:" in " ".join(github_mcp.command or ())
+    assert github_mcp.credential_env == ("GITHUB_TOKEN",)
+    # ADR-034 Amendment 1 — the bindings the 2026-09-16 capture confirmed, and
+    # the ONE it corrected (`update_issue` does not exist on v1.12.2).
+    assert github_mcp.operations["issues_list"].server_tools == ("list_issues",)
+    assert github_mcp.operations["issues_close"].server_tools == ("issue_write",)
+    assert github_mcp.operations["merge_main"].server_tools == (
+        "create_pull_request",
+        "merge_pull_request",
+    )
 
 
 def test_the_shipped_config_names_no_secret_values() -> None:

@@ -23,16 +23,14 @@ agents:
     github:
       list_recent_activity: allow
 
-    # github_mcp is DORMANT — ruling R16 (2026-09-12,
-    # docs/tasks/integration-w1-rulings.md): the pinned server was deprecated
-    # and served none of these names. Rows return ONLY with the w2r3
-    # verified-pin parcel, TOGETHER with the tools.yaml block (R15 atomicity —
-    # a row here without that block is a startup cross-validation refusal).
-    # To restore verbatim (`issues_close` stays `ask_user` — ARCHITECTURE_V2
-    # §6's worked example; the call parks via C4):
-    # github_mcp:
-    #   issues_list: allow
-    #   issues_close: ask_user
+    # Restored by the w2r3 parcel (ruling R16), 2026-09-16, TOGETHER with the
+    # config/tools.yaml block the capture gate verified — R15's atomicity rule:
+    # a row here without that block is a startup cross-validation refusal.
+    # `issues_close` stays `ask_user` (ARCHITECTURE_V2 §6's worked example: the
+    # call parks via C4 and the owner reads "close issue N" before deciding).
+    github_mcp:
+      issues_list: allow
+      issues_close: ask_user
 
     # MCP over streamable HTTP (the n8n MCP server, Stream E).
     # `post_update` WRITES (it records something outside SUNIL), so it parks via
@@ -56,15 +54,21 @@ agents:
   # touches nothing outside its own container is not an action on the world, and
   # the chokepoint governs actions on the world. The work order is a NON-tool
   # plan step addressed to the agent.
-  # The developer's two ADR-030 §4 rows — `push_branch: allow` (the one
-  # unattended write; narrow because agents/developer/agent.py refuses
-  # protected/base/wrong-prefix branches and the params model forbids a fourth
-  # field) and `merge_main: ask_user` (the owner decides, every time) — are
-  # DORMANT: ruling R16 (2026-09-12). They return only with the w2r3
-  # verified-pin parcel; until then the engine's structural default-deny is
-  # the decision of record. The agent stays as an empty mapping so the
-  # whole-file pins keep their shape. To restore verbatim:
-  #   github_mcp:
+  # ADR-030 §4 gave the developer TWO rows. The w2r3 parcel restores ONE.
+  #
+  # `merge_main: ask_user` — the owner decides, every time. Restored 2026-09-16
+  # with the verified pin. It is now a bounded composition (open a PR, then merge
+  # that PR number), but the governance did not change: one operation, one
+  # approval, bound to exactly {project_key, branch, base_branch}. What the owner
+  # gains is a server-side reviewable PR trail (R16 part 3).
+  #
+  # `push_branch: allow` — the one unattended write — is STILL DORMANT, and the
+  # parcel deliberately did not restore it (R16 part 4 / parcel step 5). Its
+  # executor was ruled toward the ENGINE's own sandbox-scoped token, and the
+  # final shape belongs to the engine-enablement ADR, which has not landed. So
+  # this parcel adds NO new unattended write. To restore verbatim, with that ADR
+  # and the tools.yaml row it needs:
   #     push_branch: allow
-  #     merge_main: ask_user
-  developer: {}
+  developer:
+    github_mcp:
+      merge_main: ask_user

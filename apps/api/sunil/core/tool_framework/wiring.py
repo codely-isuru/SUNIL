@@ -71,7 +71,12 @@ def _build_one(block: ToolBlock, *, settings: Any) -> Any:
             command=list(block.command or ()),
             operations=block.operations,
             credential_env=block.credential_env,
+            credential_env_as=dict(block.credential_env_as),
             settings=settings,
+            # The same `config/projects.yaml` mapping the native GitHub tool
+            # gets, for the same M1 T-16 reason: a bounded composition resolves
+            # `project_key` → repository from config, never from the plan.
+            project_repos=_project_repos(settings),
         )
     if block.kind is AdapterKind.MCP_HTTP:
         from sunil.tools.mcp.http import McpHttpAdapter  # noqa: PLC0415

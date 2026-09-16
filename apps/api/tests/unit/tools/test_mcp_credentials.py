@@ -191,3 +191,73 @@ def test_default_base_env_is_the_process_environment_filtered() -> None:
 
     assert "SUNIL_TEST_LEAK_MARKER" not in env
     assert env["GITHUB_TOKEN"] == "unit-test-token-value"
+
+
+# --------------------------------------------------------------------------- #
+# ADR-034 Amendment 1 — the child-env NAME a granted credential arrives under.
+#
+# The official `github/github-mcp-server` reads `GITHUB_PERSONAL_ACCESS_TOKEN`
+# (capture 2026-09-16, `docs/tasks/S3-github.md` §0); SUNIL's grantable name is
+# `GITHUB_TOKEN` and must stay that, because that is where condition C-3's
+# allowlist and the `Settings` field live. So the NAME the child sees is config,
+# and the name the allowlist checks is the SOURCE — never the alias.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_granted_credential_can_arrive_under_the_name_the_server_reads() -> None:
+    env = build_child_env(
+        ["GITHUB_TOKEN"],
+        _Settings(),
+        base_env={},
+        aliases={"GITHUB_TOKEN": "GITHUB_PERSONAL_ACCESS_TOKEN"},
+    )
+
+    assert env["GITHUB_PERSONAL_ACCESS_TOKEN"] == "unit-test-token-value"
+    # And ONLY under that name: shipping both would widen the child's reach for
+    # no reason and leave a second copy of the secret in the process env.
+    assert "GITHUB_TOKEN" not in env
+
+
+def test_an_alias_cannot_smuggle_an_ungrantable_secret_past_the_allowlist() -> None:
+    """The escalation this design has to refuse: aliasing is a RENAME of a name
+    the allowlist already passed, never a way to grant a new one. The check is on
+    the source, so `SESSION_SECRET` is refused whatever it would be called in the
+    child."""
+    with pytest.raises(ToolAdapterStartupError) as caught:
+        build_child_env(
+            ["SESSION_SECRET"],
+            _Settings(),
+            base_env={},
+            aliases={"SESSION_SECRET": "GITHUB_PERSONAL_ACCESS_TOKEN"},
+        )
+
+    assert "SESSION_SECRET" in str(caught.value)
+    assert "cookie-signing-key" not in str(caught.value)
+
+
+def test_an_alias_for_a_credential_that_was_not_granted_is_refused() -> None:
+    """A dangling alias means config and reality have drifted — most likely a
+    `credential_env` entry was removed and its alias left behind. Loud, not
+    ignored."""
+    with pytest.raises(ToolAdapterStartupError):
+        build_child_env(
+            ["GITHUB_TOKEN"],
+            _Settings(),
+            base_env={},
+            aliases={"SUNIL_N8N_MCP_AUTH_TOKEN": "N8N_TOKEN"},
+        )
+
+
+def test_an_alias_cannot_overwrite_a_bootstrap_variable() -> None:
+    """`PATH` under another name is one thing; a credential landing ON `PATH` is
+    a child that cannot load its own runtime — or worse, one that runs something
+    else."""
+    with pytest.raises(ToolAdapterStartupError) as caught:
+        build_child_env(
+            ["GITHUB_TOKEN"],
+            _Settings(),
+            base_env={"PATH": "/usr/bin"},
+            aliases={"GITHUB_TOKEN": "PATH"},
+        )
+
+    assert "PATH" in str(caught.value)

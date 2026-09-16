@@ -32,54 +32,81 @@ tools:
         params_ref: sunil.tools.github.adapter:GitHubListRecentActivityParams
 
   # ------------------------------------------------------------- mcp_stdio ---
-  # github_mcp — DORMANT by ruling R16 (2026-09-12,
-  # docs/tasks/integration-w1-rulings.md). Committed commented-out ON PURPOSE
-  # (the S2-F compose-block pattern): this is the ruled interim state, not an
-  # unfinished edit.
+  # github_mcp — RE-LANDED by the w2r3 parcel (ruling R16), 2026-09-16, after
+  # the capture gate passed. It was DORMANT since 2026-09-12 because the old pin
+  # (npx @modelcontextprotocol/server-github@0.6.2) is upstream-deprecated and
+  # advertised NONE of SUNIL's operation names.
   #
-  # WHY: the previous pin — npx @modelcontextprotocol/server-github@0.6.2 —
-  # is upstream-deprecated ("no longer supported") and advertised NONE of
-  # SUNIL's four operation names. tools/list, captured 2026-09-12:
-  #   create_branch, create_issue, create_or_update_file, create_pull_request,
-  #   create_repository, fork_repository, get_file_contents, push_files,
-  #   search_repositories
-  # Under ADR-034's drift check any one unserved row refuses start() and takes
-  # the ENTIRE tool out of the registry — and spawning a dead package with
-  # GITHUB_TOKEN in its environment is not an acceptable failure mode. So no
-  # executable github_mcp surface exists until a VERIFIED pin lands.
+  # THE CAPTURE (R16 part 2's gate; verbatim in docs/tasks/S3-github.md §0 and
+  # pinned byte-for-byte by apps/api/tests/unit/github_mcp/): the official
+  # github/github-mcp-server v1.12.2 was booted on Docker stdio with a scoped
+  # token, answered MCP 2025-06-18, and advertised 45 tools — including
+  # list_issues, issue_write, create_pull_request and merge_pull_request.
   #
-  # RE-LANDING is ONE atomic parcel (w2r3 — R16 names every step): pin the
-  # official github/github-mcp-server (PIN-ME: unverifiable offline from this
-  # tree; parcel step 0 boots the candidate, captures tools/list verbatim into
-  # the task file and pins it in a test — the n8n post_update pattern), bind
-  # SUNIL's operation names to the captured verbs via ADR-034 Amendment 1
-  # (`server_tool:` bindings + the merge_main composition; operation names
-  # stay SUNIL's), and land this block + the permission rows + the pin test
-  # TOGETHER (R15's atomicity rule). The rows to restore, verbatim:
+  # ONE of R16's four expected bindings was FALSIFIED and corrected here:
+  # `update_issue` does not exist on v1.12.2 (issue create/update were merged
+  # into `issue_write`). That correction is the naming law working as designed —
+  # SUNIL's operation is still `issues_close`, so the permission row, the
+  # approval card and the audit history did not move; only the binding did.
+  github_mcp:
+    kind: mcp_stdio
+    display_name: GitHub MCP server
+    # Digest-pinned, not tag-pinned: `:latest` would let a silent image swap
+    # change what SUNIL's names are bound to between two boots, which is exactly
+    # the drift ADR-034 pins versions to make visible.
+    command: [docker, run, "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+              "ghcr.io/github/github-mcp-server@sha256:508a0857ec762b1ab1cece29193345b501fab1dd9d1228a7b617062954cecac6",
+              stdio]
+    version: v1.12.2
+    credential_env: ["GITHUB_TOKEN"]
+    # The server reads GITHUB_PERSONAL_ACCESS_TOKEN; SUNIL's grantable name —
+    # the one condition C-3's allowlist and the Settings field are keyed on —
+    # is GITHUB_TOKEN. A RENAME, never a grant: the allowlist is checked on the
+    # left-hand name (ADR-034 Amendment 1, tools/mcp/credentials.py).
+    credential_env_as: {GITHUB_TOKEN: GITHUB_PERSONAL_ACCESS_TOKEN}
+    operations:
+      issues_list:
+        read_only: true
+        timeout_s: 30
+        server_tool: list_issues     # confirmed at capture
+        params_ref: sunil.tools.mcp.params:IssuesListParams
+      issues_close:
+        read_only: false
+        timeout_s: 30
+        # R16 expected `update_issue`; the capture found `issue_write`.
+        server_tool: issue_write
+        # Adapter-supplied constants a plan cannot reach. They may not collide
+        # with a params_model field — the loader refuses that — because the
+        # args_hash an approval binds to is computed over the model, and the
+        # card says "close issue N".
+        fixed_arguments: {method: update, state: closed}
+        params_ref: sunil.tools.mcp.params:IssuesCloseParams
+      merge_main:
+        read_only: false
+        timeout_s: 30
+        # R16 part 3's bounded composition. The capture settled that it is the
+        # ONLY shape: of 45 advertised tools not one merges a branch into a
+        # branch. ONE governed operation, ONE approval over
+        # {project_key, branch, base_branch}; the PR number is derived state
+        # minted inside the approved execution. BOTH tools are drift-checked.
+        server_tool: [create_pull_request, merge_pull_request]
+        composition: merge_via_pull_request
+        params_ref: sunil.tools.mcp.params:MergeMainParams
   #
-  # github_mcp:
-  #   kind: mcp_stdio
-  #   display_name: GitHub MCP server
-  #   command: [PIN-ME — github/github-mcp-server, digest-pinned at capture]
-  #   version: PIN-ME
-  #   credential_env: ["GITHUB_TOKEN"]
-  #   operations:
-  #     issues_list:    # expected binding: list_issues — verify at capture
-  #       read_only: true
-  #       timeout_s: 30
-  #       params_ref: sunil.tools.mcp.params:IssuesListParams
-  #     issues_close:   # expected binding: update_issue(state=closed)
+  # push_branch STAYS DORMANT — R16 part 4 and parcel step 5, verbatim: "if that
+  # ADR has not landed, push_branch stays dormant and the parcel lands the other
+  # three operations without it; the parcel must not invent the push executor."
+  # The engine-enablement ADR (push authority + runtime isolation, one decision
+  # about one credential) has not landed. The capture confirms R16's finding on
+  # the new server too: `push_files` is an API content-commit, not a branch
+  # push, and the commits being pushed exist only in the OpenHands sandbox.
+  # sunil.tools.mcp.params:PushBranchParams stays in the tree (the
+  # RunWorkflowParams precedent, R15). To restore, verbatim, WITH that ADR:
+  #     push_branch:
   #       read_only: false
   #       timeout_s: 30
-  #       params_ref: sunil.tools.mcp.params:IssuesCloseParams
-  #     push_branch:    # executor ruled toward the ENGINE's scoped token;
-  #       read_only: false   # final shape belongs to the engine-enablement
-  #       timeout_s: 30      # ADR (R16 part 4)
   #       params_ref: sunil.tools.mcp.params:PushBranchParams
-  #     merge_main:     # expected binding: create_pull_request +
-  #       read_only: false   # merge_pull_request — ONE approval over
-  #       timeout_s: 30      # {project_key, branch, base_branch} (R16 part 3)
-  #       params_ref: sunil.tools.mcp.params:MergeMainParams
+  #   plus config/permissions.yaml: developer.github_mcp.push_branch: allow
 
   # -------------------------------------------------------------- mcp_http ---
   n8n_mcp:
