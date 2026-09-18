@@ -144,6 +144,30 @@ behaviour change** — the gate stays with the write-path wave.
 | Mutation, `approval_ref=None` at manager.py:527 | 1 failed / 1086 passed — the new test, alone |
 | Mutation, `await reaper.start()` removed from the lifespan | 1 failed — the lifespan test, alone |
 
+### 5.1 Ground-truth re-verification (2026-09-18, third session on this lane)
+
+The two sessions before this one ended at a boundary mid-build, so **nothing above
+was taken on trust**: the environment was rebuilt (`uv venv` + `-e .[dev]` in
+`apps/api`, no extra packages — the package set is byte-identical to the
+reference worktree's), the suite was re-run, and every ruled property was
+re-proved by mutation rather than by reading the test.
+
+Suite as inherited, SQLite leg: **1111 passed, 57 skipped** — the figure above,
+independently reproduced.
+
+**R13 mutation ledger.** Each mutant was applied alone, the subset run, then
+`git checkout --` reverted it (tree verified clean after each):
+
+| Mutant (production code) | Ruled property it breaks | Result |
+|---|---|---|
+| `resolve` moved OUTSIDE `asyncio.timeout(self._budget_s)` in `recall` | R13 item 2 — one budget covers resolve + vendor | **1 failed** — `test_resolution_and_the_vendor_call_share_one_recall_budget`, alone (47 passed) |
+| audit row minted BEFORE `_resolve_for_write`, sink given the unresolved scope | R13 item 3 — resolve precedes the row; a failed resolve writes none | **2 failed** — `…raises_through_write_before_the_audit_row`, `…outage_surfaces_on_write_with_no_audit_row` (46 passed) |
+| `resolver = None` on `wiring.build_memory_service`'s engine branch | R13 item 4 — the engine branch wires a resolver | **2 failed** — `test_the_engine_branch_builds_a_service_with_a_resolver`, `test_the_composed_app_gives_its_turn_executor_a_resolved_memory_service` (14 passed) |
+
+The third mutant is the one that matters for the lane's whole reason for
+existing: it is the exact state `V2` shipped in (a built resolver, wired into
+nothing), and before this branch **no test in the tree failed on it**.
+
 ## 6. Open / owed
 
 1. **Postgres leg not run on this machine** — the Docker daemon would not start
