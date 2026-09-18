@@ -262,7 +262,16 @@ What was tried on 2026-09-18, in order, before giving up (~15 min):
 * `wsl -d docker-desktop -- docker …` is refused by Docker Desktop itself
   ("not supported"), so the in-distro daemon is not a way round it;
 * no native Postgres on this host either — nothing listening on 5432–5436, no
-  `psql` on `PATH`, no PostgreSQL install directory.
+  `psql` on `PATH`, no PostgreSQL install directory;
+* final state, re-checked ten minutes after the restart: the pipe is **gone
+  again** and `docker ps` now fails fast instead of hanging. Engine mode ruled
+  out as the cause — `settings-store.json` still reads `WslEngineEnabled: true`
+  and `docker context show` is `desktop-linux`. (One remediation attempt invoked
+  `DockerCli.exe -SwitchDaemon`, which switches to the *Windows* engine rather
+  than restarting; it timed out with `context deadline exceeded` against the
+  already-unresponsive backend and changed nothing — those two readings are the
+  proof. Recorded so a reviewer who finds `-SwitchDaemon` in this lane's shell
+  history knows it was a misfire that left no state behind.)
 
 **What the DM needs to decide**, because a fourth attempt on this machine will
 produce the same paragraph: run the leg where a daemon works (CI, or another
