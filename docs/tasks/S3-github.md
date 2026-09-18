@@ -185,6 +185,36 @@ $ .venv/Scripts/python -m pytest tests -q      # apps/api, Python 3.13.14, SQLAl
 warnings are the pre-existing httpx/anyio/pytest-asyncio deprecations carried by the branch point;
 this parcel adds none.
 
+### 6.3 The verification table — R16's parcel and ADR-034 Amendment 1, item by item
+
+ADR-034 Amendment 1 is now merged on `origin/task/S3-docs` (`59b3ac2`, 2026-09-17). It was read
+back against the code **after** the code landed — §1 of this file was written to R16 part 3's
+specification while the amendment did not yet exist, so this row-by-row check is the first time
+instrument and implementation have been compared.
+
+| # | Required by | Claim | Verified how | Verdict |
+|---|---|---|---|---|
+| 1 | R16 part 2 / parcel step 0 | the verbatim capture exists as an artefact | `apps/api/tests/unit/github_mcp/fixtures/github_mcp_server_v1_12_2.json`, 177 899 bytes | **PASS** |
+| 2 | R16 part 2 / parcel step 0 | a test **replays** it through the real adapter | `test_recorded_handshake.py` — 14 tests, all green. Includes `test_the_capture_is_the_artefact_the_config_pins` (provenance: the recording is of the digest `config/tools.yaml` spawns, not some other build) and `test_the_capture_carries_no_credential` | **PASS** |
+| 3 | Am.1 point 2 | `server_tool:` binding, default = operation name | `config/tools.yaml`: `issues_list → list_issues`, `issues_close → issue_write`; `n8n_mcp.post_update` carries no binding and is unchanged | **PASS** |
+| 4 | Am.1 point 2 | fixed arguments are adapter-side and cannot collide with a params field | `issues_close` carries `fixed_arguments: {method: update, state: closed}`; loader refusal covered by `test_mcp_server_tool_bindings.py` | **PASS** |
+| 5 | Am.1 point 3 | composed `merge_main`, ONE operation, ONE approval over `{project_key, branch, base_branch}`, PR number derived | `server_tool: [create_pull_request, merge_pull_request]` + `composition: merge_via_pull_request`; `test_mcp_merge_main_composition.py` + `test_merge_main_composes_over_the_recorded_server` | **PASS** |
+| 6 | Am.1 points 2–3 | the drift check verifies the **bindings**, and for a composition **every** listed tool | `adapter.py:155 _drift_check` iterates `config.server_tools`; `test_dropping_any_one_bound_verb_takes_the_whole_tool_out` is parameterised over all four verbs — dropping either half of the composition takes the whole tool out of the registry | **PASS** |
+| 7 | Am.1 point 3 | a composition cannot reach a tool the drift check never verified | `adapter.py:231 call_server_tool` asserts against `_bound_server_tools` before `tools/call` | **PASS** |
+| 8 | parcel step 4 | permission rows restored **minus** `push_branch` | `permissions.yaml`: `project_manager.github_mcp {issues_list: allow, issues_close: ask_user}`, `developer.github_mcp {merge_main: ask_user}`. `push_branch: allow` absent → the parcel adds no new unattended write | **PASS** |
+| 9 | R16 part 4 / parcel step 5 | `push_branch` dormant **with its own note** | `config/tools.yaml:96-109` (restore recipe verbatim, engine-enablement ADR named) and `config/permissions.yaml:65-71`. `PushBranchParams` still in the tree (R15 precedent) | **PASS** |
+| 10 | parcel step 4 | the four named test modules reverted to live-state assertions | `test_developer_mount.py` (three referenced operations; `push_branch` absent from config **and** `is None` in the matrix), `test_real_seams.py:159` (whole-set pin = the three landed operations), `test_engine.py`, `test_tools_config.py` — all green in the full run | **PASS** |
+| 11 | QA F-1 | the scan is **standalone** | `apps/api/tests/unit/policies/test_non_tool_actions_never_become_tools.py`, its own package, independent of any mount module | **PASS** |
+| 12 | QA F-1 | the scan **bites** | **Mutation run, this round.** A `fix_and_pr` operation was added to the `github_mcp` block of `config/tools.yaml` → `test_no_tool_in_the_whole_catalogue_exposes_it[fix_and_pr]` **FAILED** (`assert 'fix_and_pr' not in {'fix_and_pr', 'issues_close', 'issues_list', 'list_recent_activity', 'merge_main', 'post_update'}`), naming the ruling in the assertion message. Mutation reverted (`git checkout --`); module back to 5 passed, tree clean | **PASS — proven, not asserted** |
+
+One discrepancy worth stating plainly, because it is the parcel's whole point: R16 part 2 and
+Amendment 1 point 2 both illustrate the binding with `issues_close → update_issue`. The capture
+falsified that verb and the code binds `issue_write`. This is not drift between instrument and
+implementation — both documents flag the binding as the thing that absorbs exactly this, and R16
+said "confirmed or corrected at capture". It is pinned so it cannot quietly revert
+(`test_r16s_expected_binding_for_issues_close_is_falsified_by_the_capture`). The amendment's
+illustrative example remains as written; SA may annotate it at leisure.
+
 ## Notes for the reviewer
 
 * `GITHUB_TOKEN` stays the single grantable GitHub credential name (`GRANTABLE_CREDENTIAL_NAMES`,
