@@ -155,11 +155,13 @@ behaviour change** — the gate stays with the write-path wave.
 
 | Gate | Result |
 |---|---|
-| Suite, SQLite leg, run 1 / run 2 | **1111 passed, 57 skipped** (both) — baseline `V2` was 1085 / 47 |
-| Suite, Postgres leg | see §6 |
-| Tests added | **36** (26 that run on the SQLite leg + 10 Postgres-gated) |
-| Mutation, `approval_ref=None` at manager.py:527 | 1 failed / 1086 passed — the new test, alone |
-| Mutation, `await reaper.start()` removed from the lifespan | 1 failed — the lifespan test, alone |
+| Suite, SQLite leg, run 1 / run 2 | **1114 passed, 57 skipped** (both) — baseline `V2` was 1085 / 47 |
+| Suite, Postgres leg | **still not run on this machine** — see §6.1, which is now an escalation, not a note |
+| Tests added | **39** (29 that run on the SQLite leg + 10 Postgres-gated) |
+| Mutation, `approval_ref=None` at manager.py:527 | 1 failed / 1110 passed — the new test, alone |
+| Mutation, `await reaper.start()` removed from the lifespan | 1 failed / 798 passed (`tests/unit`) — the lifespan test, alone |
+| Mutants run this session, one at a time, each reverted | **10**, all caught — §5.1 / §5.2 / §3 |
+| DC-23 comment | 11 added lines in `agent.py`, **0 of them non-comment** (`git diff … \| grep '^+' \| grep -v '^+ *#'` → empty) |
 
 ### 5.1 Ground-truth re-verification (2026-09-18, third session on this lane)
 
@@ -169,8 +171,15 @@ was taken on trust**: the environment was rebuilt (`uv venv` + `-e .[dev]` in
 reference worktree's), the suite was re-run, and every ruled property was
 re-proved by mutation rather than by reading the test.
 
-Suite as inherited, SQLite leg: **1111 passed, 57 skipped** — the figure above,
-independently reproduced.
+Suite as inherited, SQLite leg: **1111 passed, 57 skipped** — the interrupted
+session's figure, independently reproduced before a line was touched. With
+§5.2's three additions it is **1114 passed, 57 skipped**, run twice, identical
+both times.
+
+What was KEPT from the interrupted session, and why: all of it. Every test in
+the wip commit asserts a property one of this session's ten mutants confirms is
+load-bearing, so there was nothing to rewrite — the two things the session was
+missing were the verification itself and §5.2's gap.
 
 **R13 mutation ledger.** Each mutant was applied alone, the subset run, then
 `git checkout --` reverted it (tree verified clean after each):
@@ -200,15 +209,77 @@ The count-only shape is pinned positively too, not just by omission:
 `audit.rows == [{"deleted": 7}]`, so a future field carrying memory content
 fails the test rather than slipping past an `assert deleted == 7`.
 
+### 5.2 `tests/unit/memory/test_reaper_predicate.py` — the one gap this session closed
+
+Mutating the reaper's SQL exposed the hole the skipped Postgres leg leaves. The
+destructive half of this lane — *which* rows the delete matches — was graded
+**only** by `test_reaper_sql.py`, and on a machine with no Docker daemon that
+file skips. Dropping `expires_at IS NOT NULL` from the predicate therefore left
+the whole SQLite leg green while the statement destroyed every
+"keep until superseded" memory in the store: the rows with no TTL, which is to
+say the ones the owner never asked to expire.
+
+So the same production statement is now graded with no server. The provider is
+real, the statement is the one `delete_expired` builds (never restated in the
+test — a test that rebuilt the `delete()` would pass against itself), and only
+the transport is a double: an engine that records what was executed inside
+`engine.begin()` and reports a row count. SQLAlchemy compiles it against the
+REAL Postgres dialect and the assertions are on the emitted SQL.
+
+| Mutant | Result (whole `tests/unit/memory`) |
+|---|---|
+| `expires_at IS NOT NULL` dropped | **1 failed** — `test_the_reaper_deletes_only_what_the_recall_filter_already_hides` |
+| boundary inverted, `<=` → `>` (delete the LIVE rows) | **1 failed** — same test |
+| `int(result.rowcount or 0)` → `result.rowcount` | **1 failed** — `test_a_driver_that_reports_no_rowcount_counts_as_zero` |
+
+Each of those three mutants was caught by this file **alone**, with the ten
+Postgres-gated tests skipping beside it. This does not replace the Postgres leg
+(rows really moving, `ON DELETE CASCADE` really cascading, still §6.1's owed
+work) — it means a machine that cannot run Postgres can no longer ship a reaper
+that deletes the wrong rows.
+
 ## 6. Open / owed
 
-1. **Postgres leg not run on this machine** — the Docker daemon would not start
-   here, and this suite has no SQLite fallback by design (a vector search SQLite
-   cannot run would pass against nothing). The 10 new Postgres-gated tests
-   (`test_service_resolution.py`'s 6, `test_reaper_sql.py`'s 4) therefore SKIPPED
-   LOUDLY rather than ran. **They must be run before this branch merges** —
-   `SUNIL_TEST_DATABASE_URL=postgresql+psycopg://…` against
-   `pgvector/pgvector:0.8.6-pg17`, the blessed throwaway pattern from
-   integration-w2r2 §5.
+### 6.1 The Postgres leg — ESCALATION, third session running
+
+**Still not run, and the blocker is the machine, not the branch.** This suite has
+no SQLite fallback by design (a vector search SQLite cannot run would pass
+against nothing), so the 10 Postgres-gated tests — `test_service_resolution.py`'s
+6 and `test_reaper_sql.py`'s 4 — SKIPPED LOUDLY rather than ran, for the third
+lane session in a row.
+
+What was tried on 2026-09-18, in order, before giving up (~15 min):
+
+* `docker version` → client 29.8.0 fine, **`Error response from daemon: Docker
+  Desktop is unable to start`**;
+* Docker Desktop was already running (9 processes) and the `docker-desktop` WSL2
+  distro reported `Running` — so it was started, waited on for 200 s, and polled;
+* the `\\.\pipe\dockerDesktopLinuxEngine` named pipe **appeared**, and every
+  subsequent `docker ps` / `docker version` then **hung** rather than erroring —
+  a wedged engine, not a missing one;
+* full restart: Docker processes killed, `wsl --shutdown` (completed cleanly),
+  Docker Desktop relaunched, polled every 10 s for 240 s — never came up;
+* `wsl -d docker-desktop -- docker …` is refused by Docker Desktop itself
+  ("not supported"), so the in-distro daemon is not a way round it;
+* no native Postgres on this host either — nothing listening on 5432–5436, no
+  `psql` on `PATH`, no PostgreSQL install directory.
+
+**What the DM needs to decide**, because a fourth attempt on this machine will
+produce the same paragraph: run the leg where a daemon works (CI, or another
+device), with the blessed throwaway pattern from integration-w2r2 §5 —
+
+```
+docker run --rm -d -p 5435:5432 -e POSTGRES_PASSWORD=… --name sunil-pg \
+  pgvector/pgvector:0.8.6-pg17
+SUNIL_TEST_DATABASE_URL='postgresql+psycopg://postgres:…@127.0.0.1:5435/postgres' \
+  .venv/Scripts/python -m pytest -q          # expect 1124 passed, 47 skipped
+```
+
+Mitigation landed rather than waited for: §5.2's predicate file, which moves the
+*destructive* property — which rows the delete matches — onto the leg that runs
+everywhere. What the Postgres leg still uniquely proves: rows really disappearing,
+`memory_entity_links` really cascading, `EntityResolver` really resolving a `key`
+to a row id against the real entity schema, and R12 rule 3's upsert really being
+idempotent. **None of that has been executed yet on any machine.**
 2. The reaper's audit sink has no production implementation (see §2).
 3. DC-23 remains open, by design (see §4).
