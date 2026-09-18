@@ -199,6 +199,17 @@ class ProjectManagerAgent:
         for role, content in ctx.history[:-1]:
             if role in ("user", "assistant"):
                 messages.append(ChatMessage(role=role, content=content))
+        # ⚠ THREAT_MODEL DC-23 (Security w2r2 condition C-A) — OPEN, and it is
+        # these three lines. Recalled memory enters the analysis prompt with
+        # role="system", uncapped, and with no `local_only` filter: content SUNIL
+        # stored from earlier turns is therefore framed as SUNIL's own
+        # instructions, and a `full_local_only` memory would ship to a remote
+        # model. Nothing here writes memories yet, which is the only reason this
+        # is survivable today. DC-23 MUST close in whichever wave lands a
+        # production memory-write or seeding path — delimited untrusted framing,
+        # a non-system role, a byte cap, and the C3 §2 local_only filter. Owner:
+        # the memory-write wave. Do not "tidy" this comment away without closing
+        # the control; the gate is the comment's whole job.
         for item in ctx.memory_items:
             messages.append(
                 ChatMessage(role="system", content=f"[recalled memory] {item['content']}")

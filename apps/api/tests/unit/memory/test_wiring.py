@@ -17,8 +17,17 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from sunil.api.wiring import Seams, SeamUnavailable, resolve_memory_provider
+from sunil.api.wiring import (
+    Seams,
+    SeamUnavailable,
+    build_memory_service,
+    resolve_memory_provider,
+)
+from sunil.core.memory.service import MemoryService
+from sunil.core.registry.loader import ProjectDefinition
 from sunil.memory_providers.pgvector_provider import PgVectorMemoryProvider
+from tests.fakes.fake_memory_provider import FakeMemoryProvider
+from tests.ops_harness import build_ops_app
 from tests.spine_harness import build_settings
 
 
@@ -117,3 +126,168 @@ def test_an_injected_seam_still_wins_over_a_real_selection() -> None:
     )
 
     assert resolved is injected
+
+
+# --------------------------------------------------------------------------- #
+# R13 item 4 — the MemoryService construction site
+# --------------------------------------------------------------------------- #
+def test_the_engine_branch_builds_a_service_with_a_resolver() -> None:
+    """R13 item 4. Without this the resolver Stream C built is dead code in the
+    deployed app: a `kind="project"` scope reaches the provider with the human
+    key still in it, and every memory about a project is filed under the literal
+    string "pda" — a scope nothing that resolves ids will ever read."""
+    from sunil.core.memory.entities import EntityResolver
+
+    application_engine = engine()
+
+    service = build_memory_service(
+        build_settings(sunil_memory_provider="pgvector"),
+        Seams(),
+        engine=application_engine,
+    )
+
+    assert isinstance(service, MemoryService)
+    assert isinstance(service._resolver, EntityResolver)
+    assert service._resolver.engine is application_engine
+
+
+def test_the_fake_wired_composition_gets_no_resolver() -> None:
+    """The frozen C3 contract suite runs against the fake-wired app, and its
+    scopes are already ids. A resolver there would put an entity-table read in
+    front of every recall in a composition that has no entity tables."""
+    service = build_memory_service(
+        build_settings(sunil_memory_provider="fake"),
+        Seams(memory_provider=FakeMemoryProvider()),
+        engine=None,
+    )
+
+    assert service._resolver is None
+
+
+def test_the_service_carries_the_project_registry_for_r12_rule_3() -> None:
+    """R12 rule 3 materialises registry → table on the write path, so the service
+    needs the PROJECT REGISTRY (`config/projects.yaml`). Passing `None` would
+    make rule 3 unreachable in the deployed app while its tests stayed green on
+    an injected mapping."""
+    registry = {"pda": ProjectDefinition(key="pda", display_name="PDA Learning")}
+
+    service = build_memory_service(
+        build_settings(sunil_memory_provider="pgvector"),
+        Seams(),
+        engine=engine(),
+        projects=registry,
+    )
+
+    assert service._project_registry == registry
+
+
+def test_the_composed_app_gives_its_turn_executor_a_resolved_memory_service() -> None:
+    """The call site, not just the builder. `main.create_app` constructed
+    `MemoryService(memory_provider)` by hand, so a resolver added to `wiring.py`
+    alone would be wired into nothing — the deployed turn would still recall with
+    an unresolved scope. This asserts the APPLICATION's own turn executor holds
+    the service the builder makes, registry included.
+    """
+    from sunil.core.memory.entities import EntityResolver
+
+    app, sessionmaker = build_ops_app()
+    memory = app.state.turn_executor._memory
+
+    assert isinstance(memory._resolver, EntityResolver)
+    assert memory._resolver.engine is sessionmaker.kw["bind"]
+    # The PROJECT REGISTRY (`config/projects.yaml`), not the entity table.
+    assert memory._project_registry == app.state.registries.projects
+
+
+# --------------------------------------------------------------------------- #
+# The reaper's kill switch and its lifespan wiring (R15, S2-C §7.4)
+# --------------------------------------------------------------------------- #
+def _app_with_a_real_memory_store(**overrides):
+    """A composition whose memory provider is the REAL one (`pgvector`) — the
+    only shape that HAS a `delete_expired` to schedule. Composed here rather than
+    through `build_ops_app`, which injects the C3 fake as a seam (and an injected
+    seam wins over the selection, correctly). Nothing here touches a database:
+    the question is what `create_app` WIRES, not what the store returns.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import StaticPool
+
+    from sunil.main import create_app
+    from sunil.settings import Settings
+    from tests.fakes.fake_approvals import FakeApprovalsService
+    from tests.fakes.fake_provider import FakeProvider
+    from tests.ops_harness import CONFIG_DIR
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    return create_app(
+        Settings(
+            _env_file=None,
+            session_secret="test-session-secret-not-a-real-key",
+            sunil_config_dir=CONFIG_DIR,
+            sunil_memory_provider="pgvector",
+            sunil_tool_manager="fake",
+            sunil_approvals_service="fake",
+            sunil_llm_provider_lane="fake",
+            **overrides,
+        ),
+        seams=Seams(
+            sessionmaker=async_sessionmaker(engine, expire_on_commit=False),
+            provider=FakeProvider(),
+            approvals=FakeApprovalsService(),
+            tool_manager=lambda audit_hook: None,
+        ),
+    )
+
+
+def test_the_reaper_is_built_by_default() -> None:
+    """Defaults ON, like the approvals sweeper's switch and for the mirror-image
+    reason: the safe posture is the one an operator gets by doing nothing, and
+    here "nothing" means expired memories are filtered from recall forever and
+    never actually destroyed."""
+    from sunil.core.memory.reaper import MemoryReaper
+
+    app = _app_with_a_real_memory_store()
+
+    assert isinstance(app.state.memory_reaper, MemoryReaper)
+
+
+def test_the_kill_switch_turns_the_reaper_off() -> None:
+    """The switch exists for the real operator cases — a second process owning
+    the schedule, or a reap implicated in an incident — and it must leave the app
+    bootable with the rest of memory working."""
+    app = _app_with_a_real_memory_store(sunil_memory_reaper_enabled=False)
+
+    assert app.state.memory_reaper is None
+
+
+def test_a_store_that_cannot_delete_gets_no_reaper() -> None:
+    """The C3 fake has no `delete_expired`, and neither will Mem0 until someone
+    builds it. A runner over a store with no delete would tick forever doing
+    nothing — so it is not built, and the reason is logged rather than inferred
+    later from an ever-growing table."""
+    assert not hasattr(FakeMemoryProvider(), "delete_expired")
+
+    app, _ = build_ops_app()  # fake-wired memory provider
+
+    assert app.state.memory_reaper is None
+
+
+async def test_the_reaper_is_started_on_boot_and_cancelled_on_shutdown() -> None:
+    """The lifespan half — the sweeper's own lifespan test, for the other runner.
+    A reaper built and never started is a reaper that deletes nothing, and a
+    reaper never cancelled holds a connection into `engine.dispose()` and logs an
+    error on every restart."""
+    app = _app_with_a_real_memory_store()
+
+    async with app.router.lifespan_context(app):
+        reaper = app.state.memory_reaper
+        assert reaper is not None, "the reaper seam was left unwired"
+        task = reaper._task
+        assert task is not None and not task.done()
+
+    assert task.cancelled() or task.done(), "shutdown must stop the reap loop"
+    assert app.state.memory_reaper._task is None

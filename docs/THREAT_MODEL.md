@@ -250,8 +250,7 @@ list may be described as present until its milestone ships.
 | DC-17 | **Approval before a spoken instruction executes a write.** M9's auto-send is safe *only* while every reachable tool operation is read-only. When write-capable tools land, a misheard command becomes an executed command | **M5** | ADR-020. The answer is the `ASK_USER` path (DC-2), not a voice-specific control. `SUNIL_VOICE_AUTO_SEND` exists so the default can be flipped in one config edit on that day |
 | ~~DC-18~~ | ~~Purge of `var/voice/`~~ — **WITHDRAWN 2026-08-19.** ADR-021 Amendment 1: `local_file` is not built, the setting does not exist, and nothing is retained | — | Kept struck through rather than deleted, so the register shows a control that was removed by *removing the feature*, not by lowering a claim |
 | DC-19 | **Rate limiting on the voice endpoints** | M11 | M1/M9 have one user and no limiter anywhere in the system. The speak endpoint's bounded cache caps the common case, not a determined loop |
-| DC-21a | **DC-21 wording fix (Security w2r2 F-3):** control #3 holds fail-closed, but a lifespan-start 403 leaves the tool present-but-transport_error, not absent - the row must state what the code does | next docs pass (SA) | Registered 2026-09-12 |
-| DC-22 | **Retention for the wave-2 durable stores:** memories has no reaper (expired rows recall-filtered, never deleted) and clients/people/projects are business PII outside ADR-014 capture scope and DC-16 purge. No write path exists yet - gap, not vulnerability | **sweep/housekeeping milestone; the write-path wave inherits C-A** (docs/tasks/w2r3-conditions.md) | Registered 2026-09-12 |
+| DC-22 | **Retention for the wave-2 durable stores:** memories reaper LANDED w2r3 (kill-switch default ON; QA re-proved the predicate guard by mutation — QA-R3 review 2026-09-18); the ENTITY-table retention half of this row stays open and clients/people/projects are business PII outside ADR-014 capture scope and DC-16 purge. No write path exists yet - gap, not vulnerability | **sweep/housekeeping milestone; the write-path wave inherits C-A** (docs/tasks/w2r3-conditions.md) | Registered 2026-09-12 |
 | DC-23 | **Memory-write gate (Security w2r2 C-A, verbatim in reviews/2026-09-12-w2-security-review.md):** system-role recall framing, unimplemented local_only prompt filter, unanswered write authorization - all three MUST close in whichever wave lands a production memory write or seed path | **blocking on that wave** | Registered 2026-09-12 |
 | DC-20 | **Per-username and per-IP login throttling with lockout on `POST /api/v1/auth/login`.** Accepted absent for the current single-owner, loopback-bound deployment — the scrypt cost (`n=2**14`) is the only brake, adequate while the only reachable client is the owner's machine | **Deployment/exposure gate** — the moment the API is exposed beyond loopback this is a **pre-condition, not an improvement** (Security wave-1; disposition recorded in `docs/tasks/integration-w1.md` §7.2) | Registered 2026-09-12 so the gate inherits the decision instead of rediscovering it |
 | DC-21 | **Periodic audit of the n8n MCP Server Trigger's workflow-level `authentication` value.** It defaults to `none` (which serves `initialize`/`tools/list`/`tools/call` unauthenticated) and is one browser dropdown away from the shipped `bearerAuth` — a browser edit is not reviewable. The single setting that turns the governed connector fabric into an open one | **Next security hardening pass** (join whatever periodic configuration audit the platform grows), and a **pre-condition of any beyond-loopback n8n exposure** | Registered 2026-09-12 (ruling R15; evidence S2-E §4). Three independent compensating controls hold meanwhile — see the dated block below |
@@ -285,8 +284,14 @@ independent compensating controls hold (each verified in S2-E): **(1)** loopback
 (`127.0.0.1:5680`, CI-asserted on every published port); **(2)** the export is the reviewable
 artefact — `test_the_mcp_server_trigger_requires_a_bearer` reds on anything but `bearerAuth`, and
 re-running `scripts/n8n-setup.*` re-imports the file over whatever a browser did; **(3)** SUNIL
-fails closed — a 403 at startup is a `ToolAdapterStartupError`, so the tool is absent from the
-registry, never half-mounted.
+fails closed — a 403 at lifespan start leaves the tool **present-but-unusable**: `adapter.start()`
+raises `ToolAdapterStartupError`, the app lifespan catches it (`apps/api/sunil/main.py` — a dead
+MCP server must not stop the owner talking to SUNIL), and every call fails at the chokepoint as
+`transport_error`; nothing executes against the endpoint. Only a wiring-time failure (bad base
+URL, unset token, unresolvable credential) makes the tool **absent** from the registry.
+*[Wording corrected 2026-09-17 (Security w2r2 F-3): the original claimed the lifespan 403 made
+the tool absent — that is the wiring-time behaviour. Fail-closed holds on both paths. This
+correction closes register row DC-21a, which existed only to demand it.]*
 
 ---
 

@@ -38,6 +38,11 @@ from sunil.core.tool_framework.base import (
     ToolResult,
     ToolResultMeta,
 )
+from sunil.tools.mcp.compositions import (
+    CompositionContext,
+    CompositionError,
+    resolve_composition,
+)
 from sunil.tools.mcp.config import McpOperationConfig
 from sunil.tools.mcp.protocol import (
     MCP_PROTOCOL_VERSION,
@@ -88,6 +93,7 @@ class McpToolAdapter:
         operations: dict[str, McpOperationConfig],
         transport: McpTransport,
         logger: logging.Logger | None = None,
+        project_repos: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         self.name = server_id
         self.server_id = server_id
@@ -96,6 +102,15 @@ class McpToolAdapter:
         self._config = dict(operations)
         self._logger = logger or _LOGGER
         self._started = False
+        # Every bound server tool this adapter may call — the drift check's
+        # subject AND the composition executor's allowlist, built once from the
+        # same source so they cannot disagree (ADR-034 Amendment 1).
+        self._bound_server_tools = {
+            server_tool
+            for config in self._config.values()
+            for server_tool in config.server_tools
+        }
+        self._context = CompositionContext(project_repos=project_repos)
         self.operations: dict[str, ToolOperation] = {
             name: ToolOperation(
                 name=name,
@@ -138,13 +153,26 @@ class McpToolAdapter:
             )
 
     def _drift_check(self, listed: dict[str, dict[str, Any]]) -> None:
-        missing = sorted(set(self._config) - set(listed))
+        # ADR-034 Amendment 1 (ruling R16 part 3): the check is against the
+        # BINDINGS, not SUNIL's operation names. `issues_close` is served by
+        # `issue_write`, and a composed operation is served by EVERY tool it
+        # composes — all of them must be advertised or the whole tool leaves the
+        # registry, because a composition that can start but not finish is the
+        # one failure mode worse than not starting.
+        bound: dict[str, str] = {
+            server_tool: operation
+            for operation, config in self._config.items()
+            for server_tool in config.server_tools
+        }
+        missing = sorted(set(bound) - set(listed))
         if missing:
+            detail = ", ".join(f"{name} (bound by {bound[name]})" for name in missing)
             raise ToolAdapterStartupError(
-                f"{self.server_id}: configured operation(s) {missing} are not advertised by "
-                "the live server — refusing to start (ADR-034 drift check)"
+                f"{self.server_id}: configured operation(s) bind server tool(s) the live "
+                f"server does not advertise: {detail} — refusing to start (ADR-034 drift "
+                "check)"
             )
-        for name in sorted(set(listed) - set(self._config)):
+        for name in sorted(set(listed) - set(bound)):
             # "An advertised-but-unconfigured tool is logged and ignored (it does
             # not exist to SUNIL)." The annotations go in the log for the human
             # who maintains config, and are read by nothing else.
@@ -159,6 +187,13 @@ class McpToolAdapter:
 
     # -- operations --------------------------------------------------------- #
     def _handler_for(self, operation: str):
+        config = self._config[operation]
+        composition = (
+            resolve_composition(config.composition, config, server_id=self.server_id)
+            if config.composition
+            else None
+        )
+
         async def handler(params: BaseModel) -> ToolResult:
             started = time.monotonic()
             if not self._started:
@@ -168,15 +203,21 @@ class McpToolAdapter:
                     started,
                 )
             try:
-                result = await self._transport.request(
-                    "tools/call",
-                    {"name": operation, "arguments": params.model_dump()},
-                )
-                payload = tool_call_payload(result)
+                if composition is not None:
+                    payload = await composition.execute(
+                        params, call=self.call_server_tool, context=self._context
+                    )
+                else:
+                    payload = await self.call_server_tool(
+                        config.server_tools[0],
+                        {**params.model_dump(), **config.fixed_arguments},
+                    )
             except McpServerError as exc:
                 return self._error(ToolErrorKind.UPSTREAM_ERROR, str(exc), started)
             except McpTransportError as exc:
                 return self._error(ToolErrorKind.TRANSPORT_ERROR, str(exc), started)
+            except CompositionError as exc:
+                return self._error(ToolErrorKind.UPSTREAM_ERROR, str(exc), started)
             return ToolResult(
                 ok=True,
                 data=payload,
@@ -186,6 +227,22 @@ class McpToolAdapter:
             )
 
         return handler
+
+    async def call_server_tool(self, server_tool: str, arguments: dict[str, Any]) -> Any:
+        """One `tools/call`, under the BOUND name. The composition executor's
+        only way to reach the wire, so a composition cannot invent a tool the
+        drift check never verified — `server_tool` is asserted against the
+        bindings this adapter was constructed with."""
+        if server_tool not in self._bound_server_tools:
+            raise CompositionError(
+                f"{self.server_id}: {server_tool!r} is not a bound server tool of this "
+                "adapter (ADR-034 Amendment 1: a composition may only call tools the "
+                "drift check verified)"
+            )
+        result = await self._transport.request(
+            "tools/call", {"name": server_tool, "arguments": arguments}
+        )
+        return tool_call_payload(result)
 
     # -- internals ---------------------------------------------------------- #
     def _error(self, kind: ToolErrorKind, message: str, started: float) -> ToolResult:

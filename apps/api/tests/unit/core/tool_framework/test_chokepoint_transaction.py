@@ -40,6 +40,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from sunil.core.approvals.read_model import aware, to_iso
 from sunil.core.approvals.table import approvals_table
 from sunil.core.audit.hooks import DbToolAuditHook
 from sunil.core.tool_framework.base import (
@@ -152,7 +153,11 @@ class _Wiring:
             return list(
                 (
                     await conn.execute(
-                        select(approvals_table.c.id, approvals_table.c.status)
+                        select(
+                            approvals_table.c.id,
+                            approvals_table.c.status,
+                            approvals_table.c.expires_at,
+                        )
                     )
                 ).fetchall()
             )
@@ -257,6 +262,56 @@ async def test_the_park_and_its_attempt_row_commit_together(wired) -> None:
     assert len(rows) == 1
     assert rows[0].approval_id == parked[0].id
     assert rows[0].outcome == "error"  # finalised with approval_required
+
+
+async def test_the_production_park_exit_surfaces_the_typed_approval_reference(wired) -> None:
+    """**QA F-2.** The park exit the REAL wiring takes is
+    ``manager.py::_parked_in_one_transaction`` — the transactional one — and its
+    ``ApprovalRef`` was covered by nothing: ``approval_ref=None`` there survived
+    both legs green, because every other test of that exit asserts on rows and on
+    ``error_kind``, never on the reference the orchestrator turns into C5's
+    ``outcome="parked"``. Without it the owner is told "approval required" and
+    given no id to approve, and ADR-031's resume path has nothing to resume from.
+
+    Asserted against the COMMITTED row rather than a remembered value: C1 v1.2.0
+    (ruling R8) says the field is copied verbatim from C4's ``ParkedApproval``, so
+    the reference must name the approval that actually exists and the expiry the
+    table actually stores — a reference to a different id, or to an expiry the
+    queue would render differently, is a reference the owner cannot act on.
+    """
+    result = await wired.execute()
+
+    assert result.error_kind == ToolErrorKind.APPROVAL_REQUIRED.value
+    parked = (await wired.approval_rows())[0]
+    assert result.approval is not None, (
+        "the production park exit returned no ApprovalRef — C1 v1.2.0: the field "
+        "is non-None IFF error_kind == 'approval_required'"
+    )
+    assert result.approval.approval_id == parked.id
+    assert result.approval.expires_at == to_iso(aware(parked.expires_at))
+
+
+async def test_only_the_park_exit_mints_a_reference(wired) -> None:
+    """The IFF's other half, on the same real wiring: a result that is not
+    ``approval_required`` carries no reference. This is what stops a future
+    "always attach the ref" convenience from handing an approval id to an exit
+    the owner never parked."""
+    approval_id = await wired.park()
+    await wired.approvals.decide(approval_id, "approve")
+
+    ok = await wired.execute(approval=approval_id)
+    invalid = await wired.manager().execute(
+        AGENT,
+        "fake_tool",
+        "write_item",
+        {"key": "k", "value": "DIFFERENT"},
+        trace=TRACE,
+        approval=approval_id,
+    )
+
+    assert ok.ok and ok.approval is None
+    assert invalid.error_kind == ToolErrorKind.APPROVAL_INVALID.value
+    assert invalid.approval is None
 
 
 async def test_a_crash_writing_the_park_attempt_row_leaves_no_approval(wired) -> None:
