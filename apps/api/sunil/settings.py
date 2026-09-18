@@ -268,6 +268,19 @@ class Settings(BaseSettings):
     sunil_tool_manager: Literal["fake", "real"] = Field(default="real")
     sunil_approvals_service: Literal["fake", "real"] = Field(default="real")
 
+    # -- memory retention (S2-C §7.4, ruling R15) ----------------------------- #
+    # Defaults ON, the mirror image of the approvals sweeper's reason: doing
+    # nothing must give the SAFE posture, and here "nothing" means every expired
+    # memory stays on disk forever — filtered out of recall, still readable to a
+    # backup or a psql session, never actually destroyed. A TTL the owner set is
+    # a promise that the content goes away. The switch exists for the operator
+    # cases that are real (a second process owning the schedule, or a reap
+    # implicated in an incident), not as a default.
+    sunil_memory_reaper_enabled: bool = Field(
+        default=True,
+        description="Delete expired `memories` rows on this process's reaper schedule.",
+    )
+
     # -- memory embeddings (C3 §2's last bullet) ------------------------------ #
     # `hashing` is the default because it is the only embedder that needs no
     # credential: a deployment with no embedding key still remembers, with
