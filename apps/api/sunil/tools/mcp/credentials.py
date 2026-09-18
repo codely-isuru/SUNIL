@@ -111,12 +111,27 @@ def build_child_env(
     settings: Any,
     *,
     base_env: dict[str, str] | None = None,
+    aliases: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """The exact environment an ``mcp_stdio`` child is spawned with.
 
     Raises :class:`ToolAdapterStartupError` — never ``KeyError`` — for a missing
     field or an unset value, and never puts a credential VALUE in the message,
     so a startup failure is safe to paste into an issue.
+
+    ``aliases`` (``config/tools.yaml``'s ``credential_env_as:``, ADR-034
+    Amendment 1) renames a granted credential to the variable the SERVER reads:
+    the official ``github/github-mcp-server`` reads
+    ``GITHUB_PERSONAL_ACCESS_TOKEN`` while SUNIL's grantable name — the one
+    condition C-3's allowlist and the ``Settings`` field are keyed on — is
+    ``GITHUB_TOKEN``.
+
+    **Aliasing is a rename, never a grant.** The allowlist is checked on the
+    SOURCE name, so no alias can reach a secret ``credential_env`` did not
+    already legally name; an alias for a credential that was not granted is a
+    refusal rather than a no-op (config has drifted); and an alias may not land
+    on a bootstrap variable, because a credential written over ``PATH`` is a
+    child that cannot load its own runtime — or one that runs something else.
     """
     source = os.environ if base_env is None else base_env
     # Case-insensitive by key, keeping the SOURCE's spelling: Windows'
@@ -128,6 +143,24 @@ def build_child_env(
     env = {
         key: value for key, value in source.items() if key.lower() in wanted
     }
+    aliases = dict(aliases or {})
+    dangling = sorted(set(aliases) - set(credential_env))
+    if dangling:
+        raise ToolAdapterStartupError(
+            f"credential_env_as names {dangling}, which credential_env does not grant — "
+            "an alias renames a granted credential and can never grant one (refusing to "
+            "start the adapter)"
+        )
     for name in credential_env:
-        env[name] = _settings_value(settings, name)
+        # The allowlist runs on the SOURCE name inside `_settings_value`, before
+        # the alias is applied, so renaming buys a config author nothing.
+        value = _settings_value(settings, name)
+        child_name = aliases.get(name, name)
+        if child_name.lower() in wanted:
+            raise ToolAdapterStartupError(
+                f"credential_env_as would deliver {name!r} as {child_name!r}, which is a "
+                "bootstrap variable — refusing to overwrite the child's own environment "
+                "with a credential"
+            )
+        env[child_name] = value
     return env

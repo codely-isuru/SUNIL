@@ -170,10 +170,12 @@ def test_the_shipped_repo_config_loads_and_grants_only_reviewed_triples() -> Non
     longer true — ``developer.github_mcp.push_branch`` is an unattended WRITE,
     deliberately. The rule now has a home that ENFORCES it:
     ``tests/unit/agents/test_developer_mount.py::
-    test_no_unattended_write_exists_while_github_mcp_is_dormant``
+    test_no_unattended_write_exists_anywhere_in_the_matrix``
     checks every ``allow`` row in this file against ``read_only`` in
-    ``config/tools.yaml``. While ``github_mcp`` is dormant that set is empty;
-    the one named exception returns with the w2r3 parcel.
+    ``config/tools.yaml``. That set is EMPTY: the w2r3 parcel re-landed
+    ``github_mcp`` with both of its writes on ``ask_user``, and ADR-030 §4's one
+    named exception — ``developer.github_mcp.push_branch: allow`` — returns only
+    with the engine-enablement ADR (R16 part 4).
     """
     from pathlib import Path
 
@@ -182,15 +184,18 @@ def test_the_shipped_repo_config_loads_and_grants_only_reviewed_triples() -> Non
 
     assert registry.agent_ids() == ["project_manager", "developer"]
     assert registry.grant_for("project_manager", "github", "list_recent_activity") == "allow"
-    # Every ``github_mcp`` row is commented out — ruling R16 (2026-09-12): the
-    # pinned server was deprecated and advertised none of these names, so the
-    # rows return only with the w2r3 verified-pin parcel, together with the
-    # ``config/tools.yaml`` block. ``developer`` stays in the agent list above
-    # as an explicit empty mapping.
-    assert registry.grant_for("project_manager", "github_mcp", "issues_close") is None
+    # The w2r3 parcel restored three of the four ``github_mcp`` rows behind
+    # R16's capture gate (docs/tasks/S3-github.md §0).
+    assert registry.grant_for("project_manager", "github_mcp", "issues_list") == "allow"
+    assert registry.grant_for("project_manager", "github_mcp", "issues_close") == "ask_user"
+    assert registry.grant_for("developer", "github_mcp", "merge_main") == "ask_user"
+    # An operation nobody granted is ``None`` — the engine's structural
+    # default-deny, never a row that says "deny".
     assert registry.grant_for("project_manager", "github_mcp", "repos_delete") is None
+    # ``push_branch`` did NOT come back: R16 part 4 ruled its executor toward the
+    # engine's own sandbox-scoped token and parcel step 5 forbade this parcel
+    # inventing one. It returns with the engine-enablement ADR.
     assert registry.grant_for("developer", "github_mcp", "push_branch") is None
-    assert registry.grant_for("developer", "github_mcp", "merge_main") is None
     # The delegation to the execution engine is not a tool call, so it has no
     # row here and none in config/tools.yaml (S2-F-openhands.md §2).
     assert registry.grant_for("developer", "github_mcp", "fix_and_pr") is None

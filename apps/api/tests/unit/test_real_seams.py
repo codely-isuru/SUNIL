@@ -130,14 +130,14 @@ def test_the_real_tool_registry_is_built_from_config(engine) -> None:
 
     assert [a.name for a in registry.adapters] == []
     skipped = {name for name, _ in registry.skipped}
-    # github_mcp is DORMANT (ruling R16): not configured, so neither built nor skipped.
-    assert skipped == {"github", "n8n_mcp"}
+    # github_mcp is back (w2r3 parcel, ruling R16) and shares GITHUB_TOKEN with
+    # the native tool, so both go absent together when it is unset.
+    assert skipped == {"github", "github_mcp", "n8n_mcp"}
     # Captured through structlog rather than a stream, because the renderer is
     # configured once per process and a second test's configuration must not be
     # able to make this assertion vacuous.
     warned = {entry["tool"] for entry in logged if entry["event"] == "tool_unavailable"}
-    # github_mcp is DORMANT (ruling R16): not configured, so neither built nor skipped.
-    assert warned == {"github", "n8n_mcp"}
+    assert warned == {"github", "github_mcp", "n8n_mcp"}
 
 
 def test_a_tool_whose_credentials_are_present_is_registered(engine) -> None:
@@ -149,14 +149,17 @@ def test_a_tool_whose_credentials_are_present_is_registered(engine) -> None:
     )
 
     names = {adapter.name for adapter in registry.adapters}
-    assert {"github", "n8n_mcp"} <= names
+    assert {"github", "github_mcp", "n8n_mcp"} <= names
     # …and the operations are the FILE's, never the server's self-description.
     by_name = {adapter.name: adapter for adapter in registry.adapters}
-    # github_mcp is DORMANT (ruling R16): the tool block is commented out of
-    # config/tools.yaml, so no adapter is built for it even with GITHUB_TOKEN
-    # present. The whole-set operations pin — asserted WHOLE so the set cannot
-    # grow unseen — returns with the w2r3 verified-pin parcel.
-    assert "github_mcp" not in by_name
+    # Asserted WHOLE, so the set cannot grow unseen. `push_branch` is absent on
+    # purpose — R16 part 4 ruled its executor toward the engine's own scoped
+    # token and parcel step 5 forbade this parcel inventing one.
+    github_mcp = by_name["github_mcp"]
+    assert set(github_mcp.operations) == {"issues_list", "issues_close", "merge_main"}
+    assert github_mcp.operations["issues_list"].read_only is True
+    assert github_mcp.operations["issues_close"].read_only is False
+    assert github_mcp.operations["merge_main"].read_only is False
 
 
 def test_the_real_chokepoint_carries_the_permission_engine_and_the_tx_seam(engine) -> None:

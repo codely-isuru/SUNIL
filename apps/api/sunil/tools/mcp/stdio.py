@@ -173,15 +173,18 @@ class McpStdioAdapter(McpToolAdapter):
         command: list[str],
         operations: dict[str, McpOperationConfig],
         credential_env: list[str] | tuple[str, ...] = (),
+        credential_env_as: dict[str, str] | None = None,
         settings: Any = None,
         logger: logging.Logger | None = None,
         transport: Any = None,
+        project_repos: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         # The credential lookup is deferred to `start()` (via this factory
         # closure) only in the sense that the ENV is built there: it still
         # happens before the spawn, and its failure is a startup failure.
         self._command = list(command)
         self._credential_env = tuple(credential_env)
+        self._credential_env_as = dict(credential_env_as or {})
         self._settings = settings
         super().__init__(
             server_id=server_id,
@@ -189,6 +192,7 @@ class McpStdioAdapter(McpToolAdapter):
             operations=operations,
             transport=transport or _LazyStdioTransport(self, logger=logger),
             logger=logger,
+            project_repos=project_repos,
         )
 
 
@@ -212,6 +216,7 @@ class _LazyStdioTransport:
         env = build_child_env(
             self._adapter._credential_env,  # noqa: SLF001 - same-module collaborator
             self._adapter._settings,  # noqa: SLF001
+            aliases=self._adapter._credential_env_as,  # noqa: SLF001
         )
         self._delegate = SubprocessStdioTransport(
             command=self._adapter._command,  # noqa: SLF001
