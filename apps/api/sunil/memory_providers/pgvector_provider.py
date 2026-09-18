@@ -503,6 +503,32 @@ class PgVectorMemoryProvider:
             ) from exc
         return bool(result.rowcount)
 
+    async def delete_expired(self) -> int:
+        """Delete every row whose TTL has passed; return how many (S2-C §7.4,
+        ruling R15). Driven by `core/memory/reaper.py` on its own cadence.
+
+        Also not a C3 method, for the reason `forget` is not: the contract binds
+        what recall may SEE, and storage hygiene is not visibility. The predicate
+        is `_candidate_query`'s TTL filter INVERTED, so the reaper can only ever
+        remove rows recall was already hiding — a reaper whose boundary differed
+        from the filter's would destroy a memory the owner could still recall.
+        `expires_at IS NULL` ("keep until superseded") is never touched, and the
+        `memory_entity_links` children go with the row (ON DELETE CASCADE).
+        """
+        try:
+            async with self.engine.begin() as conn:
+                result = await conn.execute(
+                    delete(memories_table).where(
+                        memories_table.c.expires_at.is_not(None),
+                        memories_table.c.expires_at <= self._clock(),
+                    )
+                )
+        except SQLAlchemyError as exc:
+            raise MemoryUnavailableError(
+                f"the memory store could not serve a delete: {type(exc).__name__}"
+            ) from exc
+        return int(result.rowcount or 0)
+
 
 def _item_from_row(row: Any, refs: list[EntityRef]) -> MemoryItem:
     return MemoryItem(

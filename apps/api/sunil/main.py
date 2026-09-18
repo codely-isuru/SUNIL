@@ -47,7 +47,6 @@ from sunil.api.routes import tasks as tasks_routes
 from sunil.api.wiring import Seams
 from sunil.agents.project_manager import ProjectManagerAgent
 from sunil.core.conversations.resolver import DbConversationResolver
-from sunil.core.memory.service import MemoryService
 from sunil.core.orchestrator.plan_validator import ToolCatalogue
 from sunil.core.orchestrator.turn import GovernedTurnExecutor
 from sunil.core.approvals.sweeper import ApprovalSweeper
@@ -89,7 +88,12 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     # row that names a memory is written on this connection, and a provider
     # holding a second engine would file the memory in one database while its own
     # trail lived in another.
-    memory_provider = wiring.resolve_memory_provider(settings, seams, engine=read_engine)
+    # Ruling R13: the service, not the bare provider — built where the engine is,
+    # so a `kind="project"` scope is resolved to its entity row id before any
+    # vendor call instead of being filed under the human key.
+    memory_service = wiring.build_memory_service(
+        settings, seams, engine=read_engine, projects=registries.projects
+    )
     approvals = wiring.resolve_approvals(settings, seams, engine=read_engine)
 
     # The tool registry is built ONCE, here: the plan catalogue the model is
@@ -129,7 +133,7 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
         turn_executor = GovernedTurnExecutor(
             sessionmaker=sessionmaker,
             provider=provider,
-            memory=MemoryService(memory_provider),
+            memory=memory_service,
             # The Tool Manager is constructed per plan execution, because its
             # audit hook is bound to that plan's id (ADR-004 Amendment 1). The
             # factory closes over the seam-resolved manager rather than building
@@ -142,6 +146,7 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
         )
 
     sweeper = _build_sweeper(approvals, settings, logger)
+    reaper = _build_memory_reaper(memory_service, settings, logger)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -178,6 +183,12 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
             # swallowed (see sweeper.py) — an API that booted having silently
             # skipped it would leave interrupted continuations looking runnable.
             await sweeper.start()
+        if reaper is not None:
+            # Nothing propagates out of `start()` here, unlike the sweeper's:
+            # deletion is idempotent and recall is already TTL-filtered, so a
+            # reap missed at boot costs nothing the next tick does not fix
+            # (core/memory/reaper.py).
+            await reaper.start()
         logger.info("app_started", lane=settings.sunil_llm_provider_lane)
         try:
             yield
@@ -187,6 +198,8 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
             # logs an error on every restart.
             if sweeper is not None:
                 await sweeper.stop()
+            if reaper is not None:
+                await reaper.stop()
             for adapter in started_adapters:
                 await adapter.stop()
             provider_close = getattr(provider, "aclose", None)
@@ -217,6 +230,7 @@ def create_app(settings: Settings | None = None, *, seams: Seams | None = None) 
     app.state.conversation_resolver = conversation_resolver
     app.state.turn_executor = turn_executor
     app.state.approvals_sweeper = sweeper
+    app.state.memory_reaper = reaper
     app.state.logger = logger
 
     # The three names Stream D's routers read off app state. They are set here,
@@ -293,6 +307,36 @@ def _build_sweeper(approvals: Any, settings: Settings, logger: Any) -> ApprovalS
         )
         return None
     return ApprovalSweeper(approvals)
+
+
+def _build_memory_reaper(memory: Any, settings: Settings, logger: Any) -> Any | None:
+    """The `memories` reaper's schedule, or `None` with a reason (S2-C §7.4,
+    ruling R15) — `_build_sweeper`'s shape, and its two ways to get `None`:
+
+    * the operator turned it off — informational, the switch worked;
+    * the wired store cannot delete (C3's fake has no `delete_expired`, and
+      neither will Mem0 until someone builds it) — a WARNING, because a store
+      that never deletes keeps every expired memory forever, and the alternative
+      to saying so is a deployment discovering it from an ever-growing table.
+
+    Not a boot failure, for `_build_sweeper`'s reason: this is a schedule over a
+    wired seam, not a missing contract.
+    """
+    from sunil.core.memory.reaper import MemoryReaper  # noqa: PLC0415
+
+    if not settings.sunil_memory_reaper_enabled:
+        logger.info("memory_reaper_disabled", reason="SUNIL_MEMORY_REAPER_ENABLED")
+        return None
+    store = getattr(memory, "provider", None)
+    if not hasattr(store, "delete_expired"):
+        logger.warning(
+            "memory_reaper_unavailable",
+            reason="the wired C3 provider has no delete_expired()",
+            provider=type(store).__name__,
+            consequence="expired memories are filtered from recall but never deleted",
+        )
+        return None
+    return MemoryReaper(store)
 
 
 def _mount(app: FastAPI, router: Any) -> None:

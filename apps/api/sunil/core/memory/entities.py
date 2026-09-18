@@ -61,6 +61,16 @@ class EntityResolver:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
+    @property
+    def engine(self) -> AsyncEngine:
+        """The entity schema's engine, readable so the SERVICE can perform R12
+        rule 3's registry → table upsert on its own write path without opening a
+        second engine onto the same tables. Read-only on purpose: the resolver's
+        single job stays "key → row id", and materialisation stays a decision the
+        service makes (R13 item 5).
+        """
+        return self._engine
+
     async def resolve(self, scope: MemoryScope) -> MemoryScope:
         if scope.kind not in RESOLVABLE_KINDS:
             return scope

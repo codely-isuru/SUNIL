@@ -165,6 +165,41 @@ def resolve_memory_provider(settings: Any, seams: Seams, *, engine: Any = None) 
     return PgVectorMemoryProvider(engine=engine, embedder=build_embedder(settings))
 
 
+def build_memory_service(
+    settings: Any,
+    seams: Seams,
+    *,
+    engine: Any = None,
+    projects: Any = None,
+) -> Any:
+    """C3's service half, with ruling R13's scope resolution attached.
+
+    The resolver is wired IFF this composition had an engine — the `pgvector`
+    branch already holds the application's one. Two consequences, both wanted:
+
+    * the deployed app resolves `MemoryScope(kind="project", id="pda")` to the
+      project's entity row id before any vendor call (C3 §3), instead of filing
+      every memory about a project under the literal human key;
+    * the fake-wired composition (no engine) gets `resolver=None` and behaves
+      exactly as the frozen C3 contract suite asserts — its scopes are already
+      ids, and putting an entity-table read in front of a composition that has no
+      entity tables would be a fabricated failure.
+
+    `projects` is the PROJECT REGISTRY (`config/projects.yaml`, ADR-016 mounted
+    configuration — NOT the `projects` entity TABLE; R12 rule 2's prose rule).
+    The service consults it only on the write path, for R12 rule 3.
+    """
+    from sunil.core.memory.service import MemoryService  # noqa: PLC0415
+
+    provider = resolve_memory_provider(settings, seams, engine=engine)
+    resolver = None
+    if engine is not None:
+        from sunil.core.memory.entities import EntityResolver  # noqa: PLC0415
+
+        resolver = EntityResolver(engine)
+    return MemoryService(provider, resolver=resolver, project_registry=projects)
+
+
 def resolve_approvals(settings: Any, seams: Seams, *, engine: Any = None) -> Any:
     """C4 — park/consume. The Tool Manager is its only caller (C4 §1).
 
