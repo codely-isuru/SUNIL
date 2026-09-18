@@ -27,6 +27,17 @@ feature/*, fix/* branches deleted local+origin (archive tag `archive/v0-typescri
 kept; full pre-cleanup bundle at `C:
 epo\SUNIL-branches-archive-2026-09-10.bundle`).
 
+**✅ W2R3 MERGED — 2026-09-18 (69c86d1). CODE IS DONE for V1 scope.** github_mcp re-landed
+capture-gated (composed one-approval merge, live-parked as evidence), memory closed (R13 +
+reaper + the two QA coverage holes, 10 mutants), SUNIL's FIRST REAL MODEL OUTPUT achieved
+("Canberra", gpt-mini via the pinned gateway). Suite 1152/0/63 ×2. QA delta PASS-w-conditions;
+all doc drift fixed or ledgered. **EVERYTHING REMAINING IS HOST ENVIRONMENT (owner):**
+(1) Docker Desktop 4.91 repair-install — corrupted iso, digest-proven; NOT factory-reset;
+(2) replace ANTHROPIC_API_KEY (401 from Anthropic); (3) replace GITHUB_TOKEN (dead + a fragment
+was disclosed in a transcript during debugging — rotation mandatory, incident on record in the
+2026-09-18 worklog). Then: ONE evidence round (live Claude turn, semantic recall, token posture,
+Postgres legs, security item 7) → staging → V1 acceptance (ROADMAP §15) → **Gate 3 (human)**.
+
 **✅ WAVE 2 COMPLETE — MERGED TO `V2` 2026-09-12 (290642b).** V1 feature scope is built:
 governed turns on real seams, approvals end-to-end (typed ApprovalRef in the envelope), memory
 (pgvector provider + entity schema, ratified ADR-030 Am.2), n8n scheduled workflows + governed
