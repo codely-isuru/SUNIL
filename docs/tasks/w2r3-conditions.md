@@ -48,3 +48,23 @@ the re-landing lane; still in flight there: composed-merge executor, transcripti
 re-land) · engine-enablement ADR (push authority + runtime isolation, one decision) · embed() C2
 v2.0.0 candidate (Stream B keyed round) · assert_never turn.py guard · live-model turn +
 GatewayEmbedder round-trip on owner keys.
+
+
+## Post-round ledger update (DM, 2026-09-18, from the QA-R3 delta review)
+CLOSED this round (verified stronger than claimed): QA F-1 (standalone scan, bites), QA F-2
+(both mutants' tests, manager.py byte-identical), R13 EntityResolver, memories reaper, DC-23
+comment, SA docs items. C-A correctly untriggered (no production memory-write caller exists).
+
+STILL OPEN — SA pen, next docs touch:
+- QA-R3-1: annotate ADR-034 Am.1's example verb (illustrated update_issue; capture proved
+  issue_write) — pinned in code 5 places, needs the dated ADR annotation.
+- QA-R3-3: ARCH §5 row for SUNIL_MEMORY_REAPER_ENABLED (§5 claims completeness and misses it);
+  consider a §5↔Settings parity test so this class can't recur.
+
+ENVIRONMENTAL (owner actions, then one evidence round):
+1. Docker Desktop 4.91 repair-install (corrupted iso, digest-proven; do NOT factory-reset —
+   54GB data vhdx). Unblocks: Postgres legs (10 gated tests), live github read, live-proof
+   legs 2/3, security deferred item 7.
+2. Replace ANTHROPIC_API_KEY (401 direct from Anthropic) in infra/.env.litellm.
+3. Replace GITHUB_TOKEN with a fine-grained read-only single-repo PAT (old one dead AND
+   fragment-disclosed in a transcript — rotation mandatory; incident + lesson on record).
