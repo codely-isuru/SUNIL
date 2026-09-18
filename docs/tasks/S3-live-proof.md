@@ -330,3 +330,194 @@ and that is precisely how M1 leaked a credential into a terminal.
 **Consequence for leg 2:** the live governed turn cannot use the native GitHub
 tool — it would prove only that a dead credential 401s. Leg 2 therefore uses the
 MCP stdio fixture for the tool step, and says so.
+
+---
+
+## Leg 5 — The three opt-in live-gateway tests, run for real
+
+```
+SUNIL_LIVE_GATEWAY_TEST=1
+SUNIL_LLM_GATEWAY_BASE_URL=http://127.0.0.1:4000
+LITELLM_VIRTUAL_KEY_DEFAULT=<the native proxy's master key>
+python -m pytest tests/unit/providers/test_gateway_live.py -v
+
+2 failed, 1 passed in 0.72s
+```
+
+| test | result | meaning |
+|---|---|---|
+| `test_live_parity_check_passes_against_the_running_gateway` | **PASS** | real evidence |
+| `test_live_gateway_rejects_a_completion_with_no_credential_at_all` | FAIL | fallback artefact |
+| `test_live_gateway_rejects_an_unknown_virtual_key_as_auth` | FAIL | fallback artefact |
+
+**The pass is the real one.** `GatewayProvider.start()` fetched `GET /v1/models`
+from a live LiteLLM, parsed the actual payload shape, and found every
+`config/models.yaml` alias served — C2 §3's parity check proven end to end
+against a running proxy for the first time, not against a mock transport.
+
+**The two failures are the missing database, and that is shown, not asserted.**
+Both tests are about the *authentication* path, and in LiteLLM that path is
+resolved against the DB that Docker would have provided:
+
+```
+POST /v1/chat/completions, no Authorization header
+  -> 500  {"message":"Internal server error","type":"internal_server_error"}
+     (test expects 401)
+
+POST /v1/chat/completions, Authorization: Bearer sk-not-a-registered-virtual-key
+  -> 400  {"message":"No connected db.","type":"no_db_connection","code":"400"}
+     (test expects a 401 the adapter classifies as kind="auth";
+      it correctly classified this 400 as kind="bad_request")
+```
+
+`"No connected db."` names the cause outright: with no database, LiteLLM cannot
+resolve a virtual key at all, so it cannot reach the 401 the test is about. The
+adapter itself behaved correctly — given a 400 it said `bad_request`, which is
+the right classification of the input it got.
+
+**Therefore: these two tests are NOT satisfied, and Security's deferred item 7
+(the pinned proxy 401s an unauthenticated completion) remains UNPROVEN.** They
+must be re-run on the Dockerised stack once 0.3 is fixed. Recording them as
+"environmental" without showing the `no_db_connection` body would have been
+exactly the kind of unfalsifiable claim the M1 worklog warns about.
+
+---
+
+## Leg 3 — GatewayEmbedder round-trip — **BLOCKED, one step further than expected**
+
+`text-embedding-3-small` was added to the native proxy's `model_list` (parity is
+unaffected: `GatewayProvider.start()` tolerates extra deployments by design —
+"SUNIL only ever names its own ids"). The proxy restarted serving six aliases.
+
+The shipped `GatewayEmbedder` was then driven directly — the real class from
+`sunil/core/memory/embedding.py`, not a reimplementation:
+
+```
+embedder name   : gateway:text-embedding-3-small
+declared dim    : 1536  (module EMBEDDING_DIM=1536)
+-> EmbeddingUnavailableError: gateway returned HTTP 400 for an embedding call
+```
+
+The class refuses to copy the upstream body into its message (deliberate: the
+body can carry a key fragment), so the body was fetched separately:
+
+```
+POST /v1/embeddings  -> 400
+{"error":{"message":"No connected db.","type":"no_db_connection","code":"400"}}
+```
+
+**The same root cause as leg 5, on a different route.** Note the asymmetry
+worth knowing: `/v1/chat/completions` accepts the master key without a DB (leg 1
+got a real completion through it), but `/v1/embeddings` does not — its auth path
+goes to the database. So the no-Docker fallback can prove chat and cannot prove
+embeddings, and leg 3 is blocked on 0.3 for **two** independent reasons:
+
+1. LiteLLM's `/v1/embeddings` auth requires the DB;
+2. the recall half needs Postgres + pgvector, which does not exist on this
+   machine outside Docker (no native PostgreSQL is installed).
+
+**Not claimed:** nothing about embedding width, semantic ranking or
+hashing-versus-embeddings is asserted here. One `GatewayEmbedder` line is proven
+— `name` and `dimension` are `gateway:text-embedding-3-small` / 1536 — and the
+error translation is proven (a 400 became `EmbeddingUnavailableError` with the
+body withheld). The round-trip itself is **unproven**, and the C3 docstring's
+"**Live-unproven**" caveat stands unchanged.
+
+---
+
+## Leg 2 — The first live governed turn — **NOT ATTEMPTED**
+
+Stated plainly rather than part-done. Two of its three real ingredients are
+missing on this machine at this moment:
+
+* the **tool** step cannot be the native GitHub tool (leg 4: the token 401s), so
+  it would have to be the MCP stdio fixture;
+* the **model** step cannot use the `claude-*` aliases the agents are configured
+  for (leg 1: the Anthropic credential is invalid), so the agents would have to
+  be repointed at `gpt-mini`/`gpt-flagship` first;
+* `llm_calls` rows, the twelve stages and the 40 s deadline all need the API on
+  real seams, which is reachable on the SQLite leg — that part is fine.
+
+Repointing the agent catalogue is a real config change with review implications
+(which model plans, which analyses, cost), not a test fixture, and doing it
+unreviewed to manufacture a green turn would produce a proof of the wrong thing.
+It is left for the next session, which should: fix 0.3, replace the two dead
+credentials, then run leg 2 as commissioned on the Dockerised stack.
+
+---
+
+## Leg 6 — Teardown and the suite
+
+**Teardown.** The native proxy was stopped and the port confirmed free
+(`Get-NetTCPConnection -LocalPort 4000` → nothing listening). The generated
+master key file was deleted from the scratchpad. The Docker stack needed no
+teardown — it never came up (0.3). Nothing was installed into `apps/api/.venv`;
+the LiteLLM venv lives in the session scratchpad and is not part of the repo.
+
+**Suite, on the SQLite leg, with the new file present:**
+
+```
+1085 passed, 53 skipped, 5 warnings in 20.98s
+```
+
+Before this lane's test file the same command gave `1085 passed, 47 skipped`, so
+the six new tests account for the entire difference and **no existing test
+changed state**.
+
+**The new tests skip loudly when unset** — verified, not assumed:
+
+```
+SKIPPED [2] ...:115: live GitHub posture check is opt-in: set
+            SUNIL_LIVE_GITHUB_TEST=1 with a GITHUB_TOKEN in the environment
+```
+
+...and go red with a diagnosis, not a bare comparison, when run against the
+dead token:
+
+```
+AssertionError: GitHub rejected the credential outright (HTTP 401). The token is
+expired, revoked or invalid - T-17 cannot be verified until it is replaced.
+AssertionError: write-class probe 'patch-nonexistent-ref' returned HTTP 401;
+403 is required. 404/422 means the token passed the authorisation check and
+holds write access that T-17 forbids.
+```
+
+`test_the_token_is_not_a_classic_pat` **skips** rather than passing falsely,
+because GitHub sends no `x-oauth-scopes` header on a rejection and the token
+class is therefore genuinely indeterminate. No test message contains any part of
+a credential.
+
+---
+
+## Ledger
+
+| Leg | Outcome |
+|---|---|
+| 0 preflight | `dev-up` proven non-clobbering; `.env` missing all infra secrets; **Docker Desktop blocked** (bad ISO after a half-applied update) |
+| 1 health + completions | **DONE (via native fallback)** — health 200, alias parity exact, `gpt-mini` → `"Canberra"`, 93 tokens. `claude-*` 401: **Anthropic credential invalid** |
+| 2 live governed turn | **NOT ATTEMPTED** — needs a working model alias *and* a working tool; both are dead |
+| 3 GatewayEmbedder + recall | **BLOCKED** — `/v1/embeddings` needs the DB; pgvector needs Docker |
+| 4 GITHUB_TOKEN / T-17 | **FAIL** — token 401s everywhere; 6 env-gated tests added so the re-check is one command |
+| 5 three opt-in live tests | 1 real PASS (parity), 2 blocked by `no_db_connection` — **Security deferred item 7 still unproven** |
+| 6 teardown + suite | **DONE** — 1085 passed / 53 skipped |
+
+**Upstream spend: 127 tokens total** (`gpt-mini`: 18+16 on the truncated first
+call, 18+75 on the second; all other calls were rejected before reaching a
+provider and billed nothing). Cheap aliases only; no `claude-opus` or
+`gpt-flagship` call was ever completed.
+
+## What the owner has to do before this lane can finish
+
+1. **Repair Docker Desktop 4.91.0** so `docker-desktop.iso` matches the build
+   (0.3). Use the installer's repair path — *not* factory reset: there is a
+   54 GB `docker_data.vhdx`.
+2. **Replace `ANTHROPIC_API_KEY`** in `infra/.env.litellm`. The current one is
+   rejected by Anthropic directly.
+3. **Replace `GITHUB_TOKEN`** in `.env` with a fine-grained PAT scoped to
+   `codely-isuru/SUNIL`, read-only (leg 4). Treat this as a **rotation**: the
+   current value is invalid *and* was handled in a terminal during this
+   investigation, so it should not be reused even if it is later found to work.
+4. **Append the five infra secrets** to `.env` (0.2) — additively, after a
+   backup, so no existing real key is touched.
+
+Then: legs 2 and 3 as commissioned, and re-run leg 5's two blocked tests.
