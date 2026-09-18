@@ -215,6 +215,105 @@ said "confirmed or corrected at capture". It is pinned so it cannot quietly reve
 (`test_r16s_expected_binding_for_issues_close_is_falsified_by_the_capture`). The amendment's
 illustrative example remains as written; SA may annotate it at leisure.
 
+### 6.4 Postgres leg — **NOT RUN, environment-blocked**
+
+Stated plainly rather than quietly skipped. The blessed pattern (a throwaway `postgres:17` on a
+loopback-published port with a CSPRNG password, `docs/tasks/qa-wave-w1.md` §1) needs a Docker
+daemon, and this host has none available to an unelevated session:
+
+```
+$ docker info
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine:
+  open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
+$ wsl --list --verbose
+  docker-desktop    Stopped    2
+$ Get-Service com.docker.service        → Stopped (StartType Manual)
+$ Start-Service com.docker.service
+  FAILED: Cannot open com.docker.service service on computer '.'      # needs Administrator
+```
+
+Docker Desktop was launched and left ~15 minutes; its WSL distro never came up because the
+privileged helper service is stopped and starting it needs an interactive UAC elevation this
+session cannot answer. **This is a host condition, not a parcel defect.**
+
+What it does and does not cost: the parcel's own code is engine-agnostic — the `github_mcp` work
+touches `config/*.yaml`, `tools/mcp/*` and tests, and adds no model, migration, query or
+transaction. The engine-parametrised tests that would gain a `[postgresql+psycopg]` leg are the
+pre-existing CAS/transaction proofs, unmodified by these commits. **Owner action:** run the leg on
+a host with Docker before the merge record closes, and record the counts here.
+
+### 6.5 Live smoke — the C4 park is PROVEN; the live read is **blocked by the same daemon**
+
+Run 2026-09-18 through the REAL pipeline, nothing faked: adapters built by
+`sunil.api.wiring.build_tool_registry` from this repository's own `config/tools.yaml`, the real
+`PermissionEngineHook` over its own `config/permissions.yaml`, the real `DatabaseApprovalsService`,
+the real `DbToolAuditHook`, the real `ToolManager` with `TransactionalApprovals`. The credential was
+read from `C:\repo\SUNIL\.env` into the process environment only; the runner scrubs the value from
+every line it emits, and no artefact of the run is committed.
+
+**Registry, at boot:**
+
+```
+adapters : ['github', 'github_mcp']
+skipped  : ['n8n_mcp']            # credential unset on this host — C1 §5, absent not half-present
+github_mcp operations: ['issues_close', 'issues_list', 'merge_main']
+```
+
+`github_mcp` is back in a real registry built from real config, carrying exactly the three landed
+operations and no `push_branch`. That is §3's claim, observed rather than asserted.
+
+**The read — `project_manager` / `github_mcp.issues_list`, grant `allow`:**
+
+| | |
+|---|---|
+| permission decision | **`allow`**, from the real engine — recorded on the `tool_calls` row |
+| params | validated against `IssuesListParams` **before** the decision (an earlier run with wrong params returned `invalid_params` and never reached the permission stage — the double-validation order, observed) |
+| outcome | **`transport_error`** — `start()` raised `ToolAdapterStartupError: github_mcp: MCP startup failed (MCP server closed its stdout (the child died mid-call))`. The `docker run` child exits immediately because the daemon in §6.4 is unreachable |
+
+So the call reached the real spawn and died at the host, not in SUNIL. Two things this still proves:
+the operation is granted `allow` by the real engine, and an adapter that cannot start **executes
+nothing** — the call returns `transport_error` and is audited, rather than half-working (C1 §5).
+**What it does NOT prove, and no one should claim it does: a real GitHub API response has not been
+observed through this chokepoint.** Owner action: re-run on a Docker-capable host.
+
+**The write — `developer` / `github_mcp.merge_main`, grant `ask_user`: PARKED, not approved.**
+
+```
+result.ok         : False
+result.error_kind : approval_required
+
+--- the C4 approval row ---
+  id        : apr-01M2T5BFZDRRQ5BAD4K32ZFK3B
+  status    : pending
+  agent_id  : developer
+  tool.op   : github_mcp.merge_main
+  args_hash : 484af8d1417866e105e62422748662e54b3d8522bc9ad91b336e84bc1e6ca040
+  summary   : merge task/S3-github into V2
+
+--- tool_calls ---
+  github_mcp.issues_list  agent=project_manager  decision=allow     outcome=error  approval_id=None
+  github_mcp.merge_main   agent=developer        decision=ask_user  outcome=error  approval_id=apr-01M2T5BFZDRRQ5BAD4K32ZFK3B
+```
+
+This half is **complete and independent of the daemon** — parking happens before execution, which is
+the entire point of C4. The showcase operation is governed again: ONE approval, `pending`, over
+exactly `{project_key, branch, base_branch}` (the `args_hash` covers those three and nothing else —
+no PR number anywhere, because it does not exist until inside the approved execution). **It was
+deliberately NOT approved.** The row is a throwaway SQLite file in the session scratchpad, not any
+real environment.
+
+### 6.6 Round summary
+
+| sub-step | state |
+|---|---|
+| 1 — ground truth + full suite (SQLite) | **DONE** — 1123 P / 47 S, tree clean, all three commits pushed |
+| 2 — R16 + ADR-034 Am.1 verification table | **DONE** — 12 rows, all PASS; F-1 proven to bite by mutation |
+| 3 — Postgres leg | **BLOCKED** — no Docker daemon obtainable without elevation (§6.4) |
+| 4 — live smoke | **PARTIAL** — C4 park proven end to end; live read blocked by the same daemon (§6.5) |
+
+Two items carry forward to whoever reviews this, both environmental and both named above: the
+Postgres leg and the live `list_issues`. Nothing in the parcel's code is waiting on either.
+
 ## Notes for the reviewer
 
 * `GITHUB_TOKEN` stays the single grantable GitHub credential name (`GRANTABLE_CREDENTIAL_NAMES`,
