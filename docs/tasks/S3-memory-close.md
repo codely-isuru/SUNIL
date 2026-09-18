@@ -168,6 +168,21 @@ The third mutant is the one that matters for the lane's whole reason for
 existing: it is the exact state `V2` shipped in (a built resolver, wired into
 nothing), and before this branch **no test in the tree failed on it**.
 
+**Reaper mutation ledger** (same protocol — one mutant at a time, reverted,
+tree verified clean):
+
+| Mutant (production code) | Property it breaks | Result |
+|---|---|---|
+| `sunil_memory_reaper_enabled` default flipped to `False` | kill switch defaults **ON** (§2) | **2 failed** — `test_the_reaper_is_built_by_default`, `…started_on_boot_and_cancelled_on_shutdown` |
+| `await reaper.start()` deleted from the lifespan | a built reaper that never runs deletes nothing | **1 failed**, alone, out of the whole `tests/unit` tree (798 passed) |
+| the `try/except` removed from `run_once` (the tick propagates) | containment — a transient blip must not kill the loop | **4 failed** — the two error-posture tests, the keeps-ticking test and `test_start_has_no_propagating_leg_at_all` |
+| `if deleted and …` → `if …` (an empty batch writes a row) | the trail records the EVENT, not the schedule | **1 failed** — `test_a_batch_that_deleted_nothing_writes_no_audit_row` |
+
+The count-only shape is pinned positively too, not just by omission:
+`RecordingAudit` captures the entire keyword payload and the assertion is
+`audit.rows == [{"deleted": 7}]`, so a future field carrying memory content
+fails the test rather than slipping past an `assert deleted == 7`.
+
 ## 6. Open / owed
 
 1. **Postgres leg not run on this machine** — the Docker daemon would not start
