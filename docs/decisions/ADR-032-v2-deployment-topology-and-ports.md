@@ -112,7 +112,9 @@ every publish binds host IP `127.0.0.1`. The check exists so the next port drift
 not a review finding.
 
 **Consequences carried forward:** ADR-033's quoted default for `SUNIL_N8N_MCP_BASE_URL` follows
-this amendment (`http://localhost:5680/mcp`) and ADR-035's context line reads n8n at
+this amendment (`http://localhost:5680/mcp/sunil` *[this sentence originally read `/mcp`; the
+path gained `/sunil` by ADR-033 Amendment 1, 2026-09-12 — corrected here 2026-09-17, QA w2r2
+F-3]*) and ADR-035's context line reads n8n at
 `127.0.0.1:5680` — both annotated in place, dated; the named-host rule and the token design are
 unchanged. `ARCHITECTURE_V2.md` §4 (TB1/TB5/TB9), §5 and §6 are regenerated to this table in the
 same fix round.

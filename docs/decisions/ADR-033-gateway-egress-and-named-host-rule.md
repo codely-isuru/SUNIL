@@ -32,8 +32,10 @@ valid(url) ⇔ url == canonical(field)            # ADR-017, unchanged (direct-p
   ADR-032 that SUNIL legitimately calls (`openhands` joins it in Phase V2-D via a version bump of
   this ADR's table in `ARCHITECTURE_V2.md` §5).
 - Fields governed from Phase 0: `SUNIL_LLM_GATEWAY_BASE_URL` (default `http://localhost:4000`),
-  `SUNIL_N8N_MCP_BASE_URL` (default `http://localhost:5680/mcp` *[was `:5678`; default moved by
-  ADR-032 Amendment 1, 2026-09-10 — the validator rule here is unchanged]*),
+  `SUNIL_N8N_MCP_BASE_URL` (default `http://localhost:5680/mcp/sunil` *[was `:5678`, port moved by
+  ADR-032 Amendment 1, 2026-09-10; was `/mcp`, path corrected to the workflow path by Amendment 1
+  below, 2026-09-12; this line annotated 2026-09-17 (QA w2r2 F-3) — the validator rule is
+  unchanged either time: it constrains the host, never port or path]*),
   `SUNIL_APPROVAL_NOTIFY_WEBHOOK_URL` (optional), plus ADR-017's existing
   `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` (direct lane, canonical-or-loopback only).
 - **Kill switch, population-scoped:** `SUNIL_LLM_PROVIDER_LANE=gateway|direct` (default `gateway`)
@@ -83,6 +85,8 @@ valid(url) ⇔ url == canonical(field)            # ADR-017, unchanged (direct-p
    serves an MCP trigger only at its workflow path; the live endpoint was proven at `/mcp/sunil`).
    The **rule is unchanged**: the validator constrains the *host*, never the path, so both the old
    and new values pass it — this is a default-value correction, not a validator change.
-   **Appliers:** `.env.example:193` and the `infra/docker-compose.yml` api-stub line
+   **Appliers:** `.env.example` (its `SUNIL_N8N_MCP_BASE_URL` line *[cited by key, not line
+   number, since 2026-09-17 — QA w2r2 F-5: line numbers rot]*) and the
+   `infra/docker-compose.yml` api-stub line
    (`http://n8n:5678/mcp` → `http://n8n:5678/mcp/sunil`) — integration engineer.
 3. `ARCHITECTURE_V2.md` §5 rows updated the same day (dated inventory append there).
