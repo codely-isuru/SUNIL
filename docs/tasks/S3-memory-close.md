@@ -108,19 +108,36 @@ gains two tests: the transactional park exit's reference is asserted against the
 COMMITTED approval row (id and rendered expiry), and the IFF's other half — a
 non-`approval_required` result carries no reference.
 
-**Mutation evidence (the verification the condition asked for).** With
-`approval_ref=None` substituted at `manager.py:527`:
+**Mutation evidence (the verification the condition asked for), re-run against
+the finished tree on 2026-09-18.** With `approval_ref=None` substituted at
+`manager.py:527` — the whole `ApprovalRef(...)` expression replaced, not a field:
 
 ```
 FAILED tests/unit/core/tool_framework/test_chokepoint_transaction.py::
        test_the_production_park_exit_surfaces_the_typed_approval_reference[sqlite+aiosqlite]
-1 failed, 1086 passed, 47 skipped
+1 failed, 1110 passed, 57 skipped
 ```
 
 One test in the whole tree fails — which is F-2's finding restated as a fact: the
-mutant survived every other test on both legs. The mutant was reverted and
-`manager.py` is byte-identical to `V2` (`git diff` empty); no production line in
-that module was touched by this branch.
+mutant survives every other test in the suite. (The QA finding was written
+against `V2`, where it survived *all* of them.)
+
+The IFF's other half was mutated too, because a test that only ever asserts
+"non-None" can be satisfied by a reference minted everywhere. Substituting
+`approval=approval_ref or ApprovalRef(approval_id="drifted", …)` in `_error` —
+the "just always attach it" convenience drift the second test exists to stop:
+
+```
+FAILED tests/contracts/test_c1_tool_adapter.py::test_c1_5_approved_id_executes_once_then_is_spent
+FAILED tests/unit/core/tool_framework/test_chokepoint_transaction.py::
+       test_only_the_park_exit_mints_a_reference[sqlite+aiosqlite]
+2 failed, 1109 passed, 57 skipped
+```
+
+Both mutants were reverted and `manager.py` is byte-identical to `V2`
+(`git diff bd30610 -- …/manager.py` empty); **no production line in that module
+was touched by this branch** — F-2 was a coverage hole, and coverage is all that
+was added.
 
 ---
 
