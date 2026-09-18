@@ -156,6 +156,35 @@ true: the set of `allow` grants on `read_only: false` operations is still empty.
 
 See §5 below (appended after the run).
 
+## 6. Verification round (2026-09-18)
+
+The parcel's three commits were authored across sessions that did not survive to verify their own
+claims end to end. This section is that verification, run against the pushed tip, and it is
+deliberately kept separate from the claims it checks.
+
+### 6.1 Ground truth — the commits exist and are pushed
+
+| commit | subject | state |
+|---|---|---|
+| `711f08e` | ADR-034 Amendment 1: `server_tool:` bindings + the bounded `merge_main` composition | on `origin/task/S3-github` |
+| `7d65b85` | `github_mcp` re-landed — capture gate passed, rows restored minus `push_branch` | on `origin/task/S3-github` |
+| `6e4cd92` | the transcription pin + QA F-1's catalogue-wide scan, standalone | tip; `origin` == `HEAD` |
+
+`git rev-list --left-right --count origin/task/S3-github...HEAD` → `0	0`; working tree clean. The
+parcel is landed, not half-written.
+
+### 6.2 Suite — SQLite leg
+
+```
+$ .venv/Scripts/python -m pytest tests -q      # apps/api, Python 3.13.14, SQLAlchemy 2.0.54
+1170 collected
+1123 passed, 47 skipped, 5 warnings in 23.28s
+```
+
+**1123 / 47** — identical to the count `6e4cd92`'s message claims. No failures, no errors. The five
+warnings are the pre-existing httpx/anyio/pytest-asyncio deprecations carried by the branch point;
+this parcel adds none.
+
 ## Notes for the reviewer
 
 * `GITHUB_TOKEN` stays the single grantable GitHub credential name (`GRANTABLE_CREDENTIAL_NAMES`,
